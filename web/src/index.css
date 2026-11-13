@@ -11,7 +11,7 @@
   --border-strong: #c9c9c2;
   --fg: #18181a;
   --muted: #61615c;
-  --faint: #74746e;
+  --faint: #6b6b65; /* 4.7:1 on surface-2 (axe) */
   --focus: #2563eb;
   --pass: #15803d;
   --fail: #c2261d;

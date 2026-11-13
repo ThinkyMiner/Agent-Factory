@@ -2,6 +2,7 @@
   "name": "control-room",
   "version": "0.1.0",
   "private": true,
+  "bin": { "control-room": "server/cli.ts" },
   "type": "module",
   "description": "Local control room for an agentic software factory",
   "engines": {
@@ -32,6 +33,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
     "@playwright/test": "1.65",
     "@tailwindcss/vite": "^4.3.5",
     "@types/node": "^26.6.6",

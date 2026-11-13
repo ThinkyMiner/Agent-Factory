@@ -143,7 +143,7 @@ function Observations({ m }: { m: MemoryView }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <input type="search" value={q} onChange={(e) => set('q', e.target.value)} placeholder="Search observations" aria-label="Search observations" className={cn(control, 'w-64')} />
+        <input data-page-filter type="search" value={q} onChange={(e) => set('q', e.target.value)} placeholder="Search observations" aria-label="Search observations" className={cn(control, 'w-64')} />
         <select value={stage} onChange={(e) => set('stage', e.target.value)} aria-label="Stage" className={control}>
           <option value="">All stages</option>
           {stages.map((s) => (

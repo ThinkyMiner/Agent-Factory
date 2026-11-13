@@ -265,11 +265,24 @@ export function indexLifecycle(events: LifecycleEvent[]): { sessions: Map<string
 }
 
 /** The status of the stage an agent run served: the first terminal event for it after the run started. */
-export function stageResult(run: AgentRun, events: StageEvent[]): StageView['status'] | undefined {
-  if (!run.stage) return undefined
-  const e = sortEvents(events).find((x) => x.work_id === run.workId && x.stage === run.stage && x.status !== 'started' && t(x.ts) >= t(run.start) - 1000)
-  return e ? (e.status as StageView['status']) : run.outcome === 'running' ? 'running' : undefined
+/** How the stage an agent ran for ended: the first result for that item and stage after it started.
+ *  Sorts and groups once, so it stays linear over thousands of runs and events. */
+export function stageResults(events: StageEvent[]): (run: AgentRun) => StageView['status'] | undefined {
+  const by = new Map<string, StageEvent[]>()
+  for (const e of sortEvents(events)) {
+    if (e.status === 'started') continue
+    const k = `${e.work_id}\0${e.stage}`
+    const a = by.get(k)
+    if (a) a.push(e)
+    else by.set(k, [e])
+  }
+  return (run) => {
+    if (!run.stage) return undefined
+    const e = by.get(`${run.workId}\0${run.stage}`)?.find((x) => t(x.ts) >= t(run.start) - 1000)
+    return e ? (e.status as StageView['status']) : run.outcome === 'running' ? 'running' : undefined
+  }
 }
+export const stageResult = (run: AgentRun, events: StageEvent[]) => stageResults(events)(run)
 
 export interface PipelineRun {
   start: string

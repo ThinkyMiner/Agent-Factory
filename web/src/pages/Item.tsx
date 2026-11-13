@@ -573,7 +573,7 @@ function ActivityTab({ item }: { item: ItemDetail }) {
       </Block>
       <Block title={`Events and commits (${rows.length})`}>
         {rows.length ? (
-          <div ref={parent} className="max-h-[60vh] overflow-y-auto rounded-lg border border-border bg-surface" role="list">
+          <div ref={parent} tabIndex={0} aria-label="Events and commits, newest first" className="max-h-[60vh] overflow-y-auto rounded-lg border border-border bg-surface" role="list">
             <div style={{ height: v.getTotalSize(), position: 'relative' }}>
               {v.getVirtualItems().map((vi) => {
                 const r = rows[vi.index]!

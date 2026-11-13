@@ -191,6 +191,25 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
   for (const [id, i] of issues) if (i.labels.some((l) => l.startsWith('factory:') && l !== 'factory:improvement')) ids.add(id)
   for (const id of pulls.keys()) ids.add(id)
 
+  // index once: a per-item scan of every file and event is O(items x events)
+  const groupBy = <T>(xs: T[], key: (x: T) => string) => {
+    const m = new Map<string, T[]>()
+    for (const x of xs) {
+      const k = key(x)
+      const a = m.get(k)
+      if (a) a.push(x)
+      else m.set(k, [x])
+    }
+    return m
+  }
+  const byPath = groupBy(sources, (s) => s.path)
+  const testsById = groupBy(
+    sources.filter((s) => s.path.startsWith('tests/acceptance/')),
+    (s) => /^tests\/acceptance\/([A-Za-z0-9._]+?)-/.exec(s.path)?.[1] ?? '',
+  )
+  const stageById = groupBy(stageEvents, (e) => e.work_id)
+  const lifeById = groupBy(lifecycle, (e) => e.work_id)
+
   const inputs: ItemInputs[] = []
   for (const id of ids) {
     const itemNotices: Notice[] = []
@@ -203,8 +222,8 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
     // files: per file, worktree beats branch beats main
     const files: ItemInputs['files'] = {}
     for (const name of WORK_FILES) {
-      const cands = sources
-        .filter((s) => s.path === `work/${folder}/${name}` || names.some((n) => s.path === `work/${n}/${name}`))
+      const cands = [...new Set([folder, ...names])]
+        .flatMap((n) => byPath.get(`work/${n}/${name}`) ?? [])
         .filter((s) => s.origin !== 'branch' || s.ref === branch?.ref)
         .sort((a, b) => ORDER[a.origin] - ORDER[b.origin])
       const pick = cands[0]
@@ -217,7 +236,7 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
     // acceptance test references: lines that name AC-<n>
     const testRefs: TestRef[] = []
     const testSrc = new Map<string, Source>()
-    for (const s of sources.filter((s) => s.path.startsWith(`tests/acceptance/${id}-`)).sort((a, b) => ORDER[a.origin] - ORDER[b.origin])) {
+    for (const s of (testsById.get(id) ?? []).sort((a, b) => ORDER[a.origin] - ORDER[b.origin])) {
       if (s.origin === 'branch' && s.ref !== branch?.ref) continue
       if (!testSrc.has(s.path)) testSrc.set(s.path, s)
     }
@@ -239,8 +258,8 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
       id,
       slug,
       files,
-      stageEvents: stageEvents.filter((e) => e.work_id === id),
-      lifecycle: lifecycle.filter((e) => e.work_id === id),
+      stageEvents: stageById.get(id) ?? [],
+      lifecycle: lifeById.get(id) ?? [],
       issue: issues.get(id),
       pull,
       branch: branch?.name,

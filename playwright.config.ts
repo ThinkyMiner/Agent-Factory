@@ -8,6 +8,8 @@ const PORT = 4399
 export const EMPTY_URL = 'http://127.0.0.1:4398'
 export const ACTIONS_DIR = join(tmpdir(), 'control-room-e2e', 'actions')
 export const ACTIONS_URL = 'http://127.0.0.1:4397'
+export const SCALED_DIR = join(tmpdir(), 'control-room-e2e', 'scaled')
+export const SCALED_URL = 'http://127.0.0.1:4396'
 
 export default defineConfig({
   testDir: 'e2e',
@@ -36,6 +38,13 @@ export default defineConfig({
       url: `${ACTIONS_URL}/api/state`,
       reuseExistingServer: false,
       timeout: 60_000,
+    },
+    {
+      // the demo plus thousands of rows, for e2e/perf.spec.ts
+      command: `node e2e/serve-scaled.ts ${SCALED_DIR} 4396`,
+      url: `${SCALED_URL}/api/state`,
+      reuseExistingServer: false,
+      timeout: 120_000,
     },
   ],
 })

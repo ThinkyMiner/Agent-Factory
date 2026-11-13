@@ -60,7 +60,7 @@ function NeedsYou({ entries }: { entries: NeedsEntry[] }) {
       <ul>
         {entries.map((n) => (
           <li key={`${n.kind}-${n.id}`} className={cn('group border-b border-l-[3px] border-border last:border-b-0', TONE_BORDER[needsTone(n.kind)])}>
-            <Link to={n.href ?? `/items/${n.id}`} className="grid grid-cols-[6.5rem_1fr_auto] items-baseline gap-x-3 gap-y-1 px-4 py-2.5 hover:bg-surface-2 focus-visible:bg-surface-2 max-sm:grid-cols-[1fr_auto]">
+            <Link data-nav-item to={n.href ?? `/items/${n.id}`} className="grid grid-cols-[6.5rem_1fr_auto] items-baseline gap-x-3 gap-y-1 px-4 py-2.5 hover:bg-surface-2 focus-visible:bg-surface-2 max-sm:grid-cols-[1fr_auto]">
               <NeedsTag kind={n.kind} className="max-sm:col-span-2" />
               <span className="min-w-0">
                 <span className="flex flex-wrap items-baseline gap-x-2">
@@ -130,7 +130,7 @@ function Running({ data }: { data: ApiState }) {
             {data.running.map((r) => (
               <tr key={r.workId} className="border-b border-border last:border-b-0">
                 <td className="px-3 py-1.5">
-                  <Link to={`/items/${r.workId}`} className="hover:underline">
+                  <Link data-nav-item to={`/items/${r.workId}`} className="hover:underline">
                     <ItemId id={r.workId} link={false} /> {r.title}
                   </Link>
                 </td>
@@ -163,7 +163,7 @@ function Merged({ data }: { data: ApiState }) {
   const week = merged.filter((i) => Date.parse(i.mergedAt!) >= startOfWeek && Date.parse(i.mergedAt!) < startOfDay)
   const Row = ({ i }: { i: (typeof merged)[number] }) => (
     <li className="border-b border-border last:border-b-0">
-      <Link to={`/items/${i.id}`} className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface-2">
+      <Link data-nav-item to={`/items/${i.id}`} className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface-2">
         <ItemId id={i.id} link={false} />
         <span className="min-w-0 flex-1 truncate">{i.title}</span>
         {i.reverted && <span className="text-[11.5px] font-medium text-fail">reverted</span>}

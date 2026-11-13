@@ -1,7 +1,8 @@
+#!/usr/bin/env node
 // control-room <factory-path> | --demo   [options]
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, statSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
@@ -98,8 +99,13 @@ if (values.print) {
   process.exit(0)
 }
 
-if (!existsSync(join(WEB, 'index.html'))) {
-  console.log('Building the web app (first run)...')
+// build the web app on first run, and again whenever its sources are newer than the build
+const newest = (dir: string): number =>
+  Math.max(0, ...readdirSync(dir, { withFileTypes: true }).map((e) => (e.isDirectory() ? newest(join(dir, e.name)) : statSync(join(dir, e.name)).mtimeMs)))
+const built = join(WEB, 'index.html')
+const sources = ['web', 'server/core'].map((d) => join(ROOT, d)).filter((d) => existsSync(d)) // the web app bundles server/core too
+if (!existsSync(built) || Math.max(...sources.map(newest)) > statSync(built).mtimeMs) {
+  console.log(existsSync(built) ? 'Rebuilding the web app (sources changed)...' : 'Building the web app (first run)...')
   const { build } = await import('vite')
   await build({ configFile: join(ROOT, 'vite.config.ts'), logLevel: 'warn' })
 }

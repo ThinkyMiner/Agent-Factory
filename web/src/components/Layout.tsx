@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router'
+import { Suspense } from 'react'
+import { NavLink, Outlet } from 'react-router'
 import { Activity, Brain, ChartColumn, ClipboardCheck, Cloud, Cog, Columns3, LayoutDashboard, Monitor, Moon, Sprout, Sun, WifiOff } from 'lucide-react'
 import { useApiState, useLiveUpdates, useNow } from '@/lib/api'
 import { ago, cn } from '@/lib/utils'
-import { Banner } from './States'
+import { Banner, Loading } from './States'
+import { setTheme, useTheme, type Theme } from '@/lib/theme'
 import { ActionToasts } from './Actions'
+import { KeyboardLayer, PaletteButton } from './Keyboard'
 
 export const NAV = [
   { to: '/', label: 'Control room', icon: LayoutDashboard, key: 'r' },
@@ -17,32 +19,8 @@ export const NAV = [
   { to: '/audits', label: 'Audits', icon: ClipboardCheck, key: 'a' },
 ]
 
-type Theme = 'system' | 'light' | 'dark'
-function readTheme(): Theme {
-  try {
-    const t = localStorage.getItem('cr-theme')
-    return t === 'light' || t === 'dark' ? t : 'system'
-  } catch {
-    return 'system'
-  }
-}
-export function applyTheme(t: Theme) {
-  const dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
-  document.documentElement.classList.toggle('dark', dark)
-}
-
 function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>(readTheme)
-  useEffect(() => {
-    applyTheme(theme)
-    try {
-      localStorage.setItem('cr-theme', theme)
-    } catch {}
-    const mq = matchMedia('(prefers-color-scheme: dark)')
-    const on = () => applyTheme(theme)
-    mq.addEventListener('change', on)
-    return () => mq.removeEventListener('change', on)
-  }, [theme])
+  const theme = useTheme()
   const next: Theme = theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system'
   const Icon = theme === 'system' ? Monitor : theme === 'light' ? Sun : Moon
   return (
@@ -53,34 +31,7 @@ function ThemeToggle() {
   )
 }
 
-/** "g" then a key jumps to a screen. Ignored while typing in a field. */
-function useGoKeys() {
-  const nav = useNavigate()
-  useEffect(() => {
-    let armed = 0
-    const on = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement
-      if (e.metaKey || e.ctrlKey || e.altKey || t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return
-      if (e.key === 'g') {
-        armed = Date.now()
-        return
-      }
-      if (Date.now() - armed < 1200) {
-        const n = NAV.find((x) => x.key === e.key)
-        if (n) {
-          e.preventDefault()
-          nav(n.to)
-        }
-      }
-      armed = 0
-    }
-    window.addEventListener('keydown', on)
-    return () => window.removeEventListener('keydown', on)
-  }, [nav])
-}
-
 export function Layout() {
-  useGoKeys()
   const connected = useLiveUpdates()
   const { data } = useApiState()
   const now = useNow()
@@ -105,6 +56,9 @@ export function Layout() {
               {data?.factory.demo && <span className="ml-1 rounded bg-surface-2 px-1 font-sans text-[10px] tracking-wide uppercase">demo</span>}
             </div>
           </div>
+        </div>
+        <div className="hidden px-2 pb-2 md:block">
+          <PaletteButton />
         </div>
         <nav aria-label="Screens" className="flex gap-0.5 overflow-x-auto px-2 pb-2 md:flex-col md:overflow-visible">
           {NAV.map((n) => (
@@ -161,10 +115,13 @@ export function Layout() {
           </Banner>
         )}
         <main id="main" className="min-h-0 flex-1 overflow-y-auto" tabIndex={-1}>
-          <Outlet />
+          <Suspense fallback={<div className="p-5"><Loading rows={5} /></div>}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
       {data?.factory.actions && <ActionToasts />}
+      <KeyboardLayer />
     </div>
   )
 }

@@ -8,7 +8,7 @@ import { basename, join } from 'node:path'
 import { homedir } from 'node:os'
 import type { GitHubData } from './core/types.ts'
 import type { ItemDetail, RunRow, RunsResponse } from './core/api.ts'
-import { stageResult } from './core/derive.ts'
+import { stageResults } from './core/derive.ts'
 import { quality } from './core/quality.ts'
 import { auditsView, factoryView, improvementView, memoryView } from './core/meta.ts'
 import { metaDiff } from './sources/meta.ts'
@@ -185,7 +185,7 @@ export class Factory {
   }
 
   async runs(): Promise<RunsResponse> {
-    const stageEvents = this.state.snap.events.filter((e): e is StageEvent => e.type === 'stage')
+    const resultOf = stageResults(this.state.snap.events.filter((e): e is StageEvent => e.type === 'stage'))
     const now = Date.now()
     const runs: RunRow[] = await Promise.all(
       this.state.runs.map(async (r) => {
@@ -194,7 +194,7 @@ export class Factory {
           ...r,
           title: this.state.byId.get(r.workId)?.title,
           durationMs: r.start ? (r.end ? Date.parse(r.end) : now) - Date.parse(r.start) : undefined,
-          stageResult: stageResult(r, stageEvents),
+          stageResult: resultOf(r),
           model: t.ok ? t.model : undefined,
           tokens: t.ok ? t.tokens : undefined,
           tokensNote: t.ok ? undefined : t.reason,
@@ -249,7 +249,9 @@ export class Factory {
     for (const f of inp.pull?.files ?? []) numstat[f.path] ??= { additions: f.additions, deletions: f.deletions }
     return {
       ...item,
-      events: events as ItemDetail['events'],
+      // the raw line is only for de-duplication; leaving it out halves the payload
+      // ponytail: the whole history goes in one response (~2 MB at 12,000 events); page it if items get longer
+      events: events.map(({ key: _, ...e }) => e) as ItemDetail['events'],
       runs,
       tokensAvailable: all.tokensAvailable,
       observations,

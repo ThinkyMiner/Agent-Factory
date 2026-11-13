@@ -81,6 +81,7 @@ export function Runs() {
           value={params.get('q') ?? ''}
           onChange={(e) => set('q', e.target.value)}
           placeholder="Filter by item"
+          data-page-filter
           aria-label="Filter by item number or title"
           className="h-7 w-52 rounded-md border border-border bg-surface px-2 text-[12.5px]"
         />
@@ -137,7 +138,7 @@ export function Runs() {
                           <span role="cell" className="flex min-w-0 items-center gap-1.5">
                             {s === 'running' && <LiveDot />}
                             <ItemId id={r.workId} />
-                            <Link to={`/items/${r.workId}/activity`} className="truncate hover:underline" title={r.title}>
+                            <Link data-nav-item to={`/items/${r.workId}/activity`} className="truncate hover:underline" title={r.title}>
                               {r.title ?? <span className="text-faint">unknown item</span>}
                             </Link>
                           </span>

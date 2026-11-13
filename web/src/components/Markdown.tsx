@@ -61,5 +61,5 @@ export function Md({ text, className }: { text: string; className?: string }) {
 }
 
 export function Raw({ text, className }: { text: string; className?: string }) {
-  return <pre className={cn('overflow-x-auto rounded-md border border-border bg-surface-2 p-3 font-mono text-[12px] leading-relaxed whitespace-pre-wrap', className)}>{text}</pre>
+  return <pre tabIndex={0} className={cn('overflow-x-auto rounded-md border border-border bg-surface-2 p-3 font-mono text-[12px] leading-relaxed whitespace-pre-wrap', className)}>{text}</pre>
 }

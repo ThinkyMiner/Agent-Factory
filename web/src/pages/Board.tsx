@@ -59,6 +59,7 @@ export function Board() {
             value={q}
             onChange={(e) => set('q', e.target.value || null)}
             placeholder="Filter by title or #id"
+            data-page-filter
             className="h-7 w-52 rounded-md border border-border bg-surface pr-2 pl-7 text-[12.5px] placeholder:text-faint"
           />
         </label>
@@ -71,8 +72,8 @@ export function Board() {
         </FilterGroup>
         <FilterGroup label="State">
           {COLUMNS.map((c) => (
-            <Toggle key={c.key} on={cols.includes(c.key)} onClick={() => toggle('state', cols, c.key)} label={`Show ${c.label}`}>
-              {c.label.replace('Pull request open', 'PR open').replace('Waiting for me', 'Waiting')}
+            <Toggle key={c.key} on={cols.includes(c.key)} onClick={() => toggle('state', cols, c.key)} label={`Show ${short(c.label)}`}>
+              {short(c.label)}
             </Toggle>
           ))}
         </FilterGroup>
@@ -129,6 +130,7 @@ function Card({ i }: { i: ItemSummary }) {
   return (
     <li>
       <Link
+        data-nav-item
         to={`/items/${i.id}`}
         className={cn(
           'block rounded-md border bg-surface px-2.5 py-2 hover:border-border-strong focus-visible:border-focus',
@@ -173,6 +175,8 @@ function Card({ i }: { i: ItemSummary }) {
     </li>
   )
 }
+
+const short = (label: string) => label.replace('Pull request open', 'PR open').replace('Waiting for me', 'Waiting')
 
 function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (

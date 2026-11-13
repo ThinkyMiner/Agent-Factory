@@ -5,7 +5,7 @@ export function Patch({ text, title }: { text: string; title: string }) {
   const lines = text.split('\n')
   const shown = lines.slice(0, 4000)
   return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-surface font-mono text-[12px] leading-[1.5]">
+    <div tabIndex={0} role="region" aria-label={`Diff of ${title}`} className="overflow-x-auto rounded-lg border border-border bg-surface font-mono text-[12px] leading-[1.5]">
       <div className="sticky left-0 border-b border-border px-3 py-1.5 text-muted">{title}</div>
       <pre>
         {shown.map((l, i) => (

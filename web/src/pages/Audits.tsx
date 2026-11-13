@@ -30,6 +30,7 @@ export function Audits() {
                 {data!.map((a) => (
                   <li key={a.path}>
                     <Link
+                      data-nav-item
                       to={`/audits/${a.date}`}
                       aria-current={a === current ? 'page' : undefined}
                       className={cn('block rounded-md px-2 py-1.5 hover:bg-surface-2', a === current && 'bg-surface-2 font-medium')}
