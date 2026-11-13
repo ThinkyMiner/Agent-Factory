@@ -267,6 +267,17 @@ POST /api/actions/mark-ready       {issue}
 GET  /api/actions/approve/:pr      preview: tier, R2 paths (+ matching rule), verdict, head SHA
 POST /api/actions/approve          {pr, headSha, confirm:"approve #<pr>"}   refused if the head has moved
 POST /api/actions/answer           {issue, body}   → gh issue comment
+*(As built: `server/actions.ts` holds every change. The checks run in this order:
+`--actions` must be set, otherwise no writer exists and every POST gets 405. Then: Origin is
+this page; `Sec-Fetch-Site` is absent or same-origin; the per-launch token matches
+(constant-time); the content type is JSON; the body is 64 KB or less. The input must pass a
+strict zod schema. The action then re-checks live state: approve compares the head SHA
+against a fresh `gh pr view`, accepts R2 only, and needs the typed confirmation. Each
+action makes one `gh` call with an argument array; the answer text goes through stdin.
+Every attempt, refusals included, is appended to `<data-dir>/actions.jsonl`, never with
+the token. `--demo --actions` writes to the demo's `github.json`, so the whole flow works
+offline. Results also appear in a toast, because the live update often unmounts the
+button that started the action.)*
 ```
 "Copy `/work <id>`" happens only in the browser.
 
@@ -335,3 +346,4 @@ Each phase ends with:
 15. Have observations cite the lessons they support or contradict (`Supports: L-3`). "No supporting observation in 60 days means removal" cannot be computed today, so the Memory screen shows only each lesson's age.
 16. Give audits YAML front matter with the counts and the autonomy recommendation (`keep | raise | lower`). Audits can then be charted next to the Quality numbers they summarise.
 17. Quote spec titles in front matter, or document that front matter is read line by line. A colon in a title breaks every YAML parser, although `validate-spec.sh` accepts it.
+18. Have `risk-gate` report "waiting for approval" as a pending status, not a failure, on an unapproved R2 pull request. Today "failing" sometimes means "waiting for you". The control room tells the two apart using the check's `completedAt` and the label time. It assumes a real failure when either time is missing.

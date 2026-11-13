@@ -149,6 +149,13 @@ describe('pull requests', () => {
     expect(r).toMatchObject({ state: 'awaiting-approval', column: 'waiting', tier: 'R2', needs: { kind: 'approve' } })
     expect(r.needs!.summary).toMatch(/review: pass/)
   })
+  test('after approval, a risk-gate failure from before the label is out of date (CI re-runs it); a later one is real', () => {
+    const gate = (min: number) => [{ name: 'check', status: 'COMPLETED', conclusion: 'SUCCESS' }, { name: 'risk-gate', status: 'COMPLETED', conclusion: 'FAILURE', completedAt: ago(min) }]
+    const approved = (checks: Pull['checks']) => pull({ labels: ['risk:R2', 'human-approved'], autoMerge: false, checks, timeline: [{ type: 'labeled', label: 'human-approved', at: ago(10) }] })
+    expect(derive({ stageEvents: RUN_TO_PR(), pull: approved(gate(30)) }).state).toBe('awaiting-merge')
+    expect(derive({ stageEvents: RUN_TO_PR(), pull: approved(gate(5)) })).toMatchObject({ state: 'failed', needs: { kind: 'failed' } })
+    expect(derive({ stageEvents: RUN_TO_PR(), pull: approved([{ name: 'risk-gate', status: 'COMPLETED', conclusion: 'FAILURE' }]) }).state).toBe('failed') // time unknown: assume real
+  })
   test('R2 by path alone, shown with the rule that matched', () => {
     const r = derive({ stageEvents: RUN_TO_PR(), pull: pull({ autoMerge: false }), changedFiles: ['src/x.ts', 'db/migrations/0004_add.sql'] })
     expect(r.tier).toBe('R2')

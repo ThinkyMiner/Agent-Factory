@@ -9,6 +9,8 @@ import { generate } from '../demo/generate.ts'
 import { COLUMNS } from './core/derive.ts'
 import { Factory, type FactoryOptions } from './factory.ts'
 import { startServer } from './http.ts'
+import { Actions, demoWriter, ghWriter } from './actions.ts'
+import { repoSlug } from './sources/github.ts'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const WEB = join(ROOT, 'dist', 'web')
@@ -25,6 +27,7 @@ const { values, positionals } = parseArgs({
     'github-interval': { type: 'string', default: '60' },
     open: { type: 'boolean', default: false },
     print: { type: 'boolean', default: false },
+    actions: { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h', default: false },
   },
 })
@@ -39,6 +42,8 @@ const USAGE = `usage: npm start -- <factory-repo-path> [options]
   --data-dir DIR         where the cache lives (default ~/.control-room/<repo>-<hash>; safe to delete)
   --offline              do not call GitHub; show cached GitHub data as stale
   --github-interval S    seconds between GitHub refreshes (default 60)
+  --actions              allow changes: mark an issue ready, approve an R2 pull request, answer a
+                         blocked question. Off by default; every attempt is logged.
   --open                 open the browser
   --print                print the derived board and exit`
 
@@ -99,8 +104,12 @@ if (!existsSync(join(WEB, 'index.html'))) {
   await build({ configFile: join(ROOT, 'vite.config.ts'), logLevel: 'warn' })
 }
 
-const srv = await startServer(factory, { port, webDir: WEB, actions: false, demo: values.demo! })
-console.log(`control room for ${opts.repo}\n  ${srv.url}\n  read-only · GitHub: ${opts.github.kind === 'gh' ? `every ${values['github-interval']} s` : opts.github.kind}`)
+const gh = opts.github
+const actions =
+  values.actions &&
+  new Actions(factory, gh.kind === 'demo' ? demoWriter(gh.path) : ghWriter(opts.repo, () => repoSlug(opts.repo)), factory.dataDir)
+const srv = await startServer(factory, { port, webDir: WEB, actions, demo: values.demo! })
+console.log(`control room for ${opts.repo}\n  ${srv.url}\n  ${actions ? `ACTIONS ON (mark ready, approve, answer); every attempt is logged to ${actions.logPath}` : 'read-only'} · GitHub: ${gh.kind === 'gh' ? `every ${values['github-interval']} s` : gh.kind}`)
 if (values.open) execFile('open', [srv.url], () => {})
 
 const shutdown = async () => {

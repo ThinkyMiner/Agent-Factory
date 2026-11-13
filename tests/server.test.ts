@@ -78,6 +78,7 @@ describe('http server (read-only)', () => {
   })
   test('every non-GET method on every path is refused, and nothing changes', async () => {
     const before = (await call(`${srv.url}/api/state`)).body
+    const githubBefore = readFileSync(demo.github, 'utf8')
     for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
       for (const path of ['/api/state', '/api/items/32', '/api/factory/file', '/api/memory', '/api/actions/approve', '/api/actions/mark-ready', '/api/actions/answer', '/', '/board']) {
         const r = await call(`${srv.url}${path}`, { method, headers: { 'content-type': 'application/json', origin: srv.url, 'x-control-room-token': srv.token }, body: '{"pr":132,"issue":37}' })
@@ -85,6 +86,16 @@ describe('http server (read-only)', () => {
       }
     }
     expect((await call(`${srv.url}/api/state`)).body).toBe(before)
+    expect(readFileSync(demo.github, 'utf8')).toBe(githubBefore)
+    // a request that would pass every check with actions on: same origin, same site, the token, JSON
+    for (const [name, body] of [['mark-ready', { issue: 40 }], ['approve', { pr: 132, headSha: 'a'.repeat(40), confirm: 'approve #132' }], ['answer', { issue: 23, body: 'x' }]] as const) {
+      const r = await call(`${srv.url}/api/actions/${name}`, { method: 'POST', headers: { 'content-type': 'application/json', origin: srv.url, 'sec-fetch-site': 'same-origin', 'x-control-room-token': srv.token }, body: JSON.stringify(body) })
+      expect(r.status, name).toBe(405)
+    }
+    expect((await call(`${srv.url}/api/actions/approve?pr=132`)).status).toBe(404)
+    expect(readFileSync(demo.github, 'utf8')).toBe(githubBefore)
+    expect(JSON.parse((await call(`${srv.url}/api/actions/log`)).body)).toEqual([])
+    expect(JSON.parse((await call(`${srv.url}/api/state`)).body).factory.actions).toBe(false)
   })
   test('a request for another Host is refused (DNS rebinding)', async () => {
     expect((await call(`${srv.url}/api/state`, { host: 'evil.example' })).status).toBe(421)

@@ -439,7 +439,7 @@ export function generate(out: string, nowMs = Date.now()) {
         number, title: sc.title, state: 'OPEN', isDraft: false, headRefName: branch, headSha: run(['rev-parse', branch]).trim(), labels,
         createdAt: iso(prAt), url: `https://github.com/${REPO_SLUG}/pull/${number}`, body: prBodyFor(sc, tier, reviews.length - 1),
         autoMerge: false, files, timeline,
-        checks: ['check', 'secrets', 'risk-gate'].map((name) => ({ name, status: 'COMPLETED', conclusion: 'SUCCESS', url: `https://github.com/${REPO_SLUG}/actions/runs/${number}${name.length}` })),
+        checks: ['check', 'secrets', 'risk-gate'].map((name) => ({ name, status: 'COMPLETED', conclusion: 'SUCCESS', url: `https://github.com/${REPO_SLUG}/actions/runs/${number}${name.length}`, completedAt: iso(prAt + 6 * MIN) })),
       }
       const p = sc.pr
       if (p.approved) {
@@ -507,7 +507,7 @@ export function generate(out: string, nowMs = Date.now()) {
   github.pulls.push({
     number: 141, title: `Reflect ${day(nowMs)}: promote the gate lesson to a check`, state: 'OPEN', headRefName: `factory/reflect-${day(nowMs)}`, labels: ['factory:improvement', 'risk:R2'],
     createdAt: iso(nowMs - 3 * HOUR), url: `https://github.com/${REPO_SLUG}/pull/141`, body: 'Moves L-1 into factory/scripts as a pre-commit check. See memory/reflections.',
-    checks: [{ name: 'check', status: 'COMPLETED', conclusion: 'SUCCESS' }, { name: 'risk-gate', status: 'COMPLETED', conclusion: 'FAILURE' }], files: [{ path: 'factory/scripts/pre-commit.sh', additions: 12, deletions: 0 }], timeline: [],
+    checks: [{ name: 'check', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: iso(nowMs - 3 * HOUR + 6 * MIN) }, { name: 'risk-gate', status: 'COMPLETED', conclusion: 'FAILURE', completedAt: iso(nowMs - 3 * HOUR + 6 * MIN) }], files: [{ path: 'factory/scripts/pre-commit.sh', additions: 12, deletions: 0 }], timeline: [],
   })
 
   // ---- the working tree as the operator left it ----

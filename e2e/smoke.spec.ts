@@ -21,7 +21,7 @@ test('control room: needs you first, running, merged', async ({ page }) => {
   const needs = page.getByRole('region', { name: /needs you/i })
   await expect(needs).toBeVisible()
   await expect(needs.getByRole('listitem')).toHaveCount(11)
-  await expect(needs.getByRole('listitem').filter({ hasText: 'PR #141' })).toContainText('failing: risk-gate')
+  await expect(needs.getByRole('listitem').filter({ hasText: 'PR #141' })).toContainText('factory:improvement · R2')
   await expect(needs).toContainText('Should deleting an account also delete the expenses')
   await expect(needs).toContainText('db/migrations/0007_audit_log.sql')
   await expect(page.getByRole('region', { name: /running now/i })).toContainText('reviewer')
@@ -74,6 +74,17 @@ test('item detail: every tab renders', async ({ page }) => {
   await page.getByRole('tab', { name: /^Activity/ }).click()
   await shot(page, 'item-activity')
   expect(errors).toEqual([])
+})
+
+test('read-only: no action buttons, and each says how to do it by hand', async ({ page }) => {
+  await page.goto('/items/32')
+  await expect(page.getByText('Read-only')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Review and approve…' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /gh pr edit 132 --add-label human-approved/ })).toBeVisible()
+  await page.goto('/items/23')
+  await expect(page.getByLabel(/Your answer/)).toHaveCount(0)
+  await page.goto('/items/40')
+  await expect(page.getByRole('button', { name: /gh issue edit 40 --add-label factory:ready/ })).toBeVisible()
 })
 
 test('item detail: a blocked item shows the question; a malformed review shows a notice and the raw text', async ({ page }) => {

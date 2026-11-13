@@ -4,6 +4,7 @@ import { Activity, Brain, ChartColumn, ClipboardCheck, Cloud, Cog, Columns3, Lay
 import { useApiState, useLiveUpdates, useNow } from '@/lib/api'
 import { ago, cn } from '@/lib/utils'
 import { Banner } from './States'
+import { ActionToasts } from './Actions'
 
 export const NAV = [
   { to: '/', label: 'Control room', icon: LayoutDashboard, key: 'r' },
@@ -163,6 +164,7 @@ export function Layout() {
           <Outlet />
         </main>
       </div>
+      {data?.factory.actions && <ActionToasts />}
     </div>
   )
 }

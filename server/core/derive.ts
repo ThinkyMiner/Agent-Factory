@@ -8,6 +8,7 @@ import {
   checkState,
   maxTier,
   tierRank,
+  type Check,
   type Issue,
   type LifecycleEvent,
   type Notice,
@@ -405,7 +406,11 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
 
   // pull request facts
   const approved = !!pr?.labels.includes('human-approved')
-  const failingChecks = (pr?.checks ?? []).filter((c) => checkState(c) === 'fail' && !(c.name === 'risk-gate' && tierRank(tier ?? 'R0') >= 2 && !approved))
+  // risk-gate fails every R2 pull request until it is approved, and CI re-runs it on the label.
+  // So a failing risk-gate is expected before approval, and out of date if it finished before it.
+  const approvedAt = pr?.timeline.filter((x) => x.type === 'labeled' && x.label === 'human-approved').at(-1)?.at
+  const gateRerun = (c: Check) => c.name === 'risk-gate' && tierRank(tier ?? 'R0') >= 2 && (!approved || (!!approvedAt && !!c.completedAt && t(c.completedAt) < t(approvedAt)))
+  const failingChecks = (pr?.checks ?? []).filter((c) => checkState(c) === 'fail' && !gateRerun(c))
   const readyAt = issue?.labelEvents.filter((e) => e.label === 'factory:ready' && e.action === 'added').at(0)?.at ?? events.find((e) => e.stage === 'intake')?.ts
   let mergedBy: ItemView['mergedBy']
   if (pr?.state === 'MERGED') mergedBy = approved || !pr.timeline.some((x) => x.type === 'auto_merge_enabled') ? 'human' : 'auto'

@@ -35,6 +35,50 @@ export const useItem = (id: string) => useQuery({ queryKey: ['item', id], queryF
 export const useRuns = () => useQuery({ queryKey: ['runs'], queryFn: () => getJson<RunsResponse>('/api/runs') })
 export const useQuality = (weeks: number) => useQuery({ queryKey: ['quality', weeks], queryFn: () => getJson<Quality>(`/api/quality?weeks=${weeks}`), placeholderData: keepPreviousData })
 
+// ---------- actions (only when the server was started with --actions) ----------
+
+const TOKEN = typeof document === 'undefined' ? '' : (document.querySelector('meta[name="cr-token"]')?.getAttribute('content') ?? '')
+
+export interface ActionReply {
+  ok: boolean
+  message: string
+}
+/** POST one action. The browser adds Origin and Sec-Fetch-Site; the token proves it is this page. */
+export async function postAction(name: 'mark-ready' | 'approve' | 'answer', body: Record<string, unknown>): Promise<ActionReply> {
+  const r = await fetch(`/api/actions/${name}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-control-room-token': TOKEN }, body: JSON.stringify(body) })
+  const j = (await r.json().catch(() => ({}))) as Partial<ActionReply> & { error?: string }
+  if (!r.ok || !j.ok) throw new HttpError(r.status, j.message ?? j.error ?? r.statusText)
+  return j as ActionReply
+}
+
+export interface ApprovePreview extends ActionReply {
+  pr: number
+  title: string
+  url: string
+  headSha: string
+  item?: { id: string; title: string }
+  tier?: import('../../../server/core/types.ts').Tier
+  sources: { source: string; tier: import('../../../server/core/types.ts').Tier; why?: string }[]
+  r2Files: { path: string; tier: import('../../../server/core/types.ts').Tier; pattern: string | null }[]
+  files: number
+  review: null | { verdict: string; blocking: number; nonBlocking: number } | { error: string }
+  checks: { name: string; conclusion: string }[]
+  notVerified: number | null
+  confirm: string
+}
+export const useApprovePreview = (pr: number, enabled: boolean) =>
+  useQuery({ enabled, queryKey: ['approve-preview', pr], queryFn: () => getJson<ApprovePreview>(`/api/actions/approve?pr=${pr}`), staleTime: 0, gcTime: 0 })
+
+export interface ActionLogEntry {
+  at: string
+  action: string
+  outcome: 'done' | 'refused' | 'failed'
+  status: number
+  message: string
+  input?: { issue?: number; pr?: number; body?: string }
+}
+export const useActionLog = () => useQuery({ queryKey: ['action-log'], queryFn: () => getJson<ActionLogEntry[]>('/api/actions/log') })
+
 export const useMemory = () => useQuery({ queryKey: ['memory'], queryFn: () => getJson<MemoryView>('/api/memory') })
 export const useImprovement = () => useQuery({ queryKey: ['improvement'], queryFn: () => getJson<ImprovementView & { github: GitHubStatus }>('/api/improvement') })
 export const useFactoryConfig = () => useQuery({ queryKey: ['factory'], queryFn: () => getJson<FactoryView>('/api/factory') })

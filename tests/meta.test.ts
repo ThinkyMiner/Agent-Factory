@@ -54,7 +54,7 @@ describe('over the demo', async () => {
     expect(v.pulls[0]!.checks.map((c) => c.state)).toEqual(['pass', 'fail'])
   })
   test('an improvement PR above the auto-merge tier needs you, like any item PR', () => {
-    expect(s.needsYou.filter((n) => n.id === 'pr-141')).toEqual([expect.objectContaining({ kind: 'approve', tier: 'R2', label: 'PR #141', href: '/improvement', summary: expect.stringContaining('failing: risk-gate') })])
+    expect(s.needsYou.filter((n) => n.id === 'pr-141')).toEqual([expect.objectContaining({ kind: 'approve', tier: 'R2', label: 'PR #141', href: '/improvement', summary: 'factory:improvement · R2' })]) // its failing risk-gate is expected until approved
     const pr = gh.data!.pulls.find((p) => p.number === 141)!
     expect(improvementNeeds([{ ...pr, labels: [...pr.labels, 'human-approved'] }], s.snap.rules, 'R1')).toEqual([])
     const docs = { ...pr, labels: ['factory:improvement'], files: [{ path: 'docs/factory/MEMORY.md', additions: 1, deletions: 0 }] }

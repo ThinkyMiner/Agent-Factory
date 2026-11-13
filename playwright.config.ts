@@ -6,6 +6,8 @@ export const DEMO_DIR = join(tmpdir(), 'control-room-e2e', 'demo')
 export const EMPTY_DIR = join(tmpdir(), 'control-room-e2e', 'empty')
 const PORT = 4399
 export const EMPTY_URL = 'http://127.0.0.1:4398'
+export const ACTIONS_DIR = join(tmpdir(), 'control-room-e2e', 'actions')
+export const ACTIONS_URL = 'http://127.0.0.1:4397'
 
 export default defineConfig({
   testDir: 'e2e',
@@ -25,6 +27,13 @@ export default defineConfig({
     {
       command: `node e2e/make-empty.ts ${EMPTY_DIR} && node server/cli.ts ${EMPTY_DIR} --port 4398 --offline --data-dir ${EMPTY_DIR}-data`,
       url: `${EMPTY_URL}/api/state`,
+      reuseExistingServer: false,
+      timeout: 60_000,
+    },
+    {
+      // a second demo with --actions on: its own copy, so the read-only tests never see a change
+      command: `node server/cli.ts --demo --demo-dir ${ACTIONS_DIR} --port 4397 --actions`,
+      url: `${ACTIONS_URL}/api/state`,
       reuseExistingServer: false,
       timeout: 60_000,
     },

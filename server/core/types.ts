@@ -205,6 +205,7 @@ export const CheckSchema = z.object({
   status: z.string(), // COMPLETED | IN_PROGRESS | QUEUED ...
   conclusion: optionalString, // SUCCESS | FAILURE | ...
   url: optionalString,
+  completedAt: optionalTimestamp,
 })
 
 export const PullSchema = z.object({

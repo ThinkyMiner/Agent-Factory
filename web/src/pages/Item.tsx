@@ -11,6 +11,7 @@ import { Md, Raw } from '@/components/Markdown'
 import { Patch } from '@/components/Patch'
 import { Empty, ErrorState, Loading } from '@/components/States'
 import { CopyCommand } from './ControlRoom'
+import { ActionTrail, AnswerForm, ApproveAction, MarkReady } from '@/components/Actions'
 import { Mono, NEEDS, NeedsTag, STATUS, StageLabel, StateBadge, Status, StatusGlyph, TierChip, TONE_BORDER, needsTone } from '@/components/vocab'
 
 const TABS = ['spec', 'plan', 'changes', 'gates', 'review', 'activity', 'not-verified', 'observations'] as const
@@ -109,6 +110,13 @@ function Header({ item }: { item: ItemDetail }) {
         <span>{item.fixRounds ? `${item.fixRounds} fix round${item.fixRounds > 1 ? 's' : ''}` : 'no fix rounds'}</span>
         {item.state !== 'merged' && item.state !== 'closed' && <CopyCommand cmd={`/work ${item.id}`} />}
       </div>
+      {item.state === 'proposed' && item.issue && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px]">
+          <span className="text-muted">Proposed: the factory does not pick it up until it is labelled factory:ready.</span>
+          <MarkReady issue={item.issue.number} />
+        </div>
+      )}
+      <ActionTrail issue={item.issue?.number} pr={item.pr?.number} />
     </div>
   )
 }
@@ -139,6 +147,7 @@ function NeedsPanel({ item }: { item: ItemDetail }) {
           <p className="mt-3 text-[12px] text-muted">
             From <Mono>{blocked.path}</Mono> ({item.files['BLOCKED.md']?.origin === 'worktree' ? 'working tree, not committed' : 'committed'}). Answer on {item.issue ? <ExtLink href={item.issue.url}>issue #{item.issue.number}</ExtLink> : 'the issue'}, then run <CopyCommand cmd={`/work ${item.id}`} />.
           </p>
+          {item.issue && <AnswerForm issue={item.issue.number} id={item.id} />}
         </>
       ) : (
         <p className="mt-1.5">{n.summary}</p>
@@ -152,7 +161,11 @@ function NeedsPanel({ item }: { item: ItemDetail }) {
               <span className="min-w-0">{s.why ?? ''}</span>
             </div>
           ))}
-          <p className="mt-1 text-muted">Read the Changes and Review tabs, then add the <Mono>human-approved</Mono> label on the pull request.</p>
+          {item.pr && (
+            <div className="mt-2">
+              <ApproveAction pr={item.pr.number} />
+            </div>
+          )}
         </div>
       )}
     </section>

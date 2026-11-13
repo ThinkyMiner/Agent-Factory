@@ -8,6 +8,7 @@ import { Empty, ErrorState, Loading } from '@/components/States'
 import { ItemRefs } from '@/components/ItemsPanel'
 import { Md, Raw } from '@/components/Markdown'
 import { DriftFlag, Mono, TierChip } from '@/components/vocab'
+import { ApproveAction } from '@/components/Actions'
 
 const RESULT = {
   worked: { label: 'worked', icon: CircleCheck, cls: 'text-pass' },
@@ -76,6 +77,11 @@ function Pulls({ v }: { v: ImprovementView & { github: { state: string; fetchedA
             {p.files.length > 0 && (
               <div className="mt-1.5 text-[12px] text-muted">
                 Changes {p.files.map((f, i) => <Mono key={f} className="text-fg">{i ? ', ' : ''}{f}</Mono>)}
+              </div>
+            )}
+            {needsApproval && (p.tier === 'R2' || !p.tier) && (
+              <div className="mt-2">
+                <ApproveAction pr={p.number} />
               </div>
             )}
           </li>

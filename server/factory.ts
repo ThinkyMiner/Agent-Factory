@@ -41,6 +41,7 @@ export class Factory {
   readonly repo: string
   readonly opts: FactoryOptions
   readonly store: Store
+  readonly dataDir: string
   state!: FactoryState
   version = 0
   private gh: GitHubInput = { status: { state: 'unavailable', error: 'not fetched yet' } }
@@ -56,7 +57,8 @@ export class Factory {
   constructor(opts: FactoryOptions) {
     this.opts = opts
     this.repo = opts.repo
-    this.store = new Store(opts.dataDir ?? dataDirFor(opts.repo))
+    this.dataDir = opts.dataDir ?? dataDirFor(opts.repo)
+    this.store = new Store(this.dataDir)
   }
 
   async start() {
@@ -163,6 +165,17 @@ export class Factory {
       this.gh = this.cachedGitHub(/not a git repository|no git remotes|none of the git remotes/i.test(msg) ? 'no GitHub remote for this repository' : msg)
     }
     this.schedule('github')
+  }
+
+  githubData = () => this.gh.data
+
+  /** After an action changed GitHub: read it again now rather than at the next poll. */
+  async githubChanged() {
+    const gh = this.opts.github
+    if (gh.kind === 'demo') {
+      this.gh = await readDemoGitHub(gh.path)
+      await this.recompute('action')
+    } else if (gh.kind === 'gh') await this.refreshGitHub()
   }
 
   // ---------- reads for the API ----------

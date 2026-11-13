@@ -3,14 +3,16 @@
 import { execFile } from 'node:child_process'
 import { GitHubDataSchema, type GitHubData, type Issue, type Pull } from '../core/types.ts'
 
-export function gh(args: string[], cwd: string, timeoutMs = 30000): Promise<string> {
+/** Run gh with an argument array; `input` goes to its stdin (for text that must never be an argument). */
+export function gh(args: string[], cwd: string, timeoutMs = 30000, input?: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('gh', args, { cwd, timeout: timeoutMs, maxBuffer: 128 * 1024 * 1024, env: { ...process.env, GH_PROMPT_DISABLED: '1', NO_COLOR: '1' } }, (err, stdout, stderr) => {
+    const child = execFile('gh', args, { cwd, timeout: timeoutMs, maxBuffer: 128 * 1024 * 1024, env: { ...process.env, GH_PROMPT_DISABLED: '1', NO_COLOR: '1' } }, (err, stdout, stderr) => {
       if (err) {
         const code = (err as { code?: unknown }).code
         reject(new Error(code === 'ENOENT' ? 'gh is not installed' : (stderr || err.message).trim().split('\n')[0]))
       } else resolve(stdout)
     })
+    child.stdin?.end(input ?? '') // always closed: nothing gh runs can wait on a prompt
   })
 }
 
@@ -37,7 +39,7 @@ export const PULLS = `query($owner: String!, $name: String!, $endCursor: String)
         autoMergeRequest { enabledAt }
         files(first: 100) { nodes { path additions deletions } }
         commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 50) { nodes {
-          __typename ... on CheckRun { name status conclusion detailsUrl } ... on StatusContext { context state targetUrl }
+          __typename ... on CheckRun { name status conclusion detailsUrl completedAt } ... on StatusContext { context state targetUrl createdAt }
         } } } } } }
         timelineItems(first: 50, itemTypes: [LABELED_EVENT, UNLABELED_EVENT, AUTO_MERGE_ENABLED_EVENT, AUTO_MERGE_DISABLED_EVENT, MERGED_EVENT, CLOSED_EVENT, REOPENED_EVENT]) {
           nodes {
@@ -84,8 +86,8 @@ export function normalisePull(n: Node): Pull {
     files: (n.files?.nodes ?? []).map((f: Node) => ({ path: f.path, additions: f.additions ?? 0, deletions: f.deletions ?? 0 })),
     checks: contexts.map((c) =>
       c.__typename === 'StatusContext'
-        ? { name: c.context, status: c.state === 'PENDING' || c.state === 'EXPECTED' ? 'IN_PROGRESS' : 'COMPLETED', conclusion: c.state === 'ERROR' ? 'FAILURE' : c.state, url: c.targetUrl ?? undefined }
-        : { name: c.name, status: c.status, conclusion: c.conclusion ?? undefined, url: c.detailsUrl ?? undefined },
+        ? { name: c.context, status: c.state === 'PENDING' || c.state === 'EXPECTED' ? 'IN_PROGRESS' : 'COMPLETED', conclusion: c.state === 'ERROR' ? 'FAILURE' : c.state, url: c.targetUrl ?? undefined, completedAt: c.createdAt ?? undefined }
+        : { name: c.name, status: c.status, conclusion: c.conclusion ?? undefined, url: c.detailsUrl ?? undefined, completedAt: c.completedAt ?? undefined },
     ),
     timeline: (n.timelineItems?.nodes ?? [])
       .filter((t: Node) => t && TIMELINE[t.__typename])

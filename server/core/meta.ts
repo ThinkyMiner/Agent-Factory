@@ -89,18 +89,25 @@ export function improvementView(files: MetaFile[], pulls: Pull[]) {
 }
 export type ImprovementView = ReturnType<typeof improvementView>
 
-/** Open improvement PRs above the auto-merge tier need you, like any item's PR. The tier is the
- *  highest of the PR's risk label and its files classified with main's rules. */
+/** A pull request that is not a work item (an improvement PR): the highest of its risk label and
+ *  its files classified with main's rules. Nothing can lower it. */
+export function pullTier(p: Pull, rules: RiskRule[]) {
+  const label = /^risk:(R[0-3])$/.exec(p.labels.find((l) => l.startsWith('risk:')) ?? '')?.[1] as Tier | undefined
+  const files = p.files.length ? classify(p.files.map((f) => f.path), rules) : null
+  const sources = [...(label ? [{ source: 'pr-label' as const, tier: label, why: `risk:${label} label` }] : []), ...(files ? [{ source: 'paths' as const, tier: files.tier }] : [])]
+  return { tier: maxTier(sources.map((x) => x.tier)), sources, files: files?.files ?? [] }
+}
+
+/** Open improvement PRs above the auto-merge tier need you, like any item's PR. */
 export function improvementNeeds(pulls: Pull[], rules: RiskRule[], autoMergeMax: Tier | 'none'): NeedsEntry[] {
   return pulls
     .filter((p) => p.state === 'OPEN' && !p.isDraft && p.labels.includes('factory:improvement'))
     .flatMap((p) => {
-      const label = /^risk:(R[0-3])$/.exec(p.labels.find((l) => l.startsWith('risk:')) ?? '')?.[1] as Tier | undefined
-      const tier = maxTier([...(label ? [label] : []), ...(p.files.length ? [classify(p.files.map((f) => f.path), rules).tier] : [])])
+      const { tier } = pullTier(p, rules)
       if (!tier || tierRank(tier) <= tierRank(autoMergeMax)) return []
       const r2 = tierRank(tier) >= 2
       if (r2 && p.labels.includes('human-approved')) return []
-      const failing = p.checks.filter((c) => checkState(c) === 'fail').map((c) => c.name)
+      const failing = p.checks.filter((c) => checkState(c) === 'fail' && !(r2 && c.name === 'risk-gate')).map((c) => c.name) // risk-gate fails until approved
       return [{
         kind: r2 ? ('approve' as const) : ('merge' as const),
         id: `pr-${p.number}`,
