@@ -1,0 +1,278 @@
+// Reads a factory repo (working tree + git refs + .factory/events.jsonl + GitHub data) into
+// the raw ItemInputs that core/derive.ts turns into state. All reads, no writes.
+import { readdir, readFile, stat } from 'node:fs/promises'
+import { join } from 'node:path'
+import { parseEvents, parseObservationFile, parsePolicy } from '../core/parse.ts'
+import { parseRiskRules, type RiskRule } from '../core/risk.ts'
+import { WORK_FILES, type ItemInputs, type TestRef, type WorkFile, type WorkFileName } from '../core/derive.ts'
+import type { FactoryEvent, GitHubData, GitHubStatus, Issue, LifecycleEvent, Notice, ObservationFile, Pull, StageEvent, Tier } from '../core/types.ts'
+import * as g from './git.ts'
+
+export interface Snapshot {
+  repo: string
+  isGit: boolean
+  head: string | null
+  main: string | null
+  autoMergeMax: Tier | 'none'
+  rules: RiskRule[]
+  inputs: ItemInputs[]
+  events: FactoryEvent[] // every event, deduplicated, file order
+  lifecycle: LifecycleEvent[]
+  observations: ObservationFile[]
+  github: GitHubStatus & { repo?: string }
+  notices: Notice[]
+}
+
+type Origin = WorkFile['origin']
+interface Source {
+  origin: Origin
+  ref?: string // git ref for branch/main
+  path: string // repo-relative file path
+  read: () => Promise<{ text: string; time: string }>
+}
+
+const FOLDER = /^([A-Za-z0-9._]+)-([A-Za-z0-9._-]+)$/
+const readText = (p: string) => readFile(p, 'utf8').then((s) => s, () => null)
+const listDir = (p: string) => readdir(p, { withFileTypes: true }).then((d) => d, () => [])
+const ORDER: Record<Origin, number> = { worktree: 0, branch: 1, main: 2 }
+
+export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status: GitHubStatus }): Promise<Snapshot> {
+  const notices: Notice[] = []
+  const isGit = await g.isRepo(repo)
+  const head = isGit ? await g.headBranch(repo) : null
+  const main = isGit ? await g.mainRef(repo) : null
+  if (!isGit) notices.push({ level: 'info', source: 'git', message: 'not a git repository: showing the working tree only (no branches, commits or main)' })
+  else if (!main) notices.push({ level: 'warn', source: 'git', message: 'no main or master branch found' })
+
+  // policy and rules (rules from main, as CI reads them)
+  const policyText = await readText(join(repo, 'factory/policy.env'))
+  const policy = policyText === null ? null : parsePolicy(policyText)
+  if (!policy) notices.push({ level: 'warn', source: 'factory/policy.env', message: 'missing; assuming AUTO_MERGE_MAX_TIER=none' })
+  else if (!policy.ok) notices.push({ level: 'error', source: 'factory/policy.env', message: policy.error, raw: policy.raw })
+  const autoMergeMax = policy?.ok ? policy.value.autoMergeMax : 'none'
+  let rulesText: string | null = null
+  if (main) rulesText = await g.git(repo, ['show', `${main}:factory/risk-rules.txt`]).catch(() => null)
+  rulesText ??= await readText(join(repo, 'factory/risk-rules.txt'))
+  if (rulesText === null) notices.push({ level: 'warn', source: 'factory/risk-rules.txt', message: 'missing; every path classifies as R1' })
+  const rules = parseRiskRules(rulesText ?? '')
+
+  // ---- collect every copy of every file we care about, by origin ----
+  const sources: Source[] = []
+  // A checkout rewrites mtimes, so a tracked, unmodified file takes its last commit time;
+  // only modified or untracked files use the mtime.
+  const dirty = isGit ? await g.dirtyPaths(repo, ['work/']) : null
+  const worktreeTime = async (rel: string) => {
+    if (dirty && !dirty.has(rel)) {
+      const c = await g.lastCommitTime(repo, 'HEAD', rel)
+      if (c) return c
+    }
+    return (await stat(join(repo, rel))).mtime.toISOString()
+  }
+  for (const d of await listDir(join(repo, 'work'))) {
+    if (!d.isDirectory() || !FOLDER.test(d.name)) continue
+    for (const f of await listDir(join(repo, 'work', d.name))) {
+      if (!f.isFile()) continue
+      const rel = `work/${d.name}/${f.name}`
+      sources.push({ origin: 'worktree', path: rel, read: async () => ({ text: (await readText(join(repo, rel))) ?? '', time: f.name === 'BLOCKED.md' ? await worktreeTime(rel) : (await stat(join(repo, rel))).mtime.toISOString() }) })
+    }
+  }
+  for (const dir of ['tests/acceptance', 'memory/observations']) {
+    for (const f of await listDir(join(repo, dir))) {
+      if (!f.isFile()) continue
+      const rel = `${dir}/${f.name}`
+      sources.push({ origin: 'worktree', path: rel, read: async () => ({ text: (await readText(join(repo, rel))) ?? '', time: (await stat(join(repo, rel))).mtime.toISOString() }) })
+    }
+  }
+
+  const branches = isGit ? await g.workBranches(repo) : []
+  const blobRefs: { origin: Origin; ref: string; time: string; entries: g.TreeEntry[] }[] = []
+  if (main) {
+    const entries = await g.lsTree(repo, main, ['work/', 'tests/acceptance/', 'memory/observations/'])
+    blobRefs.push({ origin: 'main', ref: main, time: '', entries })
+  }
+  for (const b of branches) {
+    const folder = b.name.slice('work/'.length)
+    const id = FOLDER.exec(folder)![1]!
+    const entries = (await g.lsTree(repo, b.ref, [`work/${folder}/`, 'tests/acceptance/', 'memory/observations/'])).filter(
+      (e) => e.path.startsWith(`work/${folder}/`) || e.path.startsWith(`tests/acceptance/${id}-`) || new RegExp(`^memory/observations/\\d{4}-\\d{2}-\\d{2}-${id}-`).test(e.path),
+    )
+    blobRefs.push({ origin: 'branch', ref: b.ref, time: b.time, entries })
+  }
+  // main history first: when each folder reached main, and reverts
+  const onMain = new Map<string, { at: string; sha: string; files: string[] }>()
+  const revertedSha = new Map<string, { at: string; ref: string; title: string }>()
+  if (main) {
+    for (const c of (await g.commits(repo, main)).reverse()) {
+      for (const f of c.files) {
+        const m = /^work\/([^/]+)\//.exec(f)
+        if (m && !onMain.has(m[1]!)) onMain.set(m[1]!, { at: c.time, sha: c.sha, files: c.files })
+      }
+      const rv = /This reverts commit ([0-9a-f]{40})/.exec(c.body)
+      if (rv) revertedSha.set(rv[1]!, { at: c.time, ref: c.sha.slice(0, 8), title: c.subject })
+    }
+    // a reverted item's folder is gone from main's tree: read it from the commit that merged it
+    const inMain = new Set(blobRefs[0]?.entries.map((e) => /^work\/([^/]+)\//.exec(e.path)?.[1]).filter(Boolean))
+    for (const [folder, c] of onMain) {
+      if (inMain.has(folder)) continue
+      const id = FOLDER.exec(folder)?.[1]
+      const entries = (await g.lsTree(repo, c.sha, [`work/${folder}/`, 'tests/acceptance/'])).filter((e) => e.path.startsWith(`work/${folder}/`) || e.path.startsWith(`tests/acceptance/${id}-`))
+      blobRefs.push({ origin: 'main', ref: c.sha, time: c.at, entries })
+    }
+  }
+  const blobs = await g.readBlobs(repo, blobRefs.flatMap((r) => r.entries.map((e) => e.sha)))
+  for (const r of blobRefs) {
+    for (const e of r.entries) {
+      sources.push({
+        origin: r.origin,
+        ref: r.ref,
+        path: e.path,
+        read: async () => ({
+          text: blobs.get(e.sha) ?? '',
+          // only BLOCKED.md needs an exact time (state depends on it); the rest use the ref's time
+          time: e.path.endsWith('/BLOCKED.md') ? ((await g.lastCommitTime(repo, r.ref, e.path)) ?? r.time) : r.time,
+        }),
+      })
+    }
+  }
+
+  // ---- events: the live stream plus every per-item events.jsonl, deduplicated by line ----
+  const events: FactoryEvent[] = []
+  const seen = new Set<string>()
+  const addEvents = (text: string, source: string, partialTail: boolean) => {
+    const r = parseEvents(text, source, { partialTail })
+    notices.push(...r.notices)
+    for (const e of r.events) {
+      if (seen.has(e.key)) continue
+      seen.add(e.key)
+      events.push(e)
+    }
+  }
+  const live = await readText(join(repo, '.factory/events.jsonl'))
+  if (live !== null) addEvents(live, '.factory/events.jsonl', true)
+  for (const s of sources.filter((s) => s.path.endsWith('/events.jsonl')).sort((a, b) => ORDER[a.origin] - ORDER[b.origin])) {
+    addEvents((await s.read()).text, `${s.path}${s.ref ? ` @${s.ref}` : ''}`, s.origin === 'worktree')
+  }
+  const stageEvents = events.filter((e): e is StageEvent => e.type === 'stage')
+  const lifecycle = events.filter((e): e is LifecycleEvent => e.type === 'lifecycle')
+  for (const e of stageEvents) if (!e.work_id) notices.push({ level: 'warn', source: 'events', message: `stage event without work_id (${e.stage} ${e.status} at ${e.ts}) cannot be tied to an item` })
+
+  // ---- GitHub ----
+  const issues = new Map<string, Issue>()
+  const pulls = new Map<string, Pull>()
+  const revertedPr = new Map<number, { at: string; ref: string; title: string }>()
+  for (const i of gh.data?.issues ?? []) issues.set(String(i.number), i)
+  for (const p of gh.data?.pulls ?? []) {
+    const m = /^work\/([A-Za-z0-9._]+)-/.exec(p.headRefName)
+    if (m) {
+      const prev = pulls.get(m[1]!)
+      const rank = (x: Pull) => (x.state === 'OPEN' ? 2 : x.state === 'MERGED' ? 1 : 0)
+      if (!prev || rank(p) > rank(prev) || (rank(p) === rank(prev) && Date.parse(p.createdAt) > Date.parse(prev.createdAt))) pulls.set(m[1]!, p)
+    }
+    const rv = /Reverts [\w.-]+\/[\w.-]+#(\d+)/.exec(p.body)
+    if (p.state === 'MERGED' && /^Revert "/.test(p.title) && rv) revertedPr.set(Number(rv[1]), { at: p.mergedAt ?? p.createdAt, ref: `PR #${p.number}`, title: p.title })
+  }
+
+  // ---- the item universe ----
+  const ids = new Set<string>()
+  const folderNames = new Map<string, Set<string>>()
+  for (const s of sources) {
+    const m = /^work\/([^/]+)\//.exec(s.path)
+    const fm = m && FOLDER.exec(m[1]!)
+    if (!fm) continue
+    ids.add(fm[1]!)
+    if (!folderNames.has(fm[1]!)) folderNames.set(fm[1]!, new Set())
+    folderNames.get(fm[1]!)!.add(m![1]!)
+  }
+  for (const b of branches) ids.add(FOLDER.exec(b.name.slice(5))![1]!)
+  for (const e of events) if ((e.type === 'stage' || e.type === 'lifecycle') && e.work_id) ids.add(e.work_id)
+  for (const [id, i] of issues) if (i.labels.some((l) => l.startsWith('factory:') && l !== 'factory:improvement')) ids.add(id)
+  for (const id of pulls.keys()) ids.add(id)
+
+  const inputs: ItemInputs[] = []
+  for (const id of ids) {
+    const itemNotices: Notice[] = []
+    const branch = branches.find((b) => b.name.startsWith(`work/${id}-`))
+    const names = [...(folderNames.get(id) ?? [])]
+    const folder = branch?.name.slice(5) ?? names[0]
+    if (names.length > 1) itemNotices.push({ level: 'warn', source: `item #${id}`, message: `more than one work folder for #${id}: ${names.join(', ')}; using ${folder}` })
+    const slug = folder ? FOLDER.exec(folder)?.[2] : undefined
+
+    // files: per file, worktree beats branch beats main
+    const files: ItemInputs['files'] = {}
+    for (const name of WORK_FILES) {
+      const cands = sources
+        .filter((s) => s.path === `work/${folder}/${name}` || names.some((n) => s.path === `work/${n}/${name}`))
+        .filter((s) => s.origin !== 'branch' || s.ref === branch?.ref)
+        .sort((a, b) => ORDER[a.origin] - ORDER[b.origin])
+      const pick = cands[0]
+      if (pick) {
+        const { text, time } = await pick.read()
+        files[name as WorkFileName] = { path: pick.path, text, time, origin: pick.origin }
+      }
+    }
+
+    // acceptance test references: lines that name AC-<n>
+    const testRefs: TestRef[] = []
+    const testSrc = new Map<string, Source>()
+    for (const s of sources.filter((s) => s.path.startsWith(`tests/acceptance/${id}-`)).sort((a, b) => ORDER[a.origin] - ORDER[b.origin])) {
+      if (s.origin === 'branch' && s.ref !== branch?.ref) continue
+      if (!testSrc.has(s.path)) testSrc.set(s.path, s)
+    }
+    for (const s of testSrc.values()) {
+      const { text } = await s.read()
+      text.split('\n').forEach((line, i) => {
+        for (const m of line.matchAll(/\bAC[-_ ]?(\d+)\b/gi)) testRefs.push({ ac: `AC-${Number(m[1])}`, file: s.path, line: i + 1, text: line.trim().slice(0, 200) })
+      })
+    }
+
+    const pull = pulls.get(id)
+    const om = folder ? onMain.get(folder) ?? names.map((n) => onMain.get(n)).find(Boolean) : undefined
+    let changed: string[] | undefined
+    if (pull?.files.length) changed = pull.files.map((f) => f.path)
+    else if (branch && main && !om) changed = await g.changedFiles(repo, main, branch.ref)
+    else if (om) changed = om.files
+
+    inputs.push({
+      id,
+      slug,
+      files,
+      stageEvents: stageEvents.filter((e) => e.work_id === id),
+      lifecycle: lifecycle.filter((e) => e.work_id === id),
+      issue: issues.get(id),
+      pull,
+      branch: branch?.name,
+      onMain: om ? { at: om.at, sha: om.sha } : undefined,
+      changedFiles: changed,
+      testRefs,
+      revertedBy: (pull && revertedPr.get(pull.number)) ?? (om ? revertedSha.get(om.sha) : undefined),
+      notices: itemNotices,
+    })
+  }
+
+  // observations: one file per item, newest copy wins
+  const obsByName = new Map<string, Source>()
+  for (const s of sources.filter((s) => s.path.startsWith('memory/observations/') && s.path.endsWith('.md')).sort((a, b) => ORDER[a.origin] - ORDER[b.origin])) {
+    if (!obsByName.has(s.path)) obsByName.set(s.path, s)
+  }
+  const observations: ObservationFile[] = []
+  for (const s of obsByName.values()) {
+    const r = parseObservationFile(s.path, (await s.read()).text)
+    observations.push(r.value)
+    notices.push(...r.notices)
+  }
+
+  return {
+    repo,
+    isGit,
+    head,
+    main,
+    autoMergeMax,
+    rules,
+    inputs,
+    events,
+    lifecycle,
+    observations,
+    github: { ...gh.status, repo: gh.data?.repo },
+    notices,
+  }
+}
