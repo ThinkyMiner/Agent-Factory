@@ -212,7 +212,10 @@ item state in the demo data" by construction.
 - **Memory:** three views.
   - Lessons: each with evidence chips linking to items, its age and the enforcement level, plus a counter out of 40.
   - Observations: FTS search with filters for stage, priority and item.
-  - Patterns: observation stage × week counts.
+    *(Changed in build: all-words substring search in the browser over the one memory payload,
+    virtualised. A factory with ~1,000 items has ~10,000 observations, which this handles
+    instantly. Move to FTS5 in the SQLite index when the payload gets too large to send.)*
+  - Patterns: observation stage × week counts. Each count opens the observations behind it.
 - **Improvement:** open `factory:improvement` PRs and a table of reflection changes, with
   the prediction and what happened since.
 - **Factory:**
@@ -223,6 +226,15 @@ item state in the demo data" by construction.
   - hooks and permissions
 
   Each file is flagged if it differs from `main`, uncommitted or on a branch.
+  *(Changed in build: "differs" means a local change, either a commit on the checked-out branch
+  since it left `main` or an uncommitted edit. A branch that is only behind `main` is not
+  drift, and those files show `main`'s copy. The policy is now read from `main` too, like
+  the rules, because CI reads both from `main`. `.claude/worktrees/` is skipped and never
+  watched.)*
+- **Needs you** *(changed in build)* also lists open `factory:improvement` pull requests above
+  the auto-merge tier. Their tier is the highest of the `risk:` label and the files,
+  classified with `main`'s rules. They are R2 by path, so they wait for `human-approved`
+  like any other R2 pull request.
 - **Audits:** a list, newest first, rendered.
 
 **Vocabulary everywhere:**
@@ -320,3 +332,6 @@ Each phase ends with:
 12. Move the `L-000` format example in `lessons.md` into a comment.
 13. Align the observer's stage names with the pipeline's, or document the mapping.
 14. Record when a permission prompt or question is answered (for example a `UserPromptSubmit` or `PostToolUse` telemetry hook), so "Claude Code is waiting" clears at once.
+15. Have observations cite the lessons they support or contradict (`Supports: L-3`). "No supporting observation in 60 days means removal" cannot be computed today, so the Memory screen shows only each lesson's age.
+16. Give audits YAML front matter with the counts and the autonomy recommendation (`keep | raise | lower`). Audits can then be charted next to the Quality numbers they summarise.
+17. Quote spec titles in front matter, or document that front matter is read line by line. A colon in a title breaks every YAML parser, although `validate-spec.sh` accepts it.

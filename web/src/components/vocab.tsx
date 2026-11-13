@@ -10,6 +10,7 @@ import {
   CircleMinus,
   CircleSlash,
   CircleX,
+  FileDiff,
   GitMerge,
   GitPullRequest,
   Hand,
@@ -22,7 +23,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { NeedsKind, Stage, State, StageView, Tier } from '@/lib/api'
+import type { Drift, NeedsKind, Stage, State, StageView, Tier } from '@/lib/api'
 
 type Tone = 'pass' | 'fail' | 'block' | 'run' | 'wait' | 'muted' | 'attention'
 const TONE_TEXT: Record<Tone, string> = {
@@ -191,6 +192,27 @@ export function StageDots({ stages }: { stages: { stage: Stage; status: StageVie
           <StatusGlyph status={s.status} className="size-3" />
         </span>
       ))}
+    </span>
+  )
+}
+
+/** Tab trigger look, shared by every tabbed page. */
+export const TAB = 'data-[state=active]:border-fg -mb-px border-b-2 border-transparent px-2.5 py-1.5 whitespace-nowrap text-muted hover:text-fg data-[state=active]:font-medium data-[state=active]:text-fg'
+
+/** An observation's priority: a bracketed word, never colour alone. */
+export function PriorityTag({ p }: { p: string }) {
+  return <span className={cn('font-medium whitespace-nowrap', p === 'high' ? 'text-fail' : p === 'med' ? 'text-block' : 'text-muted')}>[{p}]</span>
+}
+
+/** A factory file that differs from main: what CI and new runs use is main's copy. */
+export function DriftFlag({ f, className }: { f?: { drift: Drift; where?: string } | null; className?: string }) {
+  if (!f || f.drift === 'same') return null
+  const what = f.drift === 'modified' ? 'differs from main' : f.drift === 'added' ? 'not on main' : 'deleted here, still on main'
+  const where = f.where === 'branch' ? 'committed on this branch' : 'uncommitted'
+  return (
+    <span className={cn('inline-flex items-center gap-1 rounded-full bg-attention-bg px-2 py-0.5 text-[11.5px] font-medium whitespace-nowrap text-attention', className)} title="CI and new /work runs use the copy on main">
+      <FileDiff aria-hidden className="size-3.5" />
+      {what} · {where}
     </span>
   )
 }

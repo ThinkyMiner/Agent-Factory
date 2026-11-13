@@ -79,7 +79,7 @@ describe('http server (read-only)', () => {
   test('every non-GET method on every path is refused, and nothing changes', async () => {
     const before = (await call(`${srv.url}/api/state`)).body
     for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
-      for (const path of ['/api/state', '/api/items/32', '/api/actions/approve', '/api/actions/mark-ready', '/api/actions/answer', '/', '/board']) {
+      for (const path of ['/api/state', '/api/items/32', '/api/factory/file', '/api/memory', '/api/actions/approve', '/api/actions/mark-ready', '/api/actions/answer', '/', '/board']) {
         const r = await call(`${srv.url}${path}`, { method, headers: { 'content-type': 'application/json', origin: srv.url, 'x-control-room-token': srv.token }, body: '{"pr":132,"issue":37}' })
         expect(r.status, `${method} ${path}`).toBe(405)
       }
@@ -94,6 +94,14 @@ describe('http server (read-only)', () => {
     expect((await call(`${srv.url}/api/items/32/diff?file=db/migrations/0007_audit_log.sql`)).status).toBe(200)
     expect((await call(`${srv.url}/api/items/32/diff?file=${encodeURIComponent('../../../../etc/passwd')}`)).status).toBe(404)
     expect((await call(`${srv.url}/api/items/32/diff?file=factory/policy.env`)).status).toBe(404)
+  })
+  test('factory files only for paths the loader listed', async () => {
+    const r = await call(`${srv.url}/api/factory/file?path=factory/risk-rules.txt`)
+    expect(r.status).toBe(200)
+    expect(JSON.parse(r.body).diff).toContain('+R2 src/reports/*')
+    for (const p of ['../../../../etc/passwd', 'factory/../../../etc/passwd', '/etc/passwd', 'src/index.ts', 'work/23-delete-account/spec.md'])
+      expect((await call(`${srv.url}/api/factory/file?path=${encodeURIComponent(p)}`)).status, p).toBe(404)
+    for (const p of ['/api/memory', '/api/improvement', '/api/factory', '/api/audits']) expect((await call(`${srv.url}${p}`)).status, p).toBe(200)
   })
   test('static paths cannot leave the web build', async () => {
     for (const p of ['/../package.json', '/%2e%2e/%2e%2e/etc/passwd', '/assets/../../server/cli.ts']) {

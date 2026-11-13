@@ -1,7 +1,7 @@
 // Loads every screen against the demo, checks the "done means" behaviours that need a browser,
 // and writes screenshots to docs/screenshots/.
 import { expect, test, type Page } from '@playwright/test'
-import { appendFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DEMO_DIR } from '../playwright.config'
 
@@ -20,7 +20,8 @@ test('control room: needs you first, running, merged', async ({ page }) => {
   await page.goto('/')
   const needs = page.getByRole('region', { name: /needs you/i })
   await expect(needs).toBeVisible()
-  await expect(needs.getByRole('listitem')).toHaveCount(10)
+  await expect(needs.getByRole('listitem')).toHaveCount(11)
+  await expect(needs.getByRole('listitem').filter({ hasText: 'PR #141' })).toContainText('failing: risk-gate')
   await expect(needs).toContainText('Should deleting an account also delete the expenses')
   await expect(needs).toContainText('db/migrations/0007_audit_log.sql')
   await expect(page.getByRole('region', { name: /running now/i })).toContainText('reviewer')
@@ -140,6 +141,85 @@ test('quality: every number opens the items behind it', async ({ page }) => {
   expect(errors).toEqual([])
 })
 
+test('memory: lessons link to their evidence, observations are searchable, patterns open their rows', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/memory')
+  await expect(page.getByText('5 of 40 lessons')).toBeVisible()
+  const lessons = page.getByRole('tabpanel')
+  for (const l of await lessons.getByRole('listitem').all()) await expect(l.getByRole('link').first()).toHaveAttribute('href', /^\/items\/\d+$/)
+  await shot(page, 'memory-lessons')
+  await lessons.getByRole('listitem').filter({ hasText: 'L-1' }).getByRole('link', { name: '#12' }).click()
+  await expect(page).toHaveURL(/\/items\/12$/)
+  await page.goto('/memory/observations')
+  await page.getByRole('searchbox', { name: 'Search observations' }).fill('agents skip the review')
+  const list = page.getByRole('list', { name: 'Observations' })
+  await expect(list.getByRole('listitem')).toHaveCount(1)
+  await expect(list).toContainText('not acted on')
+  await expect(page).toHaveURL(/q=agents/)
+  await shot(page, 'memory-observations')
+  await page.goto('/memory/patterns')
+  await shot(page, 'memory-patterns')
+  const cell = page.getByRole('link', { name: /review observations, week of/ }).first()
+  const n = Number(await cell.innerText())
+  await cell.click()
+  await expect(page).toHaveURL(/stage=review&week=/)
+  await expect(page.getByRole('list', { name: 'Observations' }).getByRole('listitem')).toHaveCount(n)
+  expect(errors).toEqual([])
+})
+
+test('improvement: the open improvement PR, and whether each prediction held', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/improvement')
+  const pr = page.getByRole('listitem').filter({ hasText: '#141' })
+  await expect(pr).toContainText('Waiting for your approval')
+  await expect(pr).toContainText('risk-gate failed')
+  const table = page.getByRole('table')
+  await expect(table.getByRole('row').filter({ hasText: 'Run make accept before committing a build' })).toContainText('no effect')
+  await expect(table.getByRole('row').filter({ hasText: 'Membership check on every write path' })).toContainText('worked')
+  await expect(table.getByRole('row').filter({ hasText: 'Name acceptance tests after their criterion' })).toContainText('not checked yet')
+  await expect(page.getByText('1 worked · 1 no effect · 0 made things worse · 1 not checked yet')).toBeVisible()
+  await shot(page, 'improvement')
+  await page.goto('/quality')
+  await expect(page.getByRole('region', { name: "Did /reflect's predictions hold?" })).toContainText('1 worked')
+  expect(errors).toEqual([])
+})
+
+test('factory: config read-only, local drift from main flagged, classify a path', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/factory')
+  const drift = page.getByRole('status', { name: 'Differences from main' })
+  await expect(drift).toContainText('1 file differs from main')
+  await expect(drift).toContainText('factory/risk-rules.txt')
+  await expect(drift).toContainText('uncommitted')
+  await expect(page.getByText('AUTO_MERGE_MAX_TIER=R1')).toBeVisible()
+  await page.getByLabel('Classify a path').fill('src/reports/export.ts')
+  const rules = page.getByRole('region', { name: 'Risk rules' })
+  await expect(rules.getByText('main (CI uses)').locator('..')).toContainText('R1')
+  await expect(rules.getByText('working tree', { exact: true }).locator('..')).toContainText('R2')
+  await expect(page.getByRole('region', { name: 'Agents' })).toContainText('model: opus')
+  await shot(page, 'factory')
+  await drift.getByRole('button', { name: 'factory/risk-rules.txt' }).click()
+  await expect(page).toHaveURL(/file=factory%2Frisk-rules.txt|file=factory\/risk-rules.txt/)
+  await expect(page.getByText('+R2 src/reports/*')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('audits: newest first, rendered, and the script in one stays text', async ({ page }) => {
+  const errors = watchErrors(page)
+  let dialogs = 0
+  page.on('dialog', (d) => (dialogs++, void d.dismiss()))
+  await page.goto('/audits')
+  const article = page.getByRole('article')
+  await expect(article.getByRole('heading', { name: 'Autonomy recommendation' })).toBeVisible()
+  await expect(article.locator('code', { hasText: "<script>alert('audit text is untrusted" })).toBeVisible()
+  await expect(article.locator('script')).toHaveCount(0)
+  await shot(page, 'audits')
+  await page.getByRole('navigation', { name: 'Audits' }).getByRole('link').last().click()
+  await expect(page).toHaveURL(/\/audits\/\d{4}-\d{2}-\d{2}$/)
+  expect(dialogs).toBe(0)
+  expect(errors).toEqual([])
+})
+
 test('live: a new BLOCKED.md puts the item in "needs you" within seconds', async ({ page }) => {
   await page.goto('/')
   const needs = page.getByRole('region', { name: /needs you/i })
@@ -158,6 +238,20 @@ test('live: appending a stage event moves the card without a refresh', async ({ 
   appendFileSync(join(REPO, '.factory/events.jsonl'), JSON.stringify({ ts, type: 'stage', work_id: '39', branch: 'main', stage: 'intake', status: 'started', round: '0' }) + '\n')
   await expect(inProgress).toContainText('Archive a group', { timeout: 5_000 })
   await expect(ready).not.toContainText('Archive a group')
+})
+
+test('live: a new audit appears without a refresh, flagged as not on main', async ({ page }) => {
+  await page.goto('/audits')
+  await expect(page.getByRole('article')).toBeVisible()
+  const file = join(REPO, 'docs/factory/audits/2026-11-20.md')
+  writeFileSync(file, '# Audit 2026-11-20\n\n## Counts\n- Items merged: 0\n')
+  try {
+    const link = page.getByRole('navigation', { name: 'Audits' }).getByRole('link', { name: /2026-11-20/ })
+    await expect(link).toBeVisible({ timeout: 5000 })
+    await expect(link).toContainText('not committed to main')
+  } finally {
+    rmSync(file)
+  }
 })
 
 test('a malformed file produces a notice, not an error page', async ({ page }) => {

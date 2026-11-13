@@ -9,6 +9,10 @@ import { Board } from './pages/Board'
 import { Item } from './pages/Item'
 import { Runs } from './pages/Runs'
 import { Quality } from './pages/Quality'
+import { Memory } from './pages/Memory'
+import { Improvement } from './pages/Improvement'
+import { FactoryConfig } from './pages/FactoryConfig'
+import { Audits } from './pages/Audits'
 import { Empty } from './components/States'
 
 try {
@@ -32,6 +36,10 @@ const router = createBrowserRouter([
       { path: '/items/:id/:tab?', element: <Item /> },
       { path: '/runs', element: <Runs /> },
       { path: '/quality', element: <Quality /> },
+      { path: '/memory/:tab?', element: <Memory /> },
+      { path: '/improvement', element: <Improvement /> },
+      { path: '/factory', element: <FactoryConfig /> },
+      { path: '/audits/:date?', element: <Audits /> },
       { path: '*', element: <div className="p-5"><Empty title="Nothing here">That page does not exist.</Empty></div> },
     ],
   },

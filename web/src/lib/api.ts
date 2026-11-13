@@ -3,11 +3,14 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ApiState, ItemDetail, RunsResponse } from '../../../server/core/api.ts'
 import type { Quality } from '../../../server/core/quality.ts'
+import type { AuditsView, FactoryView, ImprovementView, MemoryView, MetaFile } from '../../../server/core/meta.ts'
+import type { GitHubStatus } from '../../../server/core/types.ts'
 
 export type { ApiState, ItemDetail, ItemSummary, RunRow, RunsResponse } from '../../../server/core/api.ts'
 export type { Quality, Metric, Point, Part } from '../../../server/core/quality.ts'
 export type { NeedsEntry, RunningEntry, StageView, NeedsKind, State, Column } from '../../../server/core/derive.ts'
 export type { Tier, Stage, Notice } from '../../../server/core/types.ts'
+export type { AuditsView, Drift, FactoryView, ImprovementView, MemoryView, Prediction } from '../../../server/core/meta.ts'
 
 export class HttpError extends Error {
   constructor(readonly status: number, message: string) {
@@ -31,6 +34,13 @@ export const useItem = (id: string) => useQuery({ queryKey: ['item', id], queryF
 
 export const useRuns = () => useQuery({ queryKey: ['runs'], queryFn: () => getJson<RunsResponse>('/api/runs') })
 export const useQuality = (weeks: number) => useQuery({ queryKey: ['quality', weeks], queryFn: () => getJson<Quality>(`/api/quality?weeks=${weeks}`), placeholderData: keepPreviousData })
+
+export const useMemory = () => useQuery({ queryKey: ['memory'], queryFn: () => getJson<MemoryView>('/api/memory') })
+export const useImprovement = () => useQuery({ queryKey: ['improvement'], queryFn: () => getJson<ImprovementView & { github: GitHubStatus }>('/api/improvement') })
+export const useFactoryConfig = () => useQuery({ queryKey: ['factory'], queryFn: () => getJson<FactoryView>('/api/factory') })
+export const useFactoryFile = (path: string | null) =>
+  useQuery({ enabled: !!path, queryKey: ['factory-file', path], queryFn: () => getJson<MetaFile & { diff: string | null }>(`/api/factory/file?path=${encodeURIComponent(path!)}`) })
+export const useAudits = () => useQuery({ queryKey: ['audits'], queryFn: () => getJson<AuditsView>('/api/audits') })
 
 /** Subscribe to server changes; returns whether the stream is connected. */
 export function useLiveUpdates(): boolean {

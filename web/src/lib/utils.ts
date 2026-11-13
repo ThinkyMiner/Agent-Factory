@@ -25,3 +25,11 @@ const COMPACT = new Intl.NumberFormat(undefined, { notation: 'compact', maximumF
 export const compact = (n: number) => COMPACT.format(n)
 /** "3 Nov" from a YYYY-MM-DD week start, read as a local date. */
 export const day = (ymd: string) => new Date(`${ymd}T00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+const ymdOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+/** The Monday (local) of the week holding a YYYY-MM-DD date; weeks match the Quality screen. */
+export function monday(ymd: string, plusWeeks = 0): string {
+  const d = new Date(`${ymd}T00:00`)
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + plusWeeks * 7)
+  return ymdOf(d)
+}
+export const today = () => ymdOf(new Date())

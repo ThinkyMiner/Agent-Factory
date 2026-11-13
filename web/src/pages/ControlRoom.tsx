@@ -60,11 +60,11 @@ function NeedsYou({ entries }: { entries: NeedsEntry[] }) {
       <ul>
         {entries.map((n) => (
           <li key={`${n.kind}-${n.id}`} className={cn('group border-b border-l-[3px] border-border last:border-b-0', TONE_BORDER[needsTone(n.kind)])}>
-            <Link to={`/items/${n.id}`} className="grid grid-cols-[6.5rem_1fr_auto] items-baseline gap-x-3 gap-y-1 px-4 py-2.5 hover:bg-surface-2 focus-visible:bg-surface-2 max-sm:grid-cols-[1fr_auto]">
+            <Link to={n.href ?? `/items/${n.id}`} className="grid grid-cols-[6.5rem_1fr_auto] items-baseline gap-x-3 gap-y-1 px-4 py-2.5 hover:bg-surface-2 focus-visible:bg-surface-2 max-sm:grid-cols-[1fr_auto]">
               <NeedsTag kind={n.kind} className="max-sm:col-span-2" />
               <span className="min-w-0">
                 <span className="flex flex-wrap items-baseline gap-x-2">
-                  <ItemId id={n.id} link={false} />
+                  {n.label ? <span className="font-mono text-[12px] text-muted">{n.label}</span> : <ItemId id={n.id} link={false} />}
                   <span className="font-medium">{n.title}</span>
                 </span>
                 <span className={cn('mt-0.5 block text-muted', n.kind === 'answer' && 'text-[13.5px] text-fg')}>

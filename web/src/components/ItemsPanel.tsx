@@ -78,3 +78,25 @@ export function ItemsPanel({ drill, onClose }: { drill: Drill | null; onClose: (
     </Dialog.Root>
   )
 }
+
+/** Evidence links: each id goes to its item; an id the factory does not know is shown as such. */
+export function ItemRefs({ ids }: { ids: string[] }) {
+  const { data } = useApiState()
+  if (!ids.length) return <span className="text-[12px] text-block">no evidence ids</span>
+  return (
+    <span className="inline-flex flex-wrap gap-1">
+      {ids.map((id) => {
+        const item = data?.items.find((i) => i.id === id)
+        return item ? (
+          <Link key={id} to={`/items/${id}`} title={item.title} className="rounded border border-border bg-surface-2 px-1 font-mono text-[11.5px] hover:border-border-strong hover:underline">
+            #{id}
+          </Link>
+        ) : (
+          <span key={id} title="No work item with this id in this factory" className="rounded border border-dashed border-border px-1 font-mono text-[11.5px] text-muted">
+            #{id} not found
+          </span>
+        )
+      })}
+    </span>
+  )
+}

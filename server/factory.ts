@@ -10,6 +10,8 @@ import type { GitHubData } from './core/types.ts'
 import type { ItemDetail, RunRow, RunsResponse } from './core/api.ts'
 import { stageResult } from './core/derive.ts'
 import { quality } from './core/quality.ts'
+import { auditsView, factoryView, improvementView, memoryView } from './core/meta.ts'
+import { metaDiff } from './sources/meta.ts'
 import type { StageEvent } from './core/types.ts'
 import { transcriptSummary } from './sources/transcripts.ts'
 import { summary } from './core/api.ts'
@@ -28,7 +30,7 @@ export interface FactoryOptions {
 
 export type Change = { version: number; reason: string }
 
-const IGNORE = /^(?:\.git\/(?:objects|logs|lfs|hooks|modules)\/|\.git\/(?:index|FETCH_HEAD|ORIG_HEAD|COMMIT_EDITMSG)$|node_modules\/|dist\/|\.venv\/)/
+const IGNORE = /^(?:\.git\/(?:objects|logs|lfs|hooks|modules)\/|\.git\/(?:index|FETCH_HEAD|ORIG_HEAD|COMMIT_EDITMSG)$|node_modules\/|dist\/|\.venv\/|\.claude\/worktrees\/)/
 
 export function dataDirFor(repo: string) {
   const real = realpathSync(repo)
@@ -104,7 +106,7 @@ export class Factory {
           this.dirty = false
           const next = await computeState(this.repo, this.gh, { staleMinutes: this.opts.staleMinutes })
           // ponytail: full recompute (~150 ms on 36 items); go incremental if a real factory makes this slow
-          const fp = createHash('sha1').update(JSON.stringify([next.items.map(summary), next.needsYou, next.running, next.snap.notices, next.snap.github, next.runs])).digest('hex')
+          const fp = createHash('sha1').update(JSON.stringify([next.items.map(summary), next.needsYou, next.running, next.snap.notices, next.snap.github, next.runs, next.meta.map((f) => [f.path, f.drift, f.where, f.text])])).digest('hex')
           this.state = next
           if (fp !== this.fingerprint) {
             this.fingerprint = fp
@@ -195,6 +197,19 @@ export class Factory {
     const tokensByItem = new Map<string, number>()
     if (tokensAvailable) for (const r of runs) if (r.tokens && r.workId) tokensByItem.set(r.workId, (tokensByItem.get(r.workId) ?? 0) + r.tokens.total)
     return quality({ items: this.state.items, tokensByItem, escapedIssues: this.state.snap.escapedIssues, now: Date.now(), weeks })
+  }
+
+  memory = () => memoryView(this.state.meta, this.state.snap.observations)
+  improvement = () => ({ ...improvementView(this.state.meta, this.gh.data?.pulls ?? []), github: this.state.snap.github })
+  factory = () => factoryView(this.state.meta)
+  audits = () => auditsView(this.state.meta)
+
+  /** One factory file and its changes against main; only paths the loader listed. */
+  async factoryFile(path: string) {
+    const f = this.state.meta.find((x) => x.path === path)
+    if (!f) return null
+    const main = this.state.snap.main
+    return { ...f, diff: main && f.drift === 'modified' ? await metaDiff(this.repo, main, path) : null }
   }
 
   async itemDetail(id: string): Promise<ItemDetail | null> {

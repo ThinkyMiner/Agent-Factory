@@ -600,7 +600,12 @@ export interface NeedsEntry extends Needs {
   title: string
   tier?: Tier
   stage?: Stage
+  label?: string // shown instead of "#id" for entries that are not work items (an improvement PR)
+  href?: string // where the row goes, instead of the item page
 }
+
+/** Needs-you order: by kind, then oldest first. */
+export const byNeeds = (a: Needs, b: Needs) => NEEDS_ORDER.indexOf(a.kind) - NEEDS_ORDER.indexOf(b.kind) || t(a.since) - t(b.since)
 
 export function deriveAll(inputs: ItemInputs[], ctx: Context) {
   const items = inputs.map((i) => deriveItem(i, ctx)).filter((x): x is ItemView => x !== null)
@@ -608,7 +613,7 @@ export function deriveAll(inputs: ItemInputs[], ctx: Context) {
   const needsYou: NeedsEntry[] = items
     .filter((i) => i.needs)
     .map((i) => ({ ...i.needs!, id: i.id, title: i.title, tier: i.tier, stage: i.stage }))
-    .sort((a, b) => NEEDS_ORDER.indexOf(a.kind) - NEEDS_ORDER.indexOf(b.kind) || t(a.since) - t(b.since))
+    .sort(byNeeds)
   const byId = new Map(items.map((i) => [i.id, i]))
   const running: RunningEntry[] = []
   for (const i of items) {

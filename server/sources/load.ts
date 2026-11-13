@@ -45,8 +45,10 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
   if (!isGit) notices.push({ level: 'info', source: 'git', message: 'not a git repository: showing the working tree only (no branches, commits or main)' })
   else if (!main) notices.push({ level: 'warn', source: 'git', message: 'no main or master branch found' })
 
-  // policy and rules (rules from main, as CI reads them)
-  const policyText = await readText(join(repo, 'factory/policy.env'))
+  // policy and rules from main, as CI reads them; the working tree only when there is no main
+  let policyText: string | null = null
+  if (main) policyText = await g.git(repo, ['show', `${main}:factory/policy.env`]).catch(() => null)
+  policyText ??= await readText(join(repo, 'factory/policy.env'))
   const policy = policyText === null ? null : parsePolicy(policyText)
   if (!policy) notices.push({ level: 'warn', source: 'factory/policy.env', message: 'missing; assuming AUTO_MERGE_MAX_TIER=none' })
   else if (!policy.ok) notices.push({ level: 'error', source: 'factory/policy.env', message: policy.error, raw: policy.raw })

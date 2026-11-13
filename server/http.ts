@@ -88,6 +88,14 @@ export async function startServer(factory: Factory, opts: ServerOptions): Promis
           const weeks = Math.min(52, Math.max(4, Number(url.searchParams.get('weeks')) || 12))
           return send(res, 200, await factory.quality(weeks))
         }
+        if (path === '/api/memory') return send(res, 200, factory.memory())
+        if (path === '/api/improvement') return send(res, 200, factory.improvement())
+        if (path === '/api/factory') return send(res, 200, factory.factory())
+        if (path === '/api/audits') return send(res, 200, factory.audits())
+        if (path === '/api/factory/file') {
+          const f = await factory.factoryFile(url.searchParams.get('path') ?? '')
+          return f ? send(res, 200, f) : send(res, 404, { error: 'not a factory file' })
+        }
         const item = /^\/api\/items\/([A-Za-z0-9._]+)$/.exec(path)
         if (item) {
           const d = await factory.itemDetail(item[1]!)

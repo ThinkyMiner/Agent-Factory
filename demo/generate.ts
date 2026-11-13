@@ -502,6 +502,7 @@ export function generate(out: string, nowMs = Date.now()) {
   commit(`Audit ${day(nowMs - 14 * DAY)}`, nowMs - 14 * DAY)
   write(`memory/reflections/${day(r2)}.md`, reflection2(day(r1), day(r2)))
   write(`docs/factory/audits/${day(r2 - HOUR)}.md`, audit(day(r2 - HOUR), 1, 3))
+  write('.claude/rules/acceptance-tests.md', `---\npaths:\n  - "tests/acceptance/**"\n---\n\nName each acceptance test after the criterion it proves (AC-n), so the lock and the review can find it.\n`)
   commit(`Reflect ${day(r2)} (#120)`, r2)
   github.pulls.push({
     number: 141, title: `Reflect ${day(nowMs)}: promote the gate lesson to a check`, state: 'OPEN', headRefName: `factory/reflect-${day(nowMs)}`, labels: ['factory:improvement', 'risk:R2'],
@@ -514,6 +515,8 @@ export function generate(out: string, nowMs = Date.now()) {
     run(['checkout', '-q', b.branch])
     for (const [f, text] of Object.entries(b.folderFiles)) write(`work/${b.sc.id}-${b.sc.slug}/${f}`, text)
   }
+  // an uncommitted local edit to the risk rules: CI reads main's copy, so the Factory screen flags it
+  write('factory/risk-rules.txt', readFileSync(join(repo, 'factory/risk-rules.txt'), 'utf8') + 'R2 src/reports/*\n')
   const blockedLater = S.find((s) => s.blockedUncommitted)!
   const bpath = `work/${blockedLater.id}-${blockedLater.slug}/BLOCKED.md`
   write(bpath, blockedFor(blockedLater))

@@ -8,6 +8,7 @@ import { ArrowLeft, ExternalLink, FileWarning, GitCommitHorizontal, Radio, Shiel
 import { getText, HttpError, useItem, useNow, type ItemDetail, type StageView } from '@/lib/api'
 import { ago, cn, compact, duration, when } from '@/lib/utils'
 import { Md, Raw } from '@/components/Markdown'
+import { Patch } from '@/components/Patch'
 import { Empty, ErrorState, Loading } from '@/components/States'
 import { CopyCommand } from './ControlRoom'
 import { Mono, NEEDS, NeedsTag, STATUS, StageLabel, StateBadge, Status, StatusGlyph, TierChip, TONE_BORDER, needsTone } from '@/components/vocab'
@@ -374,30 +375,7 @@ function Diff({ id, file }: { id: string; file: string }) {
   const { data, error, isLoading } = useQuery({ queryKey: ['diff', id, file], queryFn: () => getText(`/api/items/${encodeURIComponent(id)}/diff?file=${encodeURIComponent(file)}`) })
   if (isLoading) return <Loading rows={6} label="Loading diff" />
   if (error) return <Empty title="No diff available">{error instanceof HttpError && error.status === 404 ? 'The branch or commit for this change is not in the local repository.' : String(error)}</Empty>
-  const lines = (data ?? '').split('\n')
-  const shown = lines.slice(0, 4000)
-  return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-surface font-mono text-[12px] leading-[1.5]">
-      <div className="sticky left-0 border-b border-border px-3 py-1.5 text-muted">{file}</div>
-      <pre>
-        {shown.map((l, i) => (
-          <div
-            key={i}
-            className={cn(
-              'px-3 whitespace-pre',
-              l.startsWith('+') && !l.startsWith('+++') && 'bg-pass-bg',
-              l.startsWith('-') && !l.startsWith('---') && 'bg-fail-bg',
-              l.startsWith('@@') && 'text-run',
-              /^(diff|index|---|\+\+\+)/.test(l) && 'text-muted',
-            )}
-          >
-            {l || ' '}
-          </div>
-        ))}
-      </pre>
-      {lines.length > shown.length && <div className="px-3 py-2 text-muted">Diff truncated at {shown.length} lines.</div>}
-    </div>
-  )
+  return <Patch text={data ?? ''} title={file} />
 }
 
 function GatesTab({ item }: { item: ItemDetail }) {

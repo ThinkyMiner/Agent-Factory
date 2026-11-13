@@ -4,7 +4,8 @@
 // stacked segments, hairline grid, legend for 2+ series, a tooltip on hover and focus, a table twin.
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useSearchParams } from 'react-router'
-import { useQuality, type Metric, type Point } from '@/lib/api'
+import { Link } from 'react-router'
+import { useImprovement, useQuality, type Metric, type Point } from '@/lib/api'
 import { cn, compact, day } from '@/lib/utils'
 import { PageHeader } from '@/components/Layout'
 import { Empty, ErrorState, Loading } from '@/components/States'
@@ -296,6 +297,22 @@ function Card({ m, weeks, pick }: { m: Metric; weeks: number; pick: (d: Drill) =
   )
 }
 
+/** Job 3's last question: did /reflect's changes do what they said they would? Details on Improvement. */
+function Predictions() {
+  const { data } = useImprovement()
+  if (!data?.predictions.length) return null
+  const s = data.summary
+  return (
+    <section aria-labelledby="q-predictions" className="rounded-lg border border-border bg-surface p-4">
+      <h2 id="q-predictions" className="font-semibold">Did /reflect's predictions hold?</h2>
+      <p className="mt-1 tabular">
+        {s.worked} worked · {s.noEffect} no effect · {s.worse} made things worse · {s.unchecked} not checked yet.{' '}
+        <Link to="/improvement" className="text-run hover:underline">Each change, its prediction and the check</Link>
+      </p>
+    </section>
+  )
+}
+
 export function Quality() {
   const [params, setParams] = useSearchParams()
   const weeks = WEEKS.includes(Number(params.get('weeks'))) ? Number(params.get('weeks')) : 12
@@ -349,6 +366,7 @@ export function Quality() {
                 <Card key={m.key} m={m} weeks={weeks} pick={setDrill} />
               ))}
             </div>
+            <Predictions />
             {!q!.metrics.some((m) => m.key === 'tokens') && (
               <p className="text-[12px] text-muted">Token cost is hidden: no transcript on this machine could be read for these items.</p>
             )}
