@@ -1,17 +1,29 @@
-// control-room <factory-path> | --demo   [--stale-minutes N] [--print]
+// control-room <factory-path> | --demo   [options]
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
-import { existsSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { existsSync, statSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { generate } from '../demo/generate.ts'
 import { COLUMNS } from './core/derive.ts'
-import { computeState, readDemoGitHub } from './state.ts'
+import { Factory, type FactoryOptions } from './factory.ts'
+import { startServer } from './http.ts'
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const WEB = join(ROOT, 'dist', 'web')
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     demo: { type: 'boolean', default: false },
+    'demo-dir': { type: 'string' },
+    'data-dir': { type: 'string' },
+    port: { type: 'string', default: '4317' },
     'stale-minutes': { type: 'string', default: '30' },
+    offline: { type: 'boolean', default: false },
+    'github-interval': { type: 'string', default: '60' },
+    open: { type: 'boolean', default: false },
     print: { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h', default: false },
   },
@@ -20,50 +32,81 @@ const { values, positionals } = parseArgs({
 const USAGE = `usage: npm start -- <factory-repo-path> [options]
        npm start -- --demo [options]
 
-  --demo               generate a fake factory in ~/.control-room/demo and open it
-  --stale-minutes N    a run with no event for N minutes needs you (default 30)
-  --print              print the derived board and exit`
+  --demo                 generate a fake factory in ~/.control-room/demo and open that
+  --demo-dir DIR         where --demo writes its factory (it is replaced on every start)
+  --port N               preferred port on 127.0.0.1 (default 4317; the next free one is used if taken)
+  --stale-minutes N      a run with no event for N minutes needs you (default 30)
+  --data-dir DIR         where the cache lives (default ~/.control-room/<repo>-<hash>; safe to delete)
+  --offline              do not call GitHub; show cached GitHub data as stale
+  --github-interval S    seconds between GitHub refreshes (default 60)
+  --open                 open the browser
+  --print                print the derived board and exit`
 
-if (values.help || (!values.demo && positionals.length !== 1)) {
-  console.log(USAGE)
-  process.exit(values.help ? 0 : 2)
-}
-const staleMinutes = Number(values['stale-minutes'])
-if (!Number.isFinite(staleMinutes) || staleMinutes <= 0) {
-  console.error('--stale-minutes must be a positive number')
+const fail = (msg: string): never => {
+  console.error(`${msg}\n\n${USAGE}`)
   process.exit(2)
 }
+if (values.help) {
+  console.log(USAGE)
+  process.exit(0)
+}
+if (!values.demo && positionals.length !== 1) fail('give a factory repo path, or --demo')
+const num = (name: string, v: string, min: number) => {
+  const n = Number(v)
+  if (!Number.isFinite(n) || n < min) fail(`--${name} must be a number >= ${min}`)
+  return n
+}
+const staleMinutes = num('stale-minutes', values['stale-minutes']!, 1)
+const port = num('port', values.port!, 1)
 
-let repo: string
-let gh
+let opts: FactoryOptions
 if (values.demo) {
-  const out = join(homedir(), '.control-room', 'demo')
+  const out = resolve(values['demo-dir'] ?? join(homedir(), '.control-room', 'demo'))
   const d = generate(out)
-  repo = d.repo
-  gh = await readDemoGitHub(d.github)
+  opts = { repo: d.repo, dataDir: join(out, '.data'), staleMinutes, github: { kind: 'demo', path: d.github }, transcriptsRoot: d.transcripts }
 } else {
-  repo = resolve(positionals[0]!)
-  if (!existsSync(repo)) {
-    console.error(`no such directory: ${repo}`)
-    process.exit(2)
+  const repo = resolve(positionals[0]!)
+  if (!existsSync(repo) || !statSync(repo).isDirectory()) fail(`not a directory: ${repo}`)
+  opts = {
+    repo,
+    dataDir: values['data-dir'] ? resolve(values['data-dir']) : undefined,
+    staleMinutes,
+    github: values.offline ? { kind: 'off', reason: 'started with --offline' } : { kind: 'gh', intervalMs: num('github-interval', values['github-interval']!, 10) * 1000 },
+    transcriptsRoot: join(homedir(), '.claude', 'projects'),
   }
-  gh = { status: { state: 'unavailable' as const, error: 'GitHub is not wired up yet (phase 1)' } }
 }
 
-const s = await computeState(repo, gh, { staleMinutes })
-console.log(`factory ${repo}${s.snap.isGit ? '' : ' (not a git repo)'} · policy AUTO_MERGE_MAX_TIER=${s.snap.autoMergeMax} · GitHub ${s.snap.github.state}`)
-console.log(`\nNEEDS YOU (${s.needsYou.length})`)
-for (const n of s.needsYou) console.log(`  ${n.kind.padEnd(13)} #${n.id.padEnd(4)} ${n.summary}`)
-console.log(`\nRUNNING (${s.running.length})`)
-for (const r of s.running) console.log(`  #${r.workId.padEnd(4)} ${String(r.stage).padEnd(7)} ${r.agentType}`)
-for (const col of COLUMNS) {
-  const items = s.items.filter((i) => i.column === col)
-  console.log(`\n${col.toUpperCase()} (${items.length})`)
-  for (const i of items) console.log(`  #${i.id.padEnd(4)} ${(i.tier ?? '--').padEnd(3)} ${i.state.padEnd(18)} ${i.title}${i.flags.length ? `  [${i.flags.join(', ')}]` : ''}`)
+const factory = new Factory(opts)
+await factory.start()
+
+if (values.print) {
+  const s = factory.state
+  console.log(`factory ${opts.repo}${s.snap.isGit ? '' : ' (not a git repo)'} · AUTO_MERGE_MAX_TIER=${s.snap.autoMergeMax} · GitHub ${s.snap.github.state}`)
+  console.log(`\nNEEDS YOU (${s.needsYou.length})`)
+  for (const n of s.needsYou) console.log(`  ${n.kind.padEnd(13)} #${n.id.padEnd(4)} ${n.summary}`)
+  for (const col of COLUMNS) {
+    const items = s.items.filter((i) => i.column === col)
+    console.log(`\n${col.toUpperCase()} (${items.length})`)
+    for (const i of items) console.log(`  #${i.id.padEnd(4)} ${(i.tier ?? '--').padEnd(3)} ${i.state.padEnd(18)} ${i.title}${i.flags.length ? `  [${i.flags.join(', ')}]` : ''}`)
+  }
+  factory.stop()
+  process.exit(0)
 }
-if (!s.items.length) console.log('\nNo work items yet. Run /groom, label an issue factory:ready, then /work <id>.')
-const notices = [...s.snap.notices, ...s.items.flatMap((i) => i.notices)]
-if (notices.length) {
-  console.log(`\nNOTICES (${notices.length})`)
-  for (const n of notices) console.log(`  ${n.level.padEnd(5)} ${n.source}: ${n.message}`)
+
+if (!existsSync(join(WEB, 'index.html'))) {
+  console.log('Building the web app (first run)...')
+  const { build } = await import('vite')
+  await build({ configFile: join(ROOT, 'vite.config.ts'), logLevel: 'warn' })
 }
+
+const srv = await startServer(factory, { port, webDir: WEB, actions: false, demo: values.demo! })
+console.log(`control room for ${opts.repo}\n  ${srv.url}\n  read-only · GitHub: ${opts.github.kind === 'gh' ? `every ${values['github-interval']} s` : opts.github.kind}`)
+if (values.open) execFile('open', [srv.url], () => {})
+
+const shutdown = async () => {
+  factory.stop()
+  await srv.close()
+  process.exit(0)
+}
+process.on('SIGINT', shutdown)
+process.on('SIGTERM', shutdown)

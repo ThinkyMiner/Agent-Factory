@@ -107,9 +107,14 @@ describe('parseSpec', () => {
     const r = parseSpec('---\nid: [oops\nrisk_floor: R1\n---\nbody')
     expect(r.ok).toBe(false)
     if (!r.ok) {
-      expect(r.error).toMatch(/not valid YAML/)
+      expect(r.error).toMatch(/id is missing or still a placeholder/)
       expect(r.raw).toContain('[oops')
     }
+  })
+  test('frontmatter is read line by line, as validate-spec.sh does: a colon in the title is fine', () => {
+    const r = parseSpec(SPEC.replace('title: Settle up between members', 'title: Member roles: owner and member').replace('id: 12', 'id: "12"'))
+    expect(r.ok && r.value.title).toBe('Member roles: owner and member')
+    expect(r.ok && r.value.id).toBe('12')
   })
   test('no frontmatter, unclosed frontmatter and bad enum values are errors', () => {
     expect(parseSpec('## Problem\nx').ok).toBe(false)

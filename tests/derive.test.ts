@@ -215,11 +215,12 @@ describe('tier, documents and what nobody verified', () => {
   test('not verified: review, PR body, criteria without tests, missing review', () => {
     const r = derive({
       stageEvents: RUN_TO_PR(),
-      pull: pull({ body: '## Not verified\n- rollback\n' }),
+      pull: pull({ body: '## Not verified\n- rollback\n- Concurrency.\n' }),
       files: { 'spec.md': file(SPEC()), 'review.md': file(REVIEW('pass', 'R1', '- concurrency')) },
       testRefs: [{ ac: 'AC-1', file: 'tests/acceptance/1-x.test.ts', line: 3, text: "test('AC-1')" }],
     })
     expect(r.notVerified.map((x) => x.text)).toEqual(['concurrency', 'rollback', 'AC-2 has no acceptance test that names it'])
+    expect(r.notVerified[0]!.source).toBe('review.md, PR #101 body')
     const none = derive({ stageEvents: [se('tests', 'skipped', 5)], pull: pull(), files: { 'spec.md': file(SPEC('R0', 'none')) } })
     expect(none.notVerified.map((x) => x.text)).toEqual(['acceptance tests were skipped (spec says tests: none)', 'no review.md: the independent review is not on record'])
   })

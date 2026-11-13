@@ -480,6 +480,15 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
     }
   }
   if ((state === 'merged' || pr) && !review) notVerified.push({ text: 'no review.md: the independent review is not on record', source: 'work folder' })
+  // the PR body usually repeats the review's list: one line per point, every source named
+  const seenNv = new Map<string, NotVerified>()
+  for (const n of notVerified.splice(0)) {
+    const k = n.text.toLowerCase().replace(/[\s.]+$/g, '').replace(/\s+/g, ' ')
+    const prev = seenNv.get(k)
+    if (prev) prev.source += `, ${n.source}`
+    else seenNv.set(k, { ...n })
+  }
+  notVerified.push(...seenNv.values())
 
   const title = (spec?.ok && spec.value.title) || issue?.title || pr?.title || inp.slug || `#${inp.id}`
   const curStage = lastStage ? stages.find((s) => s.stage === lastStage.stage) : undefined

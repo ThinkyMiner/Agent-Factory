@@ -1,7 +1,6 @@
 // Parsers for the files the factory writes. Pure, total: they never throw.
 // A file that cannot be parsed comes back as { ok:false, error, raw } so the UI can show
 // a notice and the raw text instead of an error page.
-import { parse as parseYaml } from 'yaml'
 import {
   LifecycleEventSchema,
   SpecFrontmatterSchema,
@@ -80,18 +79,24 @@ export function parseEvents(text: string, source: string, opts: { partialTail?: 
 
 // ---------- markdown helpers ----------
 
-export function splitFrontmatter(text: string): { data?: unknown; body: string; error?: string } {
-  const t = text.replace(/\r\n?/g, '\n').replace(/^﻿/, '')
+/**
+ * Frontmatter the way factory/scripts/validate-spec.sh reads it: one `key: value` per line,
+ * matched by pattern, not parsed as YAML. (A title like "Roles: owner and member" is invalid
+ * YAML but valid to the factory, so a YAML parser would reject specs the factory accepted.)
+ */
+export function splitFrontmatter(text: string): { data?: Record<string, string>; body: string; error?: string } {
+  const t = text.replace(/\r\n?/g, '\n').replace(/^\uFEFF/, '')
   if (!t.startsWith('---\n')) return { body: t, error: 'no frontmatter (expected a leading --- block)' }
-  const end = t.indexOf('\n---', 4)
+  const end = t.indexOf('\n---', 3)
   if (end < 0) return { body: t, error: 'frontmatter is not closed with ---' }
   const after = t.indexOf('\n', end + 1)
   const body = after < 0 ? '' : t.slice(after + 1)
-  try {
-    return { data: parseYaml(t.slice(4, end)), body }
-  } catch (e) {
-    return { body, error: `frontmatter is not valid YAML: ${(e as Error).message.split('\n')[0]}` }
+  const data: Record<string, string> = {}
+  for (const line of t.slice(4, end).split('\n')) {
+    const m = /^([A-Za-z_][\w-]*):[ \t]*(.*?)[ \t]*$/.exec(line)
+    if (m && !(m[1]! in data)) data[m[1]!] = m[2]!.replace(/^(["'])(.*)\1$/, '$2')
   }
+  return { data, body }
 }
 
 /** "## Heading" sections, keyed by lowercased heading. */

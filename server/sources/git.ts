@@ -2,6 +2,8 @@
 // GIT_OPTIONAL_LOCKS=0 so reading never takes the index lock from under a running factory.
 import { execFile, spawn } from 'node:child_process'
 
+import type { BranchCommit } from '../core/api.ts'
+
 const ENV = { ...process.env, GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0' }
 
 export function git(repo: string, args: string[], timeoutMs = 20000): Promise<string> {
@@ -131,4 +133,29 @@ export async function dirtyPaths(repo: string, paths: string[]): Promise<Set<str
 export async function changedFiles(repo: string, base: string, ref: string): Promise<string[]> {
   const out = await ok(git(repo, ['diff', '--name-only', '-z', `${base}...${ref}`]))
   return (out ?? '').split('\0').filter(Boolean)
+}
+
+
+/** Commits in a range, with their Factory-Stage trailer. `extra` lets a caller pass a single sha. */
+export async function branchCommits(repo: string, range: string, ...extra: string[]): Promise<BranchCommit[]> {
+  const out = await ok(git(repo, ['log', '--format=%H%x1f%cI%x1f%s%x1f%(trailers:key=Factory-Stage,valueonly,separator=%x2c)%x1e', range, ...extra]))
+  return (out ?? '')
+    .split('\x1e')
+    .map((r) => r.trim())
+    .filter(Boolean)
+    .map((r) => {
+      const [sha, time, subject, stage] = r.split('\x1f')
+      return { sha: sha!, time: time!, subject: subject!, stage: stage?.trim() || undefined }
+    })
+}
+
+export async function numstat(repo: string, range: string[]): Promise<Record<string, { additions: number; deletions: number }>> {
+  const out = await ok(git(repo, ['diff', '--numstat', '-z', ...range]))
+  const res: Record<string, { additions: number; deletions: number }> = {}
+  // -z: "<add>\t<del>\t<path>\0" (renames use extra NUL-separated paths; good enough for display)
+  for (const rec of (out ?? '').split('\0')) {
+    const m = /^(\d+|-)\t(\d+|-)\t(.+)$/.exec(rec)
+    if (m) res[m[3]!] = { additions: Number(m[1]) || 0, deletions: Number(m[2]) || 0 }
+  }
+  return res
 }
