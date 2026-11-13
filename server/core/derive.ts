@@ -60,11 +60,13 @@ export interface Session {
   start?: string
   end?: string
   last: LifecycleEvent
+  transcriptPath?: string // the main session transcript, from SessionStart
+  workId?: string // the item it last worked on
 }
 
 export interface AgentRun {
   agentId: string
-  agentType: string
+  agentType: string // a subagent type, or "foreman" for the main session
   sessionId?: string
   workId: string
   stage?: Stage
@@ -180,6 +182,7 @@ export interface ItemView {
   review?: Parsed<Review>
   blocked?: { text: string; summary: string; time: string; stale: boolean; path: string }
   notVerified: NotVerified[]
+  pipelineRuns: PipelineRun[]
   testRefs: TestRef[]
   files: ItemInputs['files']
   lastActivity?: string
@@ -214,7 +217,9 @@ export function indexLifecycle(events: LifecycleEvent[]): { sessions: Map<string
     if (e.session_id) {
       const s = sessions.get(e.session_id) ?? { id: e.session_id, last: e }
       s.last = e
+      if (e.work_id) s.workId = e.work_id
       if (e.event === 'SessionStart' && !s.start) s.start = e.ts
+      if (e.event === 'SessionStart' && e.transcript_path) s.transcriptPath ??= e.transcript_path
       if (e.event === 'SessionEnd') s.end = e.ts
       if (e.event === 'SessionStart' && s.end && t(e.ts) > t(s.end)) s.end = undefined // resumed
       sessions.set(e.session_id, s)
@@ -248,8 +253,56 @@ export function indexLifecycle(events: LifecycleEvent[]): { sessions: Map<string
   for (const run of open.values()) {
     const s = run.sessionId ? sessions.get(run.sessionId) : undefined
     if (s?.end && t(s.end) >= t(run.start)) run.outcome = 'abandoned'
+    // a running subagent's transcript is already being written next to the session's
+    if (s?.transcriptPath && run.agentId) run.transcriptPath = s.transcriptPath.replace(/\.jsonl$/, `/subagents/agent-${run.agentId}.jsonl`)
+  }
+  // the main session is the foreman's run
+  for (const s of sessions.values()) {
+    runs.push({ agentId: `session:${s.id}`, agentType: 'foreman', sessionId: s.id, workId: s.workId ?? '', start: s.start, end: s.end, transcriptPath: s.transcriptPath, outcome: s.end ? 'finished' : 'running' })
   }
   return { sessions, runs }
+}
+
+/** The status of the stage an agent run served: the first terminal event for it after the run started. */
+export function stageResult(run: AgentRun, events: StageEvent[]): StageView['status'] | undefined {
+  if (!run.stage) return undefined
+  const e = sortEvents(events).find((x) => x.work_id === run.workId && x.stage === run.stage && x.status !== 'started' && t(x.ts) >= t(run.start) - 1000)
+  return e ? (e.status as StageView['status']) : run.outcome === 'running' ? 'running' : undefined
+}
+
+export interface PipelineRun {
+  start: string
+  end: string
+  outcome: 'pr' | 'blocked' | 'failed' | 'abandoned' | 'running'
+  stage?: Stage // where a blocked or failed run stopped
+}
+
+/** Split an item's events into /work invocations: each run starts at an intake event. */
+export function pipelineRuns(events: StageEvent[], itemState: State): PipelineRun[] {
+  const sorted = sortEvents(events)
+  const groups: StageEvent[][] = []
+  for (const e of sorted) {
+    const startsRun = e.stage === 'intake' && (e.status === 'started' || !groups.at(-1)?.some((x) => x.stage === 'intake'))
+    if (startsRun || !groups.length) groups.push([])
+    groups.at(-1)!.push(e)
+  }
+  return groups.map((g, i) => {
+    const last = i === groups.length - 1
+    const pipe = g.filter((e) => e.stage !== 'observe')
+    const blocked = pipe.find((e) => e.status === 'blocked')
+    const outcome: PipelineRun['outcome'] = g.some((e) => e.stage === 'pr' && e.status === 'passed')
+      ? 'pr'
+      : blocked
+        ? 'blocked'
+        : last && itemState === 'failed'
+          ? 'failed'
+          : last && itemState === 'in-progress'
+            ? 'running'
+            : last && itemState === 'blocked'
+              ? 'blocked'
+              : 'abandoned'
+    return { start: g[0]!.ts, end: g.at(-1)!.ts, outcome, stage: outcome === 'pr' || outcome === 'running' ? undefined : (blocked ?? pipe.at(-1))?.stage }
+  })
 }
 
 // ---------- stages ----------
@@ -323,7 +376,7 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
   const stale = ctx.staleMinutes * 60000
 
   // session and live agent for this item
-  const itemRuns = ctx.runs.filter((r) => r.workId === inp.id)
+  const itemRuns = ctx.runs.filter((r) => r.workId === inp.id && r.agentType !== 'foreman')
   const liveRun = itemRuns.filter((r) => r.outcome === 'running').at(-1)
   const lastLife = lifecycle.filter((e) => e.session_id).at(-1)
   const session = lastLife?.session_id ? ctx.sessions.get(lastLife.session_id) : undefined
@@ -524,6 +577,7 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
     review,
     blocked,
     notVerified,
+    pipelineRuns: pipelineRuns(events, state),
     testRefs,
     files: inp.files,
     lastActivity: lastActivity !== undefined ? new Date(lastActivity).toISOString() : undefined,

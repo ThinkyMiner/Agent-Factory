@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router'
-import { Cloud, Columns3, LayoutDashboard, Monitor, Moon, Sun, WifiOff } from 'lucide-react'
+import { Activity, ChartColumn, Cloud, Columns3, LayoutDashboard, Monitor, Moon, Sun, WifiOff } from 'lucide-react'
 import { useApiState, useLiveUpdates, useNow } from '@/lib/api'
 import { ago, cn } from '@/lib/utils'
 import { Banner } from './States'
@@ -8,6 +8,8 @@ import { Banner } from './States'
 export const NAV = [
   { to: '/', label: 'Control room', icon: LayoutDashboard, key: 'r' },
   { to: '/board', label: 'Board', icon: Columns3, key: 'b' },
+  { to: '/runs', label: 'Runs', icon: Activity, key: 'u' },
+  { to: '/quality', label: 'Quality', icon: ChartColumn, key: 'q' },
 ]
 
 type Theme = 'system' | 'light' | 'dark'

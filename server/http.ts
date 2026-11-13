@@ -83,6 +83,11 @@ export async function startServer(factory: Factory, opts: ServerOptions): Promis
       try {
         if (path === '/api/state') return send(res, 200, apiState(factory, opts))
         if (path === '/api/stream') return stream(factory, req, res)
+        if (path === '/api/runs') return send(res, 200, await factory.runs())
+        if (path === '/api/quality') {
+          const weeks = Math.min(52, Math.max(4, Number(url.searchParams.get('weeks')) || 12))
+          return send(res, 200, await factory.quality(weeks))
+        }
         const item = /^\/api\/items\/([A-Za-z0-9._]+)$/.exec(path)
         if (item) {
           const d = await factory.itemDetail(item[1]!)

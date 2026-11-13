@@ -281,6 +281,19 @@ export function generate(out: string, nowMs = Date.now()) {
     writeFileSync(p.replace(/\.jsonl$/, '.meta.json'), JSON.stringify({ agentType }))
     return p
   }
+  const writeSessionTranscript = (session: string, start: number, end: number) => {
+    const p = join(tdir, `-demo-tally/${session}.jsonl`)
+    mkdirSync(dirname(p), { recursive: true })
+    const lines: string[] = []
+    for (let i = 0; i < 4; i++) {
+      const at = iso(start + ((end - start) * (i + 1)) / 5)
+      const usage = { input_tokens: 4, cache_creation_input_tokens: i ? 1500 : 24000, cache_read_input_tokens: i * 26000, output_tokens: 300 + Math.floor(rand() * 600) }
+      lines.push(JSON.stringify({ type: 'assistant', timestamp: at, requestId: `req_${session}_${i}`, isSidechain: false, message: { id: `msg_${session}_${i}`, model: 'claude-opus-5-5', role: 'assistant', usage } }))
+    }
+    // an inline sidechain line (older Claude Code): counted in the subagent's file, not here
+    lines.push(JSON.stringify({ type: 'assistant', timestamp: iso(end), requestId: 'req_side', isSidechain: true, message: { id: 'msg_side', model: 'claude-sonnet-5-5', usage: { input_tokens: 1, output_tokens: 999999 } } }))
+    writeFileSync(p, lines.join('\n') + '\n')
+  }
   const MODEL: Record<string, string> = { 'spec-writer': 'claude-opus-5-5', 'test-author': 'claude-sonnet-5-5', builder: 'claude-sonnet-5-5', reviewer: 'claude-opus-5-5', observer: 'claude-sonnet-5-5' }
 
   for (const sc of S) {
@@ -345,6 +358,7 @@ export function generate(out: string, nowMs = Date.now()) {
         if (agentType && p.st.status !== 'skipped') {
           const id = `a${(++agentN).toString(16).padStart(16, '0')}`
           emitLife(at + 5000, sc, 'SubagentStart', { session_id: session, agent_type: agentType, agent_id: id })
+          if (p.st.status === 'started') writeTranscript(session, id, agentType, MODEL[agentType]!, at, nowMs - 30_000) // still being written
           if (p.st.status !== 'started') {
             const path = sc.id === 21 && p.st.stage === 'review' ? join(tdir, `-demo-tally/${session}/subagents/agent-${id}.jsonl`) : writeTranscript(session, id, agentType, MODEL[agentType]!, at, end)
             emitLife(end - 5000, sc, 'SubagentStop', { session_id: session, agent_type: agentType, agent_id: id, transcript_path: path })
@@ -375,6 +389,7 @@ export function generate(out: string, nowMs = Date.now()) {
       const runEnd = r.end ?? 'done'
       const lastAt = base + steps.at(-1)!.end
       if (runEnd === 'waiting') emitLife(nowMs - 10 * MIN, sc, 'Notification', { session_id: session, reason: 'permission_prompt', message: 'Claude needs your permission to use Bash' })
+      writeSessionTranscript(session, sStart, runEnd === 'done' || runEnd === 'died' ? lastAt : nowMs - 60_000)
       if (runEnd === 'done') {
         emitLife(lastAt + 20_000, sc, 'Stop', { session_id: session })
         emitLife(lastAt + 60_000, sc, 'SessionEnd', { session_id: session, reason: 'prompt_input_exit' })

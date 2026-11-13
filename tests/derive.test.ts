@@ -230,6 +230,23 @@ describe('tier, documents and what nobody verified', () => {
   })
 })
 
+describe('pipelineRuns', () => {
+  test('one run per /work invocation, with how it ended', () => {
+    const r = derive({ stageEvents: [se('intake', 'started', 300), se('spec', 'blocked', 290), se('observe', 'passed', 288), se('intake', 'started', 60), se('spec', 'passed', 55), se('pr', 'passed', 40)] })
+    expect(r.pipelineRuns.map((x) => [x.outcome, x.stage])).toEqual([['blocked', 'spec'], ['pr', undefined]])
+    const dead = derive({ stageEvents: [se('intake', 'started', 300), se('gate', 'failed', 200)] })
+    expect(dead.pipelineRuns).toMatchObject([{ outcome: 'failed', stage: 'gate' }])
+  })
+})
+
+describe('stageResult', () => {
+  test('an agent run gets the result of the stage it served', async () => {
+    const { stageResult } = await import('../server/core/derive.ts')
+    const run = { agentId: 'a', agentType: 'reviewer', workId: '1', stage: 'review' as const, start: ago(30), end: ago(20), outcome: 'finished' as const }
+    expect(stageResult(run, [se('review', 'failed', 50), se('review', 'passed', 19)])).toBe('passed')
+  })
+})
+
 describe('buildStages', () => {
   test('attempts, rounds, durations and a terminal event with no start', () => {
     const stages = buildStages([se('gate', 'started', 20), se('gate', 'failed', 18), se('gate', 'started', 10, 1), se('gate', 'passed', 7, 1), se('review', 'passed', 5)])
@@ -249,7 +266,8 @@ describe('indexLifecycle', () => {
       le('SessionStart', 50), le('SubagentStart', 40, { agent_id: 'a' , agent_type: 'builder' }), le('SubagentStop', 30, { agent_id: 'a', agent_type: 'builder', transcript_path: '/t.jsonl' }),
       le('SubagentStop', 20, { agent_id: 'b', agent_type: 'reviewer' }), le('SessionEnd', 15), le('SessionStart', 5),
     ])
-    expect(runs.map((r) => [r.agentType, r.outcome, r.stage, r.transcriptPath])).toEqual([['builder', 'finished', 'build', '/t.jsonl'], ['reviewer', 'finished', 'review', undefined]])
+    expect(runs.filter((r) => r.agentType !== 'foreman').map((r) => [r.agentType, r.outcome, r.stage, r.transcriptPath])).toEqual([['builder', 'finished', 'build', '/t.jsonl'], ['reviewer', 'finished', 'review', undefined]])
+    expect(runs.filter((r) => r.agentType === 'foreman')).toMatchObject([{ agentId: 'session:sess', outcome: 'running', workId: '1' }])
     expect(sessions.get('sess')!.end).toBeUndefined()
   })
 })

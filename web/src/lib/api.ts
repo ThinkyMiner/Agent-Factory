@@ -1,9 +1,11 @@
 // Data access: JSON over fetch, kept fresh by the server's SSE "changed" stream.
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { ApiState, ItemDetail } from '../../../server/core/api.ts'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { ApiState, ItemDetail, RunsResponse } from '../../../server/core/api.ts'
+import type { Quality } from '../../../server/core/quality.ts'
 
-export type { ApiState, ItemDetail, ItemSummary } from '../../../server/core/api.ts'
+export type { ApiState, ItemDetail, ItemSummary, RunRow, RunsResponse } from '../../../server/core/api.ts'
+export type { Quality, Metric, Point, Part } from '../../../server/core/quality.ts'
 export type { NeedsEntry, RunningEntry, StageView, NeedsKind, State, Column } from '../../../server/core/derive.ts'
 export type { Tier, Stage, Notice } from '../../../server/core/types.ts'
 
@@ -26,6 +28,9 @@ export async function getText(path: string): Promise<string> {
 
 export const useApiState = () => useQuery({ queryKey: ['state'], queryFn: () => getJson<ApiState>('/api/state') })
 export const useItem = (id: string) => useQuery({ queryKey: ['item', id], queryFn: () => getJson<ItemDetail>(`/api/items/${encodeURIComponent(id)}`), retry: (n, e) => !(e instanceof HttpError && e.status === 404) && n < 2 })
+
+export const useRuns = () => useQuery({ queryKey: ['runs'], queryFn: () => getJson<RunsResponse>('/api/runs') })
+export const useQuality = (weeks: number) => useQuery({ queryKey: ['quality', weeks], queryFn: () => getJson<Quality>(`/api/quality?weeks=${weeks}`), placeholderData: keepPreviousData })
 
 /** Subscribe to server changes; returns whether the stream is connected. */
 export function useLiveUpdates(): boolean {

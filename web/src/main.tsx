@@ -7,6 +7,8 @@ import { Layout, applyTheme } from './components/Layout'
 import { ControlRoom } from './pages/ControlRoom'
 import { Board } from './pages/Board'
 import { Item } from './pages/Item'
+import { Runs } from './pages/Runs'
+import { Quality } from './pages/Quality'
 import { Empty } from './components/States'
 
 try {
@@ -28,6 +30,8 @@ const router = createBrowserRouter([
       { path: '/', element: <ControlRoom /> },
       { path: '/board', element: <Board /> },
       { path: '/items/:id/:tab?', element: <Item /> },
+      { path: '/runs', element: <Runs /> },
+      { path: '/quality', element: <Quality /> },
       { path: '*', element: <div className="p-5"><Empty title="Nothing here">That page does not exist.</Empty></div> },
     ],
   },

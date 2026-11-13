@@ -58,8 +58,10 @@ describe('demo factory', () => {
     expect(state.byId.get('32')!.needs!.summary).toBe('R2 · db/migrations/0007_audit_log.sql (*migrations/*) · review: pass')
   })
   test('agent runs are paired, with transcripts and stages', () => {
-    const live = state.runs.filter((r) => r.outcome === 'running').map((r) => `${r.workId}:${r.agentType}`).sort()
+    const agents = state.runs.filter((r) => r.agentType !== 'foreman')
+    const live = agents.filter((r) => r.outcome === 'running').map((r) => `${r.workId}:${r.agentType}`).sort()
     expect(live).toEqual(['28:reviewer', '30:test-author', '31:builder'])
-    expect(state.runs.filter((r) => r.outcome === 'finished').every((r) => r.transcriptPath && r.stage)).toBe(true)
+    expect(agents.filter((r) => r.outcome === 'finished').every((r) => r.transcriptPath && r.stage)).toBe(true)
+    expect(state.runs.some((r) => r.agentType === 'foreman' && r.outcome === 'running' && r.workId === '28')).toBe(true)
   })
 })

@@ -21,3 +21,7 @@ export function duration(ms: number | undefined): string {
 }
 export const elapsed = (iso: string | undefined, now: number) => (iso ? duration(now - Date.parse(iso)) : '—')
 export const when = (iso: string | undefined) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '')
+const COMPACT = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 })
+export const compact = (n: number) => COMPACT.format(n)
+/** "3 Nov" from a YYYY-MM-DD week start, read as a local date. */
+export const day = (ymd: string) => new Date(`${ymd}T00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })

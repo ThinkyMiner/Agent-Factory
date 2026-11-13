@@ -1,5 +1,5 @@
 // The JSON the server sends. Pure types plus the summary projection, shared with the web app.
-import type { AgentRun, ItemView, NeedsEntry, RunningEntry } from './derive.ts'
+import type { AgentRun, ItemView, NeedsEntry, RunningEntry, StageView } from './derive.ts'
 import type { Check, GitHubStatus, LifecycleEvent, Notice, ObservationFile, StageEvent, Tier } from './types.ts'
 import type { FileRisk } from './risk.ts'
 
@@ -33,9 +33,24 @@ export interface BranchCommit {
   stage?: string // the Factory-Stage trailer
 }
 
+export interface RunRow extends AgentRun {
+  title?: string
+  durationMs?: number
+  stageResult?: StageView['status']
+  model?: string
+  tokens?: { input: number; output: number; cacheWrite: number; cacheRead: number; total: number }
+  tokensNote?: string // why tokens are missing
+}
+
+export interface RunsResponse {
+  runs: RunRow[]
+  tokensAvailable: boolean // false: hide token figures entirely
+}
+
 export interface ItemDetail extends ItemView {
   events: (StageEvent | LifecycleEvent)[]
-  runs: AgentRun[]
+  runs: RunRow[]
+  tokensAvailable: boolean
   observations: ObservationFile[]
   commits: BranchCommit[]
   changes: (FileRisk & { additions?: number; deletions?: number })[]

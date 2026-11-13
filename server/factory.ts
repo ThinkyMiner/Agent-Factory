@@ -7,7 +7,11 @@ import { realpathSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { homedir } from 'node:os'
 import type { GitHubData } from './core/types.ts'
-import type { ItemDetail } from './core/api.ts'
+import type { ItemDetail, RunRow, RunsResponse } from './core/api.ts'
+import { stageResult } from './core/derive.ts'
+import { quality } from './core/quality.ts'
+import type { StageEvent } from './core/types.ts'
+import { transcriptSummary } from './sources/transcripts.ts'
 import { summary } from './core/api.ts'
 import { computeState, readDemoGitHub, type FactoryState, type GitHubInput } from './state.ts'
 import { Store } from './store.ts'
@@ -165,13 +169,42 @@ export class Factory {
     return this.state.snap.github
   }
 
+  async runs(): Promise<RunsResponse> {
+    const stageEvents = this.state.snap.events.filter((e): e is StageEvent => e.type === 'stage')
+    const now = Date.now()
+    const runs: RunRow[] = await Promise.all(
+      this.state.runs.map(async (r) => {
+        const t = await transcriptSummary(this.store, this.opts.transcriptsRoot, r.transcriptPath, { skipSidechain: r.agentType === 'foreman' })
+        return {
+          ...r,
+          title: this.state.byId.get(r.workId)?.title,
+          durationMs: r.start ? (r.end ? Date.parse(r.end) : now) - Date.parse(r.start) : undefined,
+          stageResult: stageResult(r, stageEvents),
+          model: t.ok ? t.model : undefined,
+          tokens: t.ok ? t.tokens : undefined,
+          tokensNote: t.ok ? undefined : t.reason,
+        }
+      }),
+    )
+    runs.sort((a, b) => Date.parse(b.start ?? b.end ?? '') - Date.parse(a.start ?? a.end ?? ''))
+    return { runs, tokensAvailable: runs.some((r) => r.tokens) }
+  }
+
+  async quality(weeks: number) {
+    const { runs, tokensAvailable } = await this.runs()
+    const tokensByItem = new Map<string, number>()
+    if (tokensAvailable) for (const r of runs) if (r.tokens && r.workId) tokensByItem.set(r.workId, (tokensByItem.get(r.workId) ?? 0) + r.tokens.total)
+    return quality({ items: this.state.items, tokensByItem, escapedIssues: this.state.snap.escapedIssues, now: Date.now(), weeks })
+  }
+
   async itemDetail(id: string): Promise<ItemDetail | null> {
     const item = this.state.byId.get(id)
     if (!item) return null
     const snap = this.state.snap
     const inp = snap.inputs.find((i) => i.id === id)!
     const events = snap.events.filter((e) => (e.type === 'stage' || e.type === 'lifecycle') && e.work_id === id)
-    const runs = this.state.runs.filter((r) => r.workId === id)
+    const all = await this.runs()
+    const runs = all.runs.filter((r) => r.workId === id)
     const observations = snap.observations.filter((o) => o.workId === id)
     let commits: ItemDetail['commits'] = []
     let numstat: Record<string, { additions: number; deletions: number }> = {}
@@ -190,6 +223,7 @@ export class Factory {
       ...item,
       events: events as ItemDetail['events'],
       runs,
+      tokensAvailable: all.tokensAvailable,
       observations,
       commits,
       changes: item.riskFiles.map((f) => ({ ...f, ...(numstat[f.path] ?? {}) })),

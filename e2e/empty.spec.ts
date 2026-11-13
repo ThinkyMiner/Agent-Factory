@@ -10,4 +10,8 @@ test('a new factory: next steps, no GitHub data, every screen has an empty state
   await page.screenshot({ path: 'docs/screenshots/empty-factory.png' })
   await page.goto(EMPTY_URL + '/board')
   await expect(page.getByText('No work items yet')).toBeVisible()
+  await page.goto(EMPTY_URL + '/runs')
+  await expect(page.getByText('No agent runs recorded')).toBeVisible()
+  await page.goto(EMPTY_URL + '/quality')
+  await expect(page.getByText('No history yet')).toBeVisible()
 })

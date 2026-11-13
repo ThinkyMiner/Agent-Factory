@@ -6,7 +6,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { Tabs } from 'radix-ui'
 import { ArrowLeft, ExternalLink, FileWarning, GitCommitHorizontal, Radio, ShieldQuestion } from 'lucide-react'
 import { getText, HttpError, useItem, useNow, type ItemDetail, type StageView } from '@/lib/api'
-import { ago, cn, duration, when } from '@/lib/utils'
+import { ago, cn, compact, duration, when } from '@/lib/utils'
 import { Md, Raw } from '@/components/Markdown'
 import { Empty, ErrorState, Loading } from '@/components/States'
 import { CopyCommand } from './ControlRoom'
@@ -554,6 +554,8 @@ function ActivityTab({ item }: { item: ItemDetail }) {
                 <th className="px-3 py-1.5 font-medium">Started</th>
                 <th className="px-3 py-1.5 text-right font-medium">Took</th>
                 <th className="px-3 py-1.5 font-medium">Outcome</th>
+                <th className="px-3 py-1.5 font-medium">Model</th>
+                {item.tokensAvailable && <th className="px-3 py-1.5 text-right font-medium">Tokens</th>}
               </tr>
             </thead>
             <tbody>
@@ -564,6 +566,12 @@ function ActivityTab({ item }: { item: ItemDetail }) {
                   <td className="px-3 py-1.5 text-muted" title={r.start}>{r.start ? `${ago(r.start, now)} ago` : '—'}</td>
                   <td className="px-3 py-1.5 text-right tabular text-muted">{r.start ? duration((r.end ? Date.parse(r.end) : now) - Date.parse(r.start)) : '—'}</td>
                   <td className="px-3 py-1.5">{r.outcome === 'running' ? <Status status="running" /> : r.outcome === 'abandoned' ? <span className="text-fail">abandoned</span> : <span className="text-muted">finished</span>}</td>
+                  <td className="px-3 py-1.5" title={r.tokensNote}>{r.model ? <Mono className="text-muted">{r.model}</Mono> : <span className="text-faint">—</span>}</td>
+                  {item.tokensAvailable && (
+                    <td className="px-3 py-1.5 text-right tabular" title={r.tokens ? `input ${r.tokens.input}, output ${r.tokens.output}, cache write ${r.tokens.cacheWrite}, cache read ${r.tokens.cacheRead}` : r.tokensNote}>
+                      {r.tokens ? compact(r.tokens.total) : <span className="text-faint">—</span>}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

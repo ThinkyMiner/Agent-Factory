@@ -19,6 +19,7 @@ export interface Snapshot {
   events: FactoryEvent[] // every event, deduplicated, file order
   lifecycle: LifecycleEvent[]
   observations: ObservationFile[]
+  escapedIssues: { number: number; title: string; url: string; createdAt: string }[] // issues labelled escaped-defect
   github: GitHubStatus & { repo?: string }
   notices: Notice[]
 }
@@ -272,6 +273,7 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
     events,
     lifecycle,
     observations,
+    escapedIssues: (gh.data?.issues ?? []).filter((i) => i.labels.includes('escaped-defect')).map((i) => ({ number: i.number, title: i.title, url: i.url, createdAt: i.createdAt })),
     github: { ...gh.status, repo: gh.data?.repo },
     notices,
   }

@@ -25,6 +25,12 @@
   --block-bg: #fdf3e6;
   --run-bg: #ebf2fd;
   --wait-bg: #f2edfd;
+  /* chart series: categorical in fixed order, and an ordinal blue ramp for risk tiers
+     (validated with the dataviz validator against --surface in each theme) */
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+  --series-5: #e87ba4; --series-6: #008300; --series-7: #6250d6; --series-8: #e34948;
+  --series-other: #8e8e88;
+  --tier-0: #86b6ef; --tier-1: #3987e5; --tier-2: #1c5cab; --tier-3: #0d366b;
 }
 .dark {
   --bg: #0e0f11;
@@ -48,6 +54,10 @@
   --block-bg: #261a0b;
   --run-bg: #0f1c30;
   --wait-bg: #1b1530;
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+  --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
+  --series-other: #6b6f77;
+  --tier-0: #184f95; --tier-1: #2a78d6; --tier-2: #6da7ec; --tier-3: #b7d3f6;
 }
 
 @theme inline {
