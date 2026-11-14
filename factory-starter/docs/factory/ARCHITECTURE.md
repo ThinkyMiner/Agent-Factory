@@ -117,7 +117,7 @@ from a second model vendor is a later upgrade for R2 changes.
 | Per-item record | `work/<id>-<slug>/` | The contract and the audit trail for that item |
 | Ideas and objections | `product/INBOX.md` | When grooming |
 | What the factory has learned | `memory/` (see `MEMORY.md`) | `lessons.md` always; observations only by `/reflect` |
-| Live and per-item events | `.factory/events.jsonl`, `work/<id>-<slug>/events.jsonl` | By the control room and `/audit` |
+| Live and per-item events | `.factory/events.jsonl` in the main checkout (one log shared by every worktree, appended under `.factory/events.lock`), `work/<id>-<slug>/events.jsonl` | By the control room and `/audit` |
 
 There is no hidden state. If a session dies, the next one can resume from the
 branch and the work folder. Adding a teammate means adding a reader of these same

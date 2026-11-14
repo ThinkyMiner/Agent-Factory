@@ -22,7 +22,7 @@ need '^## Out of scope'                    "missing '## Out of scope'"
 need '^## Assumptions'                     "missing '## Assumptions'"
 need '^## Blocking questions'              "missing '## Blocking questions'"
 
-if grep -Eq '^- AC-[0-9]+: .*<' "$f"; then
+if grep -Eq -- '^- AC-[0-9]+: .*<' "$f"; then
   echo "spec invalid: an acceptance criterion still contains a <placeholder>" >&2
   fail=1
 fi
@@ -33,7 +33,7 @@ questions=$(awk '
   /^## /                   { on=0 }
   on { line=$0; gsub(/^[ \t-]+|[ \t.]+$/, "", line);
        if (line != "" && tolower(line) != "none") print $0 }
-' "$f")
+' < "$f")
 
 if [ -n "$questions" ]; then
   echo "spec has blocking questions:" >&2

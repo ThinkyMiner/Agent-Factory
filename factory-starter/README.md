@@ -56,7 +56,7 @@ Agents copy what exists. On an empty repository they invent, and each one invent
 something different. The skeleton is what makes their output consistent.
 
 **Day 3: turn on the gates, run one item.**
-- Protect `main`: require the `check`, `secrets` and `risk-gate` jobs to pass, and
+- Protect `main`: require the `check`, `secrets`, `factory-tests` and `risk-gate` jobs to pass, and
   block direct pushes. Allow auto-merge in the repository settings.
 - Create the labels `factory:proposed`, `factory:ready`, `human-approved`,
   `risk:R0`, `risk:R1`, `risk:R2`, `escaped-defect`, `factory:improvement`.

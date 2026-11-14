@@ -2,10 +2,12 @@
 # Append one structured event to the factory's event log.
 #   emit-event.sh <type> key=value [key=value ...]
 #   emit-event.sh stage stage=build status=started round=0
-# Writes to .factory/events.jsonl (local, live, not committed) and, when the
-# current branch is work/<id>-<slug> and its folder exists, also to
-# work/<id>-<slug>/events.jsonl (committed with the item: the durable record).
-# work_id and branch are filled in from the branch name unless passed.
+# Writes to .factory/events.jsonl in the main checkout (local, live, not committed;
+# one log shared by every worktree) and, when the current branch is work/<id>-<slug>
+# and its folder exists, also to work/<id>-<slug>/events.jsonl in this worktree
+# (committed with the item: the durable record). Both appends hold the event lock.
+# work_id and branch are filled in from the branch name unless passed; ts and type
+# always come from this script.
 # Never fails the caller: telemetry must not break a run.
 set -uo pipefail
 
@@ -13,8 +15,10 @@ type="${1:-}"
 [ -n "$type" ] || { echo "usage: emit-event.sh <type> key=value ..." >&2; exit 0; }
 shift
 command -v jq >/dev/null 2>&1 || exit 0
+. "$(dirname "$0")/lib.sh" 2>/dev/null || exit 0
 
 root=$(git rev-parse --show-toplevel 2>/dev/null) || root="$PWD"
+home=$(factory_home "$root")
 branch=$(git -C "$root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 work_id=""
 work_dir=""
@@ -41,8 +45,9 @@ for kv in "$@"; do
   esac
 done
 
+# The script's own ts and type win over a caller's ts= or type=.
+filter="$filter + {ts: \$ts, type: \$type}"
+
 line=$(jq -cn "${args[@]}" "$filter" 2>/dev/null) || exit 0
-mkdir -p "$root/.factory" 2>/dev/null
-echo "$line" >> "$root/.factory/events.jsonl" 2>/dev/null
-[ -n "$work_dir" ] && echo "$line" >> "$work_dir/events.jsonl" 2>/dev/null
+append_event "$home" "$line" "${work_dir:+$work_dir/events.jsonl}"
 exit 0

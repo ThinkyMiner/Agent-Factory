@@ -1,4 +1,4 @@
-# The deterministic gates. Make all three jobs required status checks on main
+# The deterministic gates. Make all four jobs required status checks on main
 # (Settings > Branches or Rulesets) so nothing merges red, including auto-merge.
 name: ci
 on:
@@ -36,6 +36,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # When there is code worth scanning, add a SAST step (for example Semgrep)
       # and your ecosystem's dependency audit here. Tools, not agents.
+
+  factory-tests:
+    # Tests for the factory's own scripts and hooks (factory/tests/). They guard the guards.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: factory/tests/run.sh
 
   risk-gate:
     if: github.event_name == 'pull_request'

@@ -73,7 +73,7 @@ github)
   ok=1
   gh repo edit --enable-auto-merge --delete-branch-on-merge >/dev/null || ok=0
   gh api -X PUT 'repos/{owner}/{repo}/branches/main/protection' --input - >/dev/null <<'JSON' || ok=0
-{"required_status_checks":{"strict":false,"contexts":["check","secrets","risk-gate"]},
+{"required_status_checks":{"strict":false,"contexts":["check","secrets","factory-tests","risk-gate"]},
  "enforce_admins":true,"required_pull_request_reviews":null,"restrictions":null}
 JSON
   if [ "$ok" = 1 ]; then
