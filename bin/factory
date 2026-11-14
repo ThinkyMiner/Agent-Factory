@@ -23,7 +23,7 @@ new)
   cd "$dir"
   rm -rf .factory .claude/settings.local.json # the kit's own session log
   mv README.md docs/factory/README.md         # the product gets its own README
-  chmod +x factory/scripts/*.sh factory/hooks/*.sh
+  chmod +x factory/scripts/*.sh factory/hooks/*.sh factory/tests/run.sh
   git init -q -b main
   git add -A
   git commit -q -m "Factory kit"
@@ -77,7 +77,7 @@ github)
  "enforce_admins":true,"required_pull_request_reviews":null,"restrictions":null}
 JSON
   if [ "$ok" = 1 ]; then
-    echo "Gates on: main needs check, secrets and risk-gate to pass, and takes no direct pushes."
+    echo "Gates on: main needs check, secrets, factory-tests and risk-gate to pass, and takes no direct pushes."
   else
     echo "factory: GitHub refused to protect main or allow auto-merge (see above). On GitHub Free a"
     echo "  private repo cannot have either, so CI runs but does not block merging. Make it public with"
