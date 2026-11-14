@@ -194,7 +194,7 @@ enforced by the guard and by CI.
 
 ## Changing the factory
 
-The factory's own files (`.claude/`, `factory/`, `.github/`, `teams/`) are R2 and blocked
+The factory's own files (`.claude/`, `factory/`, `.github/`, `teams/`, `docs/factory/`) are R2 and blocked
 from normal sessions. To change them, start a session with
 `FACTORY_ALLOW_SELF_EDIT=1 claude`, make the change on its own branch, and read
 the diff yourself. Record why in `docs/decisions/` when the change alters a gate.

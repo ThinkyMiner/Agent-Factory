@@ -174,6 +174,28 @@ tb() {
   FACTORY_TEAM="$1" CLAUDE_PROJECT_DIR="$2" run "$G" < "$TEST_TMP/in"
 }
 
+test_factory_docs_are_protected_except_audits() {
+  edit Write docs/factory/TEAMS.md; blocks "the factory's own docs"
+  bash_cmd 'echo x >> docs/factory/ARCHITECTURE.md'; blocks "appending to the factory's docs"
+  edit Write docs/factory/audits/2026-01-05.md; allows "an audit report (/audit writes these)"
+  edit Write docs/guide.md; allows "product docs"
+  FACTORY_ALLOW_SELF_EDIT=1 edit Write docs/factory/TEAMS.md; allows "a self-edit session"
+}
+
+test_folders_that_hold_controls_are_protected() {
+  local c
+  for c in 'rm -rf factory' 'rm -rf .claude' 'rm -rf factory/' 'mv factory old' 'mv .github /tmp/x' \
+           'rm -rf docs' 'rm -rf docs/factory' 'rm -rf memory' 'chmod -R 000 .claude' 'cp -r /tmp/evil teams'; do
+    bash_cmd "$c"; blocks "$c"
+  done
+  expect_err "holds the factory's own controls"
+  bash_cmd 'mv factory/hooks/guard.sh /tmp/x'; blocks "moving a control file away"
+  bash_cmd 'git mv .claude/settings.json old.json'; blocks "git mv of a control file"
+  bash_cmd 'mkdir -p docs memory'; allows "mkdir of a folder that holds controls"
+  bash_cmd 'rm -rf docs/old'; allows "product docs"
+  FACTORY_ALLOW_SELF_EDIT=1 bash_cmd 'rm -rf factory/old-script'; allows "a self-edit session"
+}
+
 test_team_writes_its_own_paths() {
   team_setup
   tw backend "$BE" Write server/api.js; allows "server/api.js"

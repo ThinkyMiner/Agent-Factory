@@ -13,6 +13,12 @@ test_single_paths() {
   expect_eq "$(tier_of src/auth/session.ts)" R2 "*auth*"
   expect_eq "$(tier_of .claude/settings.json)" R2 .claude
   expect_eq "$(tier_of factory/risk-rules.txt)" R2 factory
+  expect_eq "$(tier_of docs/factory/TEAMS.md)" R2 "the factory's docs, not product docs"
+  expect_eq "$(tier_of docs/factory/audits/2026-01-05.md)" R2 "audits are read by the human"
+  expect_eq "$(tier_of teams/backend/CHARTER.md)" R2 teams
+  expect_eq "$(tier_of CLAUDE.md)" R2 CLAUDE.md
+  expect_eq "$(tier_of product/ROADMAP.md)" R2 ROADMAP
+  expect_eq "$(tier_of product/INBOX.md)" R0 INBOX
   expect_eq "$(tier_of db/migrations/001.sql)" R2 migrations
   expect_eq "$(tier_of .env.local)" R3 .env
   expect_eq "$(tier_of web/.env)" R3 "*/.env*"

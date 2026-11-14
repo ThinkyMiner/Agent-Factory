@@ -4,7 +4,7 @@
 # The pull request's team is the `team:` of the one work folder it carries (work/<id>-<slug>/).
 # Every changed path must then be: that work folder, a path the team owns, or an append-only
 # location that only grew. A pull request that changes only the factory's own files (.claude/,
-# factory/, .github/, teams/, memory/lessons.md, memory/reflections/) and the human's own
+# factory/, .github/, teams/, docs/factory/, memory/lessons.md, memory/reflections/) and the human's own
 # (CLAUDE.md, product/BRIEF.md, product/ROADMAP.md) is the human's change: R2 in
 # risk-rules.txt, so it needs the human-approved label, and it is exempt here.
 # The roster is read from the base branch (or $TEAMS_FILE), never from the pull request, so a
@@ -29,7 +29,7 @@ fi
 jq -e '.teams | type == "object"' "$teams" >/dev/null 2>&1 || { echo "ownership: the roster on $base is unreadable" >&2; exit 1; }
 
 is_factory_path() {
-  case "$1" in .claude/*|factory/*|.github/*|teams/*|memory/lessons.md|memory/reflections/*) return 0 ;; esac
+  case "$1" in .claude/*|factory/*|.github/*|teams/*|docs/factory/*|memory/lessons.md|memory/reflections/*) return 0 ;; esac
   return 1
 }
 is_human_path() {
@@ -75,6 +75,9 @@ bad=0
 while IFS= read -r -d '' f; do
   verdict=""
   case "$f" in "work/$item/"*) verdict="own work folder" ;; esac
+  if [ -z "$verdict" ] && is_factory_path "$f"; then           # even if a roster glob covers it
+    bad=1; verdict="NOT OK: a factory file; factory changes go in their own pull request"
+  fi
   if [ -z "$verdict" ] && team_owns "$teams" "$team" "$f"; then verdict="owned by $team"; fi
   if [ -z "$verdict" ] && is_append_only "$teams" "$f"; then
     if ! git cat-file -e "HEAD:$f" 2>/dev/null; then

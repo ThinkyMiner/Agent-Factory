@@ -56,6 +56,15 @@ test_factory_only_pr_is_exempt() {
   run "$O" main; expect_rc 0; expect_out "factory or human-owned files only"
 }
 
+test_factory_docs_are_factory_files() {
+  setup; mkdir -p docs/factory; echo x > docs/factory/TEAMS.md; echo '#' >> factory/teams.json; commit
+  run "$O" main; expect_rc 0; expect_out "factory or human-owned files only"
+  setup; item 12-share "team: backend"; echo x >> server/a.js; mkdir -p docs/factory; echo x > docs/factory/TEAMS.md; commit
+  jq '.teams.backend.owns += ["docs/*"]' factory/teams.json > "$TEST_TMP/wide.json"
+  TEAMS_FILE="$TEST_TMP/wide.json" run "$O" main; expect_rc 1
+  expect_out "docs/factory/TEAMS.md  (NOT OK: a factory file; factory changes go in their own pull request)"
+}
+
 test_human_owned_files_alone_are_exempt() {
   setup; echo '# Product' > CLAUDE.md; echo brief > product/BRIEF.md; echo '#' >> factory/teams.json; commit
   run "$O" main; expect_rc 0; expect_out "human-owned files only"

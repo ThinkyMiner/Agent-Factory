@@ -18,6 +18,7 @@ R2 product/ROADMAP.md
 R2 docs/architecture.md
 R2 memory/lessons.md
 R2 memory/reflections/*
+R2 docs/factory/*
 R2 .claude/*
 R2 factory/*
 R2 .github/*

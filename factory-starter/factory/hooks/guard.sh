@@ -6,7 +6,7 @@
 # boundaries are branch protection, the CI ownership check and which credentials are on the machine.
 #
 # Always: no writes to .env files, to the factory's own controls (.claude/, factory/, .github/,
-# teams/, memory/lessons.md, memory/reflections/), or to Claude Code's own configuration in
+# teams/, docs/factory/ except its audits/, memory/lessons.md, memory/reflections/), or to Claude Code's own configuration in
 # ~/.claude; no force push, no push to main, no --no-verify, no admin merge, no self-approval.
 # Paths are compared after resolving .. and symlinks, and without case (macOS volumes ignore it).
 # Shell commands are read for the files they write (best effort, see guard-paths.pl).
@@ -82,7 +82,11 @@ check_write() {
       esac ;;
   esac
   case "$rel" in
-    .claude/*|factory/*|.github/*|teams/*|memory/lessons.md|memory/reflections/*)
+    .claude|factory|.github|teams|docs|docs/factory|memory|memory/reflections)   # holds controls
+      [ "$self_edit" = 1 ] || [ "${3:-0}" = 1 ] && return 0   # (mkdir removes nothing)
+      block "$rel holds the factory's own controls; removing, moving or overwriting it is not allowed. Name the file you mean." ;;
+    docs/factory/audits/*) ;;                     # written by /audit
+    .claude/*|factory/*|.github/*|teams/*|docs/factory/*|memory/lessons.md|memory/reflections/*)
       [ "$self_edit" = 1 ] && return 0
       block "$rel is part of the factory's own controls. Stop and report instead of editing it." ;;
   esac

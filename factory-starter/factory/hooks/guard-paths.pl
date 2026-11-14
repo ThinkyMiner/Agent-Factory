@@ -148,7 +148,8 @@ sub targets {
     (my $prog = shift @w) =~ s{.*/}{};
     my @args = grep { !/^-/ } @w;
     if    ($prog eq 'tee')                                   { push @out, @args }
-    elsif ($prog =~ /^(?:cp|mv|install|ln|rsync)$/)          {
+    elsif ($prog eq 'mv')                                    { push @out, @args }   # sources change too
+    elsif ($prog =~ /^(?:cp|install|ln|rsync)$/)             {
       for my $k (0 .. $#w) { push @out, $w[$k + 1] if $w[$k] eq '-t' && defined $w[$k + 1] }
       push @out, $args[-1] if @args;
     }
@@ -182,7 +183,7 @@ sub targets {
         my $seen = 0; for (@w) { if ($_ eq '--') { $seen = 1; next } push @out, $_ if $seen }
       }
       elsif ($sub eq 'rm') { push @out, @args[1 .. $#args] }
-      elsif ($sub eq 'mv' && @args > 2) { push @out, $args[-1] }
+      elsif ($sub eq 'mv' && @args > 2) { push @out, @args[1 .. $#args] }
     }
   }
   # $HOME always expands (a command that resets HOME still gets checked against the real one);
