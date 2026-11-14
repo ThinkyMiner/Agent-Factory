@@ -1,0 +1,43 @@
+# tier  pattern
+# Patterns are bash [[ ]] globs matched against the path from the repo root,
+# and * also matches "/". For each changed file the highest matching tier wins;
+# a file that matches nothing is R1. The change takes the highest tier of any file.
+# CI reads this file from the base branch, so a pull request cannot relax its own gate.
+
+# R0: cannot break the product
+R0 docs/*
+R0 work/*
+R0 *.md
+R0 product/INBOX.md
+R0 memory/observations/*
+
+# R2: needs a human to read the diff
+R2 CLAUDE.md
+R2 product/BRIEF.md
+R2 product/ROADMAP.md
+R2 docs/architecture.md
+R2 memory/lessons.md
+R2 memory/reflections/*
+R2 .claude/*
+R2 factory/*
+R2 .github/*
+R2 Makefile
+R2 *migrations/*
+R2 *schema*
+R2 *auth*
+R2 *permission*
+R2 package.json
+R2 pyproject.toml
+R2 go.mod
+R2 Cargo.toml
+R2 Dockerfile*
+R2 infra/*
+R2 *deploy*
+
+# R3: the factory does not make these changes
+R3 .env*
+R3 */.env*
+R3 *secret*
+R3 *credential*
+R3 *payment*
+R3 *billing*

@@ -1,0 +1,84 @@
+# The deterministic gates. Make all three jobs required status checks on main
+# (Settings > Branches or Rulesets) so nothing merges red, including auto-merge.
+name: ci
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Add your toolchain setup here (for example actions/setup-node), then:
+      - run: make check
+      - run: make accept
+      - name: Acceptance tests unchanged since the tests commit
+        if: github.event_name == 'pull_request'
+        run: factory/scripts/check-acceptance-lock.sh "origin/${{ github.base_ref }}"
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # When there is code worth scanning, add a SAST step (for example Semgrep)
+      # and your ecosystem's dependency audit here. Tools, not agents.
+
+  risk-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Classify risk using the base branch's rules
+        id: risk
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: |
+          # Use main's copy of the classifier and rules, so a pull request
+          # cannot relax its own gate. Fall back to the PR's copy only before
+          # they exist on main.
+          if git cat-file -e "$BASE:factory/scripts/classify-risk.sh" 2>/dev/null; then
+            git show "$BASE:factory/scripts/classify-risk.sh" > /tmp/classify.sh
+            git show "$BASE:factory/risk-rules.txt" > /tmp/rules.txt
+          else
+            cp factory/scripts/classify-risk.sh /tmp/classify.sh
+            cp factory/risk-rules.txt /tmp/rules.txt
+          fi
+          tier=$(RISK_RULES=/tmp/rules.txt bash /tmp/classify.sh "$BASE")
+          echo "tier=$tier" >> "$GITHUB_OUTPUT"
+          echo "Risk tier: $tier" >> "$GITHUB_STEP_SUMMARY"
+      - name: Enforce the human gate
+        env:
+          TIER: ${{ steps.risk.outputs.tier }}
+          APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'human-approved') }}
+        run: |
+          case "$TIER" in
+            R0|R1)
+              echo "No human gate for $TIER." ;;
+            R2)
+              if [ "$APPROVED" != "true" ]; then
+                echo "::error::R2 change. Read the diff, then add the 'human-approved' label."
+                exit 1
+              fi ;;
+            R3)
+              echo "::error::R3 change. The factory does not make these; a human does, outside this pipeline."
+              exit 1 ;;
+            *)
+              echo "::error::Unknown tier '$TIER'."
+              exit 1 ;;
+          esac

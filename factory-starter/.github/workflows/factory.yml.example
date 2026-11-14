@@ -1,0 +1,60 @@
+# Run the factory on GitHub. Copy to factory.yml and add your toolchain setup.
+#   - Label an issue 'factory:ready' and /work builds it, one item at a time.
+#   - Every Monday (or from the Actions tab) /groom proposes the next issues from
+#     the roadmap, labelled 'factory:proposed', for you to pick from.
+#
+# Needs, once per repository:
+#   1. The Claude GitHub app installed on it: https://github.com/apps/claude
+#      (pull requests opened with the workflow's own GITHUB_TOKEN would not start CI).
+#   2. The secret CLAUDE_CODE_OAUTH_TOKEN: run `claude setup-token`, then
+#      `gh secret set CLAUDE_CODE_OAUTH_TOKEN`. It is tied to your account and draws on
+#      your plan's usage limits. For a shared team repo, use an API key instead.
+#
+# Only label issues you wrote or have read. Issue text becomes agent input, so on a
+# public repo an unread issue is a prompt-injection path. Only people with write
+# access can label, which is what keeps strangers' issues from running anything.
+# Input names follow anthropics/claude-code-action@v1.
+name: factory
+on:
+  issues:
+    types: [labeled]
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: factory
+  cancel-in-progress: false   # one run at a time
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+  actions: read
+
+jobs:
+  work:
+    if: github.event_name == 'issues' && github.event.label.name == 'factory:ready'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Toolchain setup for `make check` goes here (the same steps as ci.yml's check job).
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: "/work ${{ github.event.issue.number }}"
+
+  groom:
+    if: github.event_name != 'issues'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: "/groom"

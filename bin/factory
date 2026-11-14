@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# factory: start a new agentic software factory from the factory-starter kit.
+#
+#   factory new <folder> ["what to build"]  copy the kit, git init, open Claude Code to write the
+#                                           brief and build the walking skeleton (kit README, days 1-2)
+#   factory github [--public]               inside the folder, once the skeleton is committed: create
+#                                           the GitHub repo, push, labels, auto-merge, protect main (day 3)
+#   factory watch [folder]                  open the control room on a factory (default: here)
+set -euo pipefail
+
+here=$(dirname "$(readlink -f "$0")")
+kit="$here/../factory-starter"
+room="$here/../control-room"
+die() { echo "factory: $*" >&2; exit 1; }
+
+case "${1:-}" in
+new)
+  [ $# -ge 2 ] || die 'usage: factory new <folder> ["what to build"]'
+  dir=$2 idea=${3:-}
+  if [ -e "$dir" ] && [ -n "$(ls -A "$dir")" ]; then die "$dir is not empty"; fi
+  mkdir -p "$dir"
+  cp -R "$kit/." "$dir/"
+  cd "$dir"
+  rm -rf .factory .claude/settings.local.json # the kit's own session log
+  mv README.md docs/factory/README.md         # the product gets its own README
+  chmod +x factory/scripts/*.sh factory/hooks/*.sh
+  git init -q -b main
+  git add -A
+  git commit -q -m "Factory kit"
+  echo "Factory created in $PWD. Opening Claude Code to write the brief and build the skeleton."
+  IFS= read -r -d '' prompt <<EOF || true
+This folder is a new software factory made from the factory-starter kit
+(docs/factory/README.md explains it). Nothing is built yet.
+What I want to build: ${idea:-ask me first.}
+
+Do the kit's day 1 and day 2 with me:
+
+1. Ask me only what you need for the brief: who it is for, what it must not be,
+   and any stack or hosting constraints. Offer a sensible default for each.
+2. Draft product/BRIEF.md (one page) and the first three outcomes in
+   product/ROADMAP.md. Both are mine: show them and change them until I agree.
+3. Choose the simplest stack that fits and plan a walking skeleton: one thin slice
+   end to end (one page, one route, one unit test; one table if it stores data).
+   No features beyond that; the factory builds those, one /work item at a time.
+4. Once I approve the plan, build it, then:
+   - fill in \`make check\` (lint, typecheck, unit tests), \`make accept\` (runs
+     tests/acceptance/ and passes while it is empty) and \`make dev\` in the Makefile;
+   - write docs/architecture.md, including "How to add a typical feature";
+   - fill in the product name, summary, Commands and Conventions in CLAUDE.md;
+   - add the toolchain setup to .github/workflows/ci.yml where it says so;
+   - copy .github/workflows/factory.yml.example to factory.yml with the same
+     toolchain steps in its work job, so labelled issues get built on GitHub;
+   - write a short README.md for the product.
+5. Run \`make check\` and \`make accept\`, show me both pass, and commit to main.
+   Do not push: I will run \`factory github\` next, which pushes and turns on the gates.
+EOF
+  exec env FACTORY_ALLOW_SELF_EDIT=1 claude --permission-mode plan "$prompt"
+  ;;
+
+github)
+  [ -f factory/policy.env ] || die "run this inside a factory folder"
+  if grep -q "Define 'make check'" Makefile; then
+    die "the skeleton is not done: 'make check' is still the kit's placeholder. Finish day 2 in claude first."
+  fi
+  [ -z "$(git status --porcelain)" ] || die "commit your changes first"
+  vis=--private
+  if [ "${2:-}" = --public ]; then vis=--public; fi
+  git remote get-url origin >/dev/null 2>&1 || gh repo create "$(basename "$PWD")" "$vis" --source . --remote origin
+  git push -u origin main
+  for l in factory:proposed factory:ready factory:improvement human-approved risk:R0 risk:R1 risk:R2 escaped-defect; do
+    gh label create "$l" --force >/dev/null
+  done
+  ok=1
+  gh repo edit --enable-auto-merge --delete-branch-on-merge >/dev/null || ok=0
+  gh api -X PUT 'repos/{owner}/{repo}/branches/main/protection' --input - >/dev/null <<'JSON' || ok=0
+{"required_status_checks":{"strict":false,"contexts":["check","secrets","risk-gate"]},
+ "enforce_admins":true,"required_pull_request_reviews":null,"restrictions":null}
+JSON
+  if [ "$ok" = 1 ]; then
+    echo "Gates on: main needs check, secrets and risk-gate to pass, and takes no direct pushes."
+  else
+    echo "factory: GitHub refused to protect main or allow auto-merge (see above). On GitHub Free a"
+    echo "  private repo cannot have either, so CI runs but does not block merging. Make it public with"
+    echo "  'gh repo edit --visibility public --accept-visibility-change-consequences' or upgrade, then"
+    echo "  run 'factory github' again."
+  fi
+  if [ -f .github/workflows/factory.yml ] && ! gh secret list --json name -q '.[].name' | grep -qx CLAUDE_CODE_OAUTH_TOKEN; then
+    cat <<'EOF'
+
+To let GitHub build labelled issues on its own, once:
+  1. install the Claude GitHub app on this repository: https://github.com/apps/claude
+  2. claude setup-token        then: gh secret set CLAUDE_CODE_OAUTH_TOKEN
+EOF
+  fi
+  cat <<'EOF'
+
+Next, in this folder:
+  factory watch     the control room (keep it open in another terminal)
+  claude            then /groom: it proposes issues from the roadmap
+Label the issues you want factory:ready. GitHub runs /work on each (or run /work <n> in
+claude yourself) and opens a pull request; it merges itself when CI is green and its risk
+tier is at or below AUTO_MERGE_MAX_TIER in factory/policy.env.
+EOF
+  ;;
+
+watch)
+  dir=$(cd "${2:-.}" && pwd)
+  [ -f "$dir/factory/policy.env" ] || die "$dir is not a factory. cd into one (made by 'factory new') or pass its path."
+  exec npm --prefix "$room" start -- "$dir"
+  ;;
+
+*)
+  sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
+  [ -z "${1:-}" ] || exit 1
+  ;;
+esac
