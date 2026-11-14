@@ -1,0 +1,162 @@
+@import "@fontsource-variable/azeret-mono/wght.css";
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* After Warp's factory pages: violet ink on white and lavender, one electric blue, one lime
+   highlight, hairlines and square corners, monospace for structure and a sans for prose.
+   Status colours are only ever used with a glyph and a word. */
+:root {
+  --bg: #fcfbfe;
+  --surface: #ffffff;
+  --surface-2: #f5f4fa;
+  --border: #e4e2ea;
+  --border-strong: #b9b6c0;
+  --fg: #1a1522;
+  --muted: #5f5b66;
+  --faint: #6c6874; /* ≥4.5:1 on surface-2 (axe) */
+  --accent: #2a1eff; /* fills, with white text */
+  --lime: #edf872; /* highlight, with ink text */
+  --lime-fg: #1a1522;
+  --focus: #2a1eff;
+  --pass: #007753;
+  --fail: #c4261d;
+  --block: #9a5f00;
+  --run: #2a1eff;
+  --wait: #6a3fd6;
+  --attention: #2a1eff;
+  --attention-bg: #efeeff;
+  --pass-bg: #e9f5f0;
+  --fail-bg: #fdeeed;
+  --block-bg: #faf2e4;
+  --run-bg: #efeeff;
+  --wait-bg: #f3effd;
+  --dots: rgb(26 21 34 / 0.1);
+  /* chart series: categorical in fixed order, and an ordinal blue ramp for risk tiers
+     (validated with the dataviz validator against --surface in each theme) */
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+  --series-5: #e87ba4; --series-6: #008300; --series-7: #6250d6; --series-8: #e34948;
+  --series-other: #8e8e88;
+  --tier-0: #86b6ef; --tier-1: #3987e5; --tier-2: #1c5cab; --tier-3: #0d366b;
+}
+.dark {
+  --bg: #0c0a10;
+  --surface: #14111a;
+  --surface-2: #1b1722;
+  --border: #2a2531;
+  --border-strong: #4a4354;
+  --fg: #ece9f2;
+  --muted: #aaa4b5;
+  --faint: #918b9c;
+  --accent: #4c42ff;
+  --lime: #e3f06a;
+  --lime-fg: #1a1522;
+  --focus: #8f89ff;
+  --pass: #75cca7;
+  --fail: #ff7a70;
+  --block: #e8a95c;
+  --run: #8f89ff;
+  --wait: #b39cff;
+  --attention: #8f89ff;
+  --attention-bg: #1a1736;
+  --pass-bg: #0f211a;
+  --fail-bg: #2a1312;
+  --block-bg: #261b0d;
+  --run-bg: #17153a;
+  --wait-bg: #1c1631;
+  --dots: rgb(236 233 242 / 0.09);
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+  --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
+  --series-other: #6b6f77;
+  --tier-0: #184f95; --tier-1: #2a78d6; --tier-2: #6da7ec; --tier-3: #b7d3f6;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-lime: var(--lime);
+  --color-lime-fg: var(--lime-fg);
+  --color-focus: var(--focus);
+  --color-pass: var(--pass);
+  --color-fail: var(--fail);
+  --color-block: var(--block);
+  --color-run: var(--run);
+  --color-wait: var(--wait);
+  --color-attention: var(--attention);
+  --color-attention-bg: var(--attention-bg);
+  --color-pass-bg: var(--pass-bg);
+  --color-fail-bg: var(--fail-bg);
+  --color-block-bg: var(--block-bg);
+  --color-run-bg: var(--run-bg);
+  --color-wait-bg: var(--wait-bg);
+  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Azeret Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* square corners; buttons and chips keep a 2px softening */
+  --radius: 2px;
+  --radius-sm: 2px;
+  --radius-md: 2px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+}
+
+html, body, #root { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+@layer base {
+  /* structure speaks monospace; prose stays sans */
+  h1, h2, h3, th, kbd, button, summary, svg text { font-family: var(--font-mono); }
+  th { font-size: 10.5px; font-weight: 400; letter-spacing: 0.06em; text-transform: uppercase; }
+}
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+::selection { background: color-mix(in srgb, var(--focus) 25%, transparent); }
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* the page: a dotted field with the content column ruled off by hairlines */
+.field {
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--dots) 1px, transparent 1px);
+  background-size: 16px 16px;
+  counter-reset: fig;
+}
+
+/* a figure: lavender frame, "[ fig. n · caption ]", white panels inside */
+.fig { background: var(--surface-2); border: 1px solid var(--border); padding: 0 12px 12px; counter-increment: fig; min-width: 0; }
+.fig-cap { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: 38px; padding: 6px 0; font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+.fig-title { font-size: inherit; font-weight: 400; color: inherit; text-transform: lowercase; }
+.fig-title::before { content: "[ fig. " counter(fig) " · " / ""; color: var(--faint); }
+.fig-title::after { content: " ]" / ""; color: var(--faint); }
+.panel { background: var(--surface); border: 1px solid var(--border); }
+
+/* small uppercase monospace label, like a figure's axis */
+.label { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+/* rendered, untrusted markdown */
+.md { overflow-wrap: anywhere; }
+.md > * + * { margin-top: 0.6em; }
+.md .md-h1, .md .md-h2, .md .md-h3 { font-family: var(--font-mono); font-weight: 500; margin-top: 1.1em; }
+.md .md-h1 { font-size: 1.2em; } .md .md-h2 { font-size: 1.08em; } .md .md-h3 { font-size: 1em; }
+.md > :first-child { margin-top: 0; }
+.md ul { list-style: disc; padding-left: 1.3em; } .md ol { list-style: decimal; padding-left: 1.3em; }
+.md li + li { margin-top: 0.2em; }
+.md code { font-family: var(--font-mono); font-size: 0.9em; background: var(--surface-2); padding: 0.05em 0.3em; }
+.md pre { background: var(--surface-2); border: 1px solid var(--border); padding: 0.7em 0.9em; overflow-x: auto; }
+.md pre code { background: none; padding: 0; }
+.md a { color: var(--run); text-decoration: underline; text-underline-offset: 2px; }
+.md blockquote { border-left: 2px solid var(--accent); padding-left: 0.8em; color: var(--muted); }
+.md table { border-collapse: collapse; } .md th, .md td { border: 1px solid var(--border); padding: 0.25em 0.5em; text-align: left; }
+.md hr { border-color: var(--border); }
+
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }

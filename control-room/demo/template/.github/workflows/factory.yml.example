@@ -1,0 +1,42 @@
+# Week 2: run /work unattended when you label an issue 'factory:ready'.
+#
+# Do not hand-write this. In Claude Code run /install-github-app, which installs
+# the GitHub app, stores the credential and opens a PR with a working workflow.
+# Then reshape that generated file to match this one. The input names below follow
+# anthropics/claude-code-action@v1; treat the generated file as the source of truth.
+#
+# On a subscription, create the token with `claude setup-token` and save it as the
+# repository secret CLAUDE_CODE_OAUTH_TOKEN. It is tied to your account and draws
+# on your plan's usage limits. For a shared team repo, use an API key instead.
+#
+# Only label issues you wrote or have read. Issue text becomes agent input, so on a
+# public repo an unread issue is a prompt-injection path.
+name: factory
+on:
+  issues:
+    types: [labeled]
+
+concurrency:
+  group: factory
+  cancel-in-progress: false   # one work item at a time
+
+jobs:
+  work:
+    if: github.event.label.name == 'factory:ready'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Toolchain setup for `make check` goes here.
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: "/work ${{ github.event.issue.number }}"
