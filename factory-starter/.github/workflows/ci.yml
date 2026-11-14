@@ -1,4 +1,4 @@
-# The deterministic gates. Make all four jobs required status checks on main
+# The deterministic gates. Make all five jobs required status checks on main
 # (Settings > Branches or Rulesets) so nothing merges red, including auto-merge.
 name: ci
 on:
@@ -43,6 +43,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: factory/tests/run.sh
+
+  ownership:
+    # Team mode (factory/teams.json): a pull request changes only its own team's paths. The check
+    # and the roster both come from the base branch, so a pull request cannot widen its own
+    # ownership. A base branch without them is a single-team factory: nothing to check.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Paths owned by the pull request's team
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: |
+          if git cat-file -e "$BASE:factory/scripts/check-ownership.sh" 2>/dev/null; then
+            mkdir -p /tmp/own
+            git show "$BASE:factory/scripts/check-ownership.sh" > /tmp/own/check-ownership.sh
+            git show "$BASE:factory/scripts/lib.sh" > /tmp/own/lib.sh
+            bash /tmp/own/check-ownership.sh "$BASE"
+          else
+            echo "No ownership check on $BASE: a single-team factory."
+          fi
 
   risk-gate:
     if: github.event_name == 'pull_request'

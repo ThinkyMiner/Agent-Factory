@@ -6,6 +6,9 @@
 #   factory github [--public]               inside the folder, once the skeleton is committed: create
 #                                           the GitHub repo, push, labels, auto-merge, protect main (day 3)
 #   factory watch [folder]                  open the control room on a factory (default: here)
+#   factory teams init                      write factory/teams.json: orchestrator + backend, which
+#                                           owns today's product paths (team mode, docs/factory/TEAMS.md)
+#   factory team-up [--print]               launch one worktree and one claude per team in Herdr
 set -euo pipefail
 
 here=$(dirname "$(readlink -f "$0")")
@@ -73,11 +76,11 @@ github)
   ok=1
   gh repo edit --enable-auto-merge --delete-branch-on-merge >/dev/null || ok=0
   gh api -X PUT 'repos/{owner}/{repo}/branches/main/protection' --input - >/dev/null <<'JSON' || ok=0
-{"required_status_checks":{"strict":false,"contexts":["check","secrets","factory-tests","risk-gate"]},
+{"required_status_checks":{"strict":false,"contexts":["check","secrets","factory-tests","ownership","risk-gate"]},
  "enforce_admins":true,"required_pull_request_reviews":null,"restrictions":null}
 JSON
   if [ "$ok" = 1 ]; then
-    echo "Gates on: main needs check, secrets, factory-tests and risk-gate to pass, and takes no direct pushes."
+    echo "Gates on: main needs check, secrets, factory-tests, ownership and risk-gate to pass, and takes no direct pushes."
   else
     echo "factory: GitHub refused to protect main or allow auto-merge (see above). On GitHub Free a"
     echo "  private repo cannot have either, so CI runs but does not block merging. Make it public with"
@@ -109,8 +112,31 @@ watch)
   exec npm --prefix "$room" start -- "$dir"
   ;;
 
+teams)
+  [ "${2:-}" = init ] || die "usage: factory teams init"
+  [ -f factory/policy.env ] || die "run this inside a factory folder"
+  [ ! -e factory/teams.json ] || die "factory/teams.json already exists"
+  # Every top-level product entry goes to backend; the factory's own files, product/ (yours),
+  # memory/, work/ (by each spec's team) and CLAUDE.md stay out of every team's reach.
+  owns=$(git ls-tree HEAD | awk -F'\t' '
+    $2 ~ /^(\.claude|\.github|factory|teams|memory|product|work|planning|CLAUDE\.md)$/ {next}
+    {split($1, a, " "); print (a[2] == "tree" ? $2 "/*" : $2)}' | jq -R . | jq -sc .)
+  jq -n --argjson owns "$owns" '{version: 1, default_team: "backend",
+    teams: {orchestrator: {owns: ["planning/*"]}, backend: {owns: $owns}},
+    append_only: ["memory/observations/*", "product/INBOX.md"]}' > factory/teams.json
+  jq . factory/teams.json
+  echo "Wrote factory/teams.json. Check 'owns', then commit it through a pull request (R2: you"
+  echo "approve it). Once it is on main, run 'factory team-up' with Herdr open."
+  ;;
+
+team-up)
+  top=$(git rev-parse --show-toplevel 2>/dev/null) || die "run this inside a factory folder"
+  [ -f "$top/factory/scripts/team-up.sh" ] || die "this factory's kit has no team-up.sh; update the kit first"
+  exec bash "$top/factory/scripts/team-up.sh" "${@:2}"
+  ;;
+
 *)
-  sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
   [ -z "${1:-}" ] || exit 1
   ;;
 esac

@@ -42,6 +42,24 @@ path_without() {
   echo "$d"
 }
 
+# team_setup: a team-mode factory. Main checkout $MAIN (the orchestrator's) with a roster, and
+# worktrees for backend ($BE) and frontend ($FE) where factory team-up would put them.
+team_setup() {
+  mkrepo app && mkdir -p app/factory app/server app/web app/product app/memory/observations
+  cat > app/factory/teams.json <<'JSON'
+{ "version": 1, "default_team": "backend",
+  "teams": { "orchestrator": { "owns": ["planning/*"] },
+             "backend":  { "owns": ["server/*", "db/*"] },
+             "frontend": { "owns": ["web/*"] },
+             "research": { "owns": ["research/*"], "active": false } },
+  "append_only": ["memory/observations/*", "product/INBOX.md"] }
+JSON
+  echo "# Inbox" > app/product/INBOX.md; echo old > app/memory/observations/old.md
+  git -C app add -A && git -C app commit -qm roster
+  git -C app worktree add -q ../app.teams/backend -b team/backend
+  git -C app worktree add -q ../app.teams/frontend -b team/frontend
+  BE="$TEST_TMP/app.teams/backend"; FE="$TEST_TMP/app.teams/frontend"; MAIN="$TEST_TMP/app"
+}
 run_tests() {
   local file fn rc p=0 f=0 g=0 x=0
   file=$(basename "${BASH_SOURCE[1]}" .sh)

@@ -22,6 +22,20 @@ need '^## Out of scope'                    "missing '## Out of scope'"
 need '^## Assumptions'                     "missing '## Assumptions'"
 need '^## Blocking questions'              "missing '## Blocking questions'"
 
+# Team mode (factory/teams.json next to this script): the spec must name an active team, which
+# decides whose paths the item may change. Outside team mode the line must not be a placeholder.
+here=$(cd "$(dirname "$0")" && pwd)
+if . "$here/lib.sh" 2>/dev/null && [ -f "$here/../teams.json" ]; then
+  t=$(spec_team "$f")
+  if [ -z "$t" ] || ! team_names "$here/../teams.json" | grep -qxF -- "$t"; then
+    echo "spec invalid: frontmatter 'team' must name an active team in factory/teams.json" >&2
+    fail=1
+  fi
+elif grep -Eq -- '^team: *<' "$f"; then
+  echo "spec invalid: 'team' is still a placeholder (set it, or delete the line outside team mode)" >&2
+  fail=1
+fi
+
 if grep -Eq -- '^- AC-[0-9]+: .*<' "$f"; then
   echo "spec invalid: an acceptance criterion still contains a <placeholder>" >&2
   fail=1

@@ -143,6 +143,8 @@ test_hung_lock_holder_costs_only_the_timeout() {
 test_concurrent_writers_lose_and_interleave_nothing() {
   # 20 emit-event writers x 10 events of ~70 KB (bigger than one write(), so unlocked appends could
   # interleave) plus 5 telemetry writers x 10, all at once, into one shared and one per-item log.
+  # This tests the lock, so a slow runner must not hit the timeout fallback (tested on its own).
+  export FACTORY_LOCK_TIMEOUT=60
   mkrepo r && cd r && git switch -q -c work/5-x && mkdir -p work/5-x
   local pad i; pad=$(head -c 70000 /dev/zero | tr '\0' p)
   for i in $(seq 1 20); do
@@ -160,6 +162,14 @@ test_concurrent_writers_lose_and_interleave_nothing() {
   expect_eq "$(jq -r 'select(.type=="x") | .pad | length' .factory/events.jsonl | sort -u)" 70000 "no truncated payload"
   expect_eq "$(jq -r 'select(.type=="lifecycle") | .session_id' .factory/events.jsonl | sort -u | awk 'END{print NR}')" 50 "distinct telemetry events"
   expect_eq "$(jq -r 'select(.type=="lock_timeout")' .factory/events.jsonl | awk 'END{print NR}')" 0 "no lock timeouts"
+}
+
+test_team_comes_from_the_session_not_the_caller() {
+  mkrepo r && cd r
+  FACTORY_TEAM=backend run "$E" stage stage=build team=frontend
+  expect_eq "$(field .team)" backend
+  run "$E" stage stage=build team=frontend
+  expect_eq "$(field 'has("team")')" false
 }
 
 run_tests

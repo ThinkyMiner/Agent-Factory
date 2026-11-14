@@ -16,12 +16,13 @@ branch=$(git -C "$root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 work_id=""
 case "$branch" in work/*) n="${branch#work/}"; work_id="${n%%-*}" ;; esac
 
-line=$(jq -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg branch "$branch" --arg work_id "$work_id" '
+line=$(jq -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg branch "$branch" --arg work_id "$work_id" --arg team "${FACTORY_TEAM:-}" '
   {
     ts: $ts,
     type: "lifecycle",
     work_id: $work_id,
     branch: $branch,
+    team: (if $team == "" then null else $team end),
     event: (.hook_event_name // "unknown"),
     session_id: (.session_id // null),
     agent_type: (.agent_type // null),

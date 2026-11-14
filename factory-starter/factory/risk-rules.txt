@@ -21,6 +21,7 @@ R2 memory/reflections/*
 R2 .claude/*
 R2 factory/*
 R2 .github/*
+R2 teams/*
 R2 Makefile
 R2 *migrations/*
 R2 *schema*

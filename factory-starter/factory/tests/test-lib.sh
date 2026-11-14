@@ -2,16 +2,16 @@
 . "$(dirname "$0")/lib.sh"
 . "$SCRIPTS/lib.sh"
 
-test_home_of_plain_repo_and_subdir() {
+test_home_of_plain_repo_and_subdir() {  # a kit kept in a subfolder keeps its state there
   mkrepo r && mkdir -p r/a/b
   expect_eq "$(factory_home "$TEST_TMP/r")" "$TEST_TMP/r"
-  expect_eq "$(factory_home "$TEST_TMP/r/a/b")" "$TEST_TMP/r"
+  expect_eq "$(factory_home "$TEST_TMP/r/a/b")" "$TEST_TMP/r/a/b"
 }
 
 test_home_of_worktree_is_main_checkout() {
   mkrepo r && git -C r worktree add -q ../wt -b team/x && mkdir -p wt/deep
   expect_eq "$(factory_home "$TEST_TMP/wt")" "$TEST_TMP/r"
-  expect_eq "$(factory_home "$TEST_TMP/wt/deep")" "$TEST_TMP/r"
+  expect_eq "$(factory_home "$TEST_TMP/wt/deep")" "$TEST_TMP/r/deep"
 }
 
 test_home_outside_repo_is_the_dir() {

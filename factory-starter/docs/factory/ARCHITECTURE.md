@@ -117,6 +117,7 @@ from a second model vendor is a later upgrade for R2 changes.
 | Per-item record | `work/<id>-<slug>/` | The contract and the audit trail for that item |
 | Ideas and objections | `product/INBOX.md` | When grooming |
 | What the factory has learned | `memory/` (see `MEMORY.md`) | `lessons.md` always; observations only by `/reflect` |
+| Team charters and roster (team mode) | `teams/<team>/CHARTER.md`, `factory/teams.json` (see `TEAMS.md`) | The charter at the start of that team's session |
 | Live and per-item events | `.factory/events.jsonl` in the main checkout (one log shared by every worktree, appended under `.factory/events.lock`), `work/<id>-<slug>/events.jsonl` | By the control room and `/audit` |
 
 There is no hidden state. If a session dies, the next one can resume from the
@@ -130,7 +131,10 @@ files, plus CODEOWNERS for R2 paths.
 3. Permission rules and the PreToolUse guard in `.claude/settings.json` and
    `factory/hooks/guard.sh`: no edits to the factory's own files, no `.env`
    writes, no force push, no push to main, no self-approval.
-4. Branch protection with required checks: nothing merges red, whoever asks.
+   In team mode the guard also keeps each session inside its own worktree and its
+   team's paths (`TEAMS.md`).
+4. Branch protection with required checks: nothing merges red, whoever asks. In team
+   mode the `ownership` check fails a pull request that leaves its team's paths.
 5. Credentials: the machine and the CI job that run agents hold no production
    secrets. This is the only layer that holds against a model that is confused or
    has been fed hostile input, so it is the one to be strict about.
@@ -184,11 +188,13 @@ same pipeline. Add a docs agent if docs lag.
 
 **Stage 6, more people or more throughput.** Add CODEOWNERS on R2 paths, move CI
 auth from a personal subscription token to an API key, run builders in parallel
-in separate git worktrees, and add a second-vendor reviewer for R2.
+in separate git worktrees, and add a second-vendor reviewer for R2. Team mode
+(`TEAMS.md`) is the first step: one session and worktree per team, path ownership
+enforced by the guard and by CI.
 
 ## Changing the factory
 
-The factory's own files (`.claude/`, `factory/`, `.github/`) are R2 and blocked
+The factory's own files (`.claude/`, `factory/`, `.github/`, `teams/`) are R2 and blocked
 from normal sessions. To change them, start a session with
 `FACTORY_ALLOW_SELF_EDIT=1 claude`, make the change on its own branch, and read
 the diff yourself. Record why in `docs/decisions/` when the change alters a gate.

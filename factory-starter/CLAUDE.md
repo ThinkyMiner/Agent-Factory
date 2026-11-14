@@ -15,7 +15,9 @@
 - `tests/acceptance/`   tests derived from specs. Only the test-author agent edits these.
 - `memory/`             what the factory has learned. observations/ gets one file per work item from the observer,
                         lessons.md only by `/reflect` through a pull request.
-- `factory/`, `.claude/`, `.github/`  the factory itself. Not part of product work.
+- `factory/`, `.claude/`, `.github/`, `teams/`  the factory itself. Not part of product work.
+- Team mode (only if `factory/teams.json` exists): each team writes only its own paths.
+  See `docs/factory/TEAMS.md`.
 
 ## Conventions
 <Fill in as they emerge. Keep this under 15 bullets. When a convention can be a lint

@@ -1,5 +1,6 @@
 ---
 id: <issue number>
+team: <your team, the session's $FACTORY_TEAM; delete this line outside team mode>
 title: <outcome, in a few words>
 risk_floor: R1
 tests: required

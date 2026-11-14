@@ -108,4 +108,13 @@ test_worktree_session_writes_main_checkout_log() {
   [ ! -e wt/.factory ] || fail "wrote a log inside the worktree"
 }
 
+test_team_is_recorded() {
+  mkrepo r
+  printf '{"hook_event_name":"SessionStart","session_id":"t1"}' > in
+  FACTORY_TEAM=backend CLAUDE_PROJECT_DIR="$TEST_TMP/r" run "$T" < in
+  expect_eq "$(field .team)" backend
+  hook '{"hook_event_name":"Stop"}'
+  expect_eq "$(field 'has("team")')" false
+}
+
 run_tests

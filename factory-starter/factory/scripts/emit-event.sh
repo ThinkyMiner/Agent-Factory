@@ -6,8 +6,8 @@
 # one log shared by every worktree) and, when the current branch is work/<id>-<slug>
 # and its folder exists, also to work/<id>-<slug>/events.jsonl in this worktree
 # (committed with the item: the durable record). Both appends hold the event lock.
-# work_id and branch are filled in from the branch name unless passed; ts and type
-# always come from this script.
+# work_id and branch are filled in from the branch name unless passed; ts, type and
+# team (from FACTORY_TEAM, in team mode) always come from this script.
 # Never fails the caller: telemetry must not break a run.
 set -uo pipefail
 
@@ -30,7 +30,7 @@ case "$branch" in
     ;;
 esac
 
-args=(--arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg type "$type" --arg branch "$branch" --arg work_id "$work_id")
+args=(--arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg type "$type" --arg branch "$branch" --arg work_id "$work_id" --arg team "${FACTORY_TEAM:-}")
 filter='{ts: $ts, type: $type, work_id: $work_id, branch: $branch}'
 i=0
 for kv in "$@"; do
@@ -45,8 +45,8 @@ for kv in "$@"; do
   esac
 done
 
-# The script's own ts and type win over a caller's ts= or type=.
-filter="$filter + {ts: \$ts, type: \$type}"
+# The script's own ts, type and team (the session's FACTORY_TEAM) win over a caller's ts=, type=, team=.
+filter="($filter | del(.team)) + {ts: \$ts, type: \$type} + (if \$team == \"\" then {} else {team: \$team} end)"
 
 line=$(jq -cn "${args[@]}" "$filter" 2>/dev/null) || exit 0
 append_event "$home" "$line" "${work_dir:+$work_dir/events.jsonl}"
