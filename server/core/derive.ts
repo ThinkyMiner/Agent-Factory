@@ -229,7 +229,7 @@ export function indexLifecycle(events: LifecycleEvent[]): { sessions: Map<string
     if (e.event === 'SubagentStart') {
       const run: AgentRun = {
         agentId: e.agent_id ?? key,
-        agentType: e.agent_type ?? 'unknown',
+        agentType: e.agent_type || 'subagent',
         sessionId: e.session_id,
         workId: e.work_id,
         stage: AGENT_STAGE[e.agent_type ?? ''],
@@ -241,7 +241,7 @@ export function indexLifecycle(events: LifecycleEvent[]): { sessions: Map<string
     } else if (e.event === 'SubagentStop') {
       let run = open.get(key)
       if (!run) {
-        run = { agentId: e.agent_id ?? key, agentType: e.agent_type ?? 'unknown', sessionId: e.session_id, workId: e.work_id, stage: AGENT_STAGE[e.agent_type ?? ''], outcome: 'finished' }
+        run = { agentId: e.agent_id ?? key, agentType: e.agent_type || 'subagent', sessionId: e.session_id, workId: e.work_id, stage: AGENT_STAGE[e.agent_type ?? ''], outcome: 'finished' }
         runs.push(run)
       }
       open.delete(key)

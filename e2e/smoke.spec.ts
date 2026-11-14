@@ -231,6 +231,25 @@ test('audits: newest first, rendered, and the script in one stays text', async (
   expect(errors).toEqual([])
 })
 
+test('theme: the top-bar switch picks light or dark over the system, and the choice sticks', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.goto('/')
+  const theme = page.getByRole('group', { name: 'Theme' })
+  const html = page.locator('html')
+  await expect(theme.getByRole('button', { name: 'Match the system' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(html).toHaveClass(/dark/)
+  await theme.getByRole('button', { name: 'Light' }).click()
+  await expect(html).not.toHaveClass(/dark/)
+  await page.reload()
+  await expect(html).not.toHaveClass(/dark/)
+  await expect(theme.getByRole('button', { name: 'Light' })).toHaveAttribute('aria-pressed', 'true')
+  await theme.getByRole('button', { name: 'Dark' }).click()
+  await expect(html).toHaveClass(/dark/)
+  await theme.getByRole('button', { name: 'Match the system' }).click()
+  await page.emulateMedia({ colorScheme: 'light' })
+  await expect(html).not.toHaveClass(/dark/)
+})
+
 test('keyboard: the palette finds items and runs commands; g, j/k, / and ? work', async ({ page }) => {
   const errors = watchErrors(page)
   await page.goto('/')

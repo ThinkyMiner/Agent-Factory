@@ -181,7 +181,7 @@ function ApproveBody({ pr, onDone }: { pr: number; onDone: () => void }) {
       ) : (
         <>
           <div className="font-medium">
-            {d.title} {d.item && <Link to={`/items/${d.item.id}`} className="text-[12.5px] font-normal text-run hover:underline">#{d.item.id}</Link>}
+            {d.title} {d.item && <Link to={`/items/${d.item.id}`} className="text-[12.5px] font-normal text-run underline underline-offset-2">#{d.item.id}</Link>}
           </div>
           <section aria-label="Risk tier" className="space-y-1">
             <h3 className="text-[12px] font-semibold text-muted">Why it is {d.tier ?? 'unclassified'}</h3>

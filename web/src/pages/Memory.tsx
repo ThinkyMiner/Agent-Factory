@@ -10,7 +10,7 @@ import { cn, day, monday, today } from '@/lib/utils'
 import { PageHeader } from '@/components/Layout'
 import { Empty, ErrorState, Loading } from '@/components/States'
 import { ItemRefs } from '@/components/ItemsPanel'
-import { DriftFlag, ItemId, Mono, PriorityTag, TAB } from '@/components/vocab'
+import { DriftFlag, ItemId, Mono, PriorityTag, TAB, TAB_LIST } from '@/components/vocab'
 import { Raw } from '@/components/Markdown'
 
 const TABS = ['lessons', 'observations', 'patterns'] as const
@@ -37,7 +37,7 @@ export function Memory() {
           <ErrorState title="Could not load memory" error={error} onRetry={() => void refetch()} />
         ) : (
           <Tabs.Root value={current} onValueChange={(v) => nav(`/memory/${v}`, { replace: true })}>
-            <Tabs.List aria-label="Memory" className="flex gap-1 border-b border-border">
+            <Tabs.List aria-label="Memory" className={TAB_LIST}>
               <Tabs.Trigger value="lessons" className={TAB}>Lessons ({data!.lessons.length})</Tabs.Trigger>
               <Tabs.Trigger value="observations" className={TAB}>Observations ({data!.observations.length})</Tabs.Trigger>
               <Tabs.Trigger value="patterns" className={TAB}>Patterns</Tabs.Trigger>
@@ -150,9 +150,9 @@ function Observations({ m }: { m: MemoryView }) {
             <option key={s}>{s}</option>
           ))}
         </select>
-        <div role="group" aria-label="Priority" className="inline-flex rounded-md border border-border bg-surface p-0.5">
+        <div role="group" aria-label="Priority" className="inline-flex border border-border bg-surface">
           {['', 'high', 'med', 'low'].map((p) => (
-            <button key={p || 'any'} aria-pressed={priority === p} onClick={() => set('priority', p)} className={cn('rounded px-2 py-0.5 text-[12px] text-muted hover:text-fg', priority === p && 'bg-surface-2 font-medium text-fg')}>
+            <button key={p || 'any'} aria-pressed={priority === p} onClick={() => set('priority', p)} className={cn('border-r border-border px-2.5 py-1 font-mono text-[11.5px] text-muted last:border-r-0 hover:text-fg', priority === p && 'bg-accent text-white hover:text-white')}>
               {p || 'any priority'}
             </button>
           ))}

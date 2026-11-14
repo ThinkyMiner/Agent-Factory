@@ -44,8 +44,8 @@ function NeedsYou({ entries }: { entries: NeedsEntry[] }) {
   const now = useNow()
   if (!entries.length) {
     return (
-      <section aria-labelledby="needs" className="rounded-lg border border-border bg-surface px-5 py-4">
-        <h2 id="needs" className="flex items-center gap-2 font-semibold">
+      <section aria-labelledby="needs" className="border border-border bg-surface px-5 py-4">
+        <h2 id="needs" className="flex items-center gap-2 text-[14px] font-normal">
           <CircleCheck aria-hidden className="size-4 text-pass" /> Nothing needs you
         </h2>
         <p className="mt-1 text-muted">No blocked runs, no pull requests waiting for you, nothing failed or gone quiet.</p>
@@ -53,14 +53,15 @@ function NeedsYou({ entries }: { entries: NeedsEntry[] }) {
     )
   }
   return (
-    <section aria-labelledby="needs" className="overflow-hidden rounded-lg border border-attention/40 bg-surface shadow-[0_1px_0_0_var(--border)]">
-      <h2 id="needs" className="flex items-center gap-2 border-b border-border bg-attention-bg px-4 py-2.5 text-[14px] font-semibold">
-        Needs you <span className="rounded-full bg-attention px-2 text-[12px] leading-5 text-bg tabular">{entries.length}</span>
+    <section aria-labelledby="needs" className="border border-accent bg-surface">
+      <h2 id="needs" className="flex items-center gap-3 bg-accent px-4 py-2.5 text-[12px] font-normal tracking-[0.1em] text-white uppercase">
+        Needs you <span className="bg-lime px-1.5 tracking-normal text-lime-fg tabular">{entries.length}</span>
+        <span className="ml-auto text-[11px] tracking-normal normal-case opacity-85 max-sm:hidden">oldest first, by kind</span>
       </h2>
       <ul>
         {entries.map((n) => (
-          <li key={`${n.kind}-${n.id}`} className={cn('group border-b border-l-[3px] border-border last:border-b-0', TONE_BORDER[needsTone(n.kind)])}>
-            <Link data-nav-item to={n.href ?? `/items/${n.id}`} className="grid grid-cols-[6.5rem_1fr_auto] items-baseline gap-x-3 gap-y-1 px-4 py-2.5 hover:bg-surface-2 focus-visible:bg-surface-2 max-sm:grid-cols-[1fr_auto]">
+          <li key={`${n.kind}-${n.id}`} className={cn('group border-b border-l-2 border-border last:border-b-0', TONE_BORDER[needsTone(n.kind)])}>
+            <Link data-nav-item to={n.href ?? `/items/${n.id}`} className="grid grid-cols-[7.5rem_1fr_auto] items-baseline gap-x-3 gap-y-1 px-4 py-3 hover:bg-surface-2 focus-visible:bg-surface-2 max-sm:grid-cols-[1fr_auto]">
               <NeedsTag kind={n.kind} className="max-sm:col-span-2" />
               <span className="min-w-0">
                 <span className="flex flex-wrap items-baseline gap-x-2">
@@ -82,7 +83,7 @@ function NeedsYou({ entries }: { entries: NeedsEntry[] }) {
           </li>
         ))}
       </ul>
-      <p className="flex items-center gap-1.5 border-t border-border px-4 py-2 text-[12px] text-muted">
+      <p className="flex items-center gap-1.5 border-t border-border bg-surface-2 px-4 py-2 text-[12px] text-muted">
         <Info aria-hidden className="size-3.5" /> {NEEDS.answer.label}: answer on the issue, then run <CopyCommand cmd="/work <id>" /> again. Rows clear themselves when the item moves on.
       </p>
     </section>
@@ -100,7 +101,7 @@ export function CopyCommand({ cmd, className }: { cmd: string; className?: strin
         el.dataset.copied = '1'
         setTimeout(() => delete el.dataset.copied, 1200)
       }}
-      className={cn('group inline-flex items-center gap-1 rounded border border-border bg-surface-2 px-1.5 font-mono text-[12px] text-fg hover:border-border-strong data-[copied]:border-pass', className)}
+      className={cn('group inline-flex items-center gap-1 rounded-sm border border-border-strong bg-surface px-1.5 font-mono text-[12px] text-fg hover:border-fg data-[copied]:border-pass', className)}
       title="Copy to clipboard"
       aria-label={`Copy ${cmd}`}
     >
@@ -117,13 +118,13 @@ function Running({ data }: { data: ApiState }) {
       {data.running.length === 0 ? (
         <Empty title="Nothing is running">Start an item with <CopyCommand cmd="/work <id>" /> in a Claude Code session in the factory repo.</Empty>
       ) : (
-        <table className="w-full overflow-hidden rounded-lg border border-border bg-surface text-left">
-          <thead className="text-[11.5px] text-muted">
+        <table className="panel w-full text-left">
+          <thead className="text-muted">
             <tr className="border-b border-border">
-              <th className="px-3 py-1.5 font-medium">Item</th>
-              <th className="px-3 py-1.5 font-medium">Stage</th>
-              <th className="px-3 py-1.5 font-medium">Agent</th>
-              <th className="px-3 py-1.5 text-right font-medium">Elapsed</th>
+              <th className="px-3 py-2">Item</th>
+              <th className="px-3 py-2">Stage</th>
+              <th className="px-3 py-2">Agent</th>
+              <th className="px-3 py-2 text-right">Elapsed</th>
             </tr>
           </thead>
           <tbody>
@@ -186,7 +187,7 @@ function Merged({ data }: { data: ApiState }) {
       ].map(([title, list, id]) => (
         <Section key={id} title={title} count={list.length} id={id} className="mt-0">
           {list.length ? (
-            <ul className="rounded-lg border border-border bg-surface">
+            <ul className="panel">
               {list.map((i) => (
                 <Row key={i.id} i={i} />
               ))}
@@ -204,10 +205,10 @@ function Notices({ data }: { data: ApiState }) {
   if (!data.notices.length) return null
   return (
     <Section title="Factory notices" count={data.notices.length} id="notices">
-      <ul className="rounded-lg border border-border bg-surface text-[12.5px]">
+      <ul className="panel text-[12.5px]">
         {data.notices.map((n, i) => (
           <li key={i} className="flex gap-2 border-b border-border px-3 py-1.5 last:border-b-0">
-            <span className={cn('w-10 shrink-0 font-medium', n.level === 'error' ? 'text-fail' : n.level === 'warn' ? 'text-block' : 'text-muted')}>{n.level}</span>
+            <span className={cn('w-10 shrink-0 font-mono text-[11px] uppercase', n.level === 'error' ? 'text-fail' : n.level === 'warn' ? 'text-block' : 'text-muted')}>{n.level}</span>
             <Mono className="shrink-0 text-muted">{n.source}</Mono>
             <span>{n.message}</span>
           </li>
@@ -219,13 +220,15 @@ function Notices({ data }: { data: ApiState }) {
 
 function NewFactory({ data }: { data: ApiState }) {
   return (
-    <div className="max-w-2xl">
-      <section className="rounded-lg border border-border bg-surface px-5 py-5">
-        <h2 className="text-[15px] font-semibold">This factory has no work items yet</h2>
-        <p className="mt-1 text-muted">
+    <div className="max-w-3xl">
+      <section aria-labelledby="new-factory" className="fig">
+        <div className="fig-cap"><span className="fig-title">getting started</span></div>
+        <div className="panel px-6 py-6">
+        <h2 id="new-factory" className="text-[24px] leading-tight font-normal tracking-[-0.02em]">This factory has no work items yet</h2>
+        <p className="mt-2 text-muted">
           The control room fills in as the factory runs. It reads <Mono>work/</Mono>, <Mono>.factory/events.jsonl</Mono>, git and GitHub, and changes nothing.
         </p>
-        <ol className="mt-4 list-decimal space-y-2 pl-5">
+        <ol className="mt-5 list-[decimal-leading-zero] space-y-2.5 pl-8 marker:font-mono marker:text-faint">
           <li>
             Write <Mono>product/BRIEF.md</Mono> and the first lines of <Mono>product/ROADMAP.md</Mono>.
           </li>
@@ -240,6 +243,7 @@ function NewFactory({ data }: { data: ApiState }) {
           </li>
         </ol>
         {!data.factory.isGit && <p className="mt-4 text-block">This folder is not a git repository yet, so branches, commits and pull requests cannot be shown.</p>}
+        </div>
       </section>
       <Notices data={data} />
     </div>

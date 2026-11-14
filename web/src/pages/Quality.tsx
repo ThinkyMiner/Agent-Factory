@@ -108,7 +108,7 @@ function Chart({ m, pick }: { m: Metric; pick: (d: Drill) => void }) {
   const W = Math.max(width, 240)
   const n = cols.length
   const band = (W - L - R) / n
-  const bw = Math.min(24, Math.max(4, band * 0.6))
+  const bw = Math.min(14, Math.max(4, band * 0.4))
   const y = (v: number) => T + H - (v / top) * H
   const every = Math.ceil(48 / band)
   const lastData = cols.findLastIndex((c) => c.segs.length)
@@ -161,8 +161,8 @@ function Chart({ m, pick }: { m: Metric; pick: (d: Drill) => void }) {
                     return (
                       <path
                         key={s.key}
-                        d={last ? roundedTop(x, y(s.to), bw, h, 4) : `M${x},${y(s.to) + 2}h${bw}v${h}h${-bw}Z`}
-                        fill={m.kind === 'bars' ? 'var(--series-1)' : color(m, s.key)}
+                        d={last ? roundedTop(x, y(s.to), bw, h, 2) : `M${x},${y(s.to) + 2}h${bw}v${h}h${-bw}Z`}
+                        fill={m.kind === 'bars' ? 'var(--run)' : color(m, s.key)}
                         onClick={(e) => {
                           if (m.kind !== 'stacked') return
                           e.stopPropagation()
@@ -218,10 +218,10 @@ function Legend({ m }: { m: Metric }) {
   const keys = (m.series ?? []).filter((k) => present.has(k))
   if (keys.length < 2) return keys.length ? <p className="text-[12px] text-muted">All: {keys[0]}</p> : null
   return (
-    <ul className="flex flex-wrap gap-x-3 gap-y-0.5 text-[12px] text-muted" aria-label="Legend">
+    <ul className="flex flex-wrap gap-x-4 gap-y-0.5 font-mono text-[11px] text-muted" aria-label="Legend">
       {keys.map((k) => (
         <li key={k} className="inline-flex items-center gap-1.5">
-          <span aria-hidden className="size-2.5 rounded-[2px]" style={{ background: color(m, k) }} />
+          <span aria-hidden className="size-2" style={{ background: color(m, k) }} />
           {k}
         </li>
       ))}
@@ -277,11 +277,16 @@ function Table({ m, pick }: { m: Metric; pick: (d: Drill) => void }) {
 function Card({ m, weeks, pick }: { m: Metric; weeks: number; pick: (d: Drill) => void }) {
   const empty = m.points.every((p) => !p.ids.length)
   return (
-    <section className="min-w-0 rounded-lg border border-border bg-surface p-4" aria-labelledby={`q-${m.key}`}>
-      <h2 id={`q-${m.key}`} className="font-semibold">
+    <section className="fig" aria-labelledby={`q-${m.key}`}>
+      <div className="fig-cap">
+        <span className="fig-title">{m.key.replace('-', ' ')} · weekly</span>
+        <span className="ml-auto text-faint">{m.unit}</span>
+      </div>
+      <div className="panel p-4">
+      <h2 id={`q-${m.key}`} className="text-[14px] font-normal">
         {m.question}
       </h2>
-      {m.note && <p className="text-[12px] text-muted">{m.note}</p>}
+      {m.note && <p className="mt-1 text-[12px] text-muted">{m.note}</p>}
       {empty ? (
         <Empty title={`Nothing in the last ${weeks} weeks`} className="mt-3 py-4" />
       ) : (
@@ -293,6 +298,7 @@ function Card({ m, weeks, pick }: { m: Metric; weeks: number; pick: (d: Drill) =
           <Table m={m} pick={pick} />
         </>
       )}
+      </div>
     </section>
   )
 }
@@ -303,11 +309,11 @@ function Predictions() {
   if (!data?.predictions.length) return null
   const s = data.summary
   return (
-    <section aria-labelledby="q-predictions" className="rounded-lg border border-border bg-surface p-4">
-      <h2 id="q-predictions" className="font-semibold">Did /reflect's predictions hold?</h2>
+    <section aria-labelledby="q-predictions" className="panel p-4">
+      <h2 id="q-predictions" className="text-[14px] font-normal">Did /reflect's predictions hold?</h2>
       <p className="mt-1 tabular">
         {s.worked} worked · {s.noEffect} no effect · {s.worse} made things worse · {s.unchecked} not checked yet.{' '}
-        <Link to="/improvement" className="text-run hover:underline">Each change, its prediction and the check</Link>
+        <Link to="/improvement" className="text-run underline underline-offset-2">Each change, its prediction and the check</Link>
       </p>
     </section>
   )
@@ -322,13 +328,13 @@ export function Quality() {
   return (
     <>
       <PageHeader title="Quality">
-        <div role="group" aria-label="Weeks shown" className="inline-flex rounded-md border border-border bg-surface p-0.5">
+        <div role="group" aria-label="Weeks shown" className="inline-flex border border-border bg-surface">
           {WEEKS.map((w) => (
             <button
               key={w}
               aria-pressed={w === weeks}
               onClick={() => setParams((p) => (p.set('weeks', String(w)), p), { replace: true })}
-              className={cn('rounded px-2 py-0.5 text-[12px] text-muted hover:text-fg', w === weeks && 'bg-surface-2 font-medium text-fg')}
+              className={cn('border-r border-border px-2.5 py-1 text-[11px] tracking-[0.06em] text-muted uppercase last:border-r-0 hover:text-fg', w === weeks && 'bg-accent text-white hover:text-white')}
             >
               {w} weeks
             </button>
@@ -344,7 +350,9 @@ export function Quality() {
           <Empty title="No history yet">Quality figures come from merged items, stage events and fix rounds. They appear once the factory has run a few items through <span className="font-mono text-[12px]">/work</span>.</Empty>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <section aria-label="Last 4 weeks" className="fig">
+            <div className="fig-cap"><span className="fig-title">headline · last 4 weeks</span><span className="ml-auto text-faint">click a number for its items</span></div>
+            <div className="panel grid grid-cols-2 overflow-hidden lg:grid-cols-4">
               {q!.headline.map((h) => {
                 const n = new Set(h.ids).size
                 return (
@@ -352,15 +360,16 @@ export function Quality() {
                     key={h.key}
                     onClick={() => setDrill({ title: h.label, subtitle: 'Last 4 weeks', ids: h.ids })}
                     disabled={!n}
-                    className="rounded-lg border border-border bg-surface p-4 text-left enabled:hover:border-border-strong"
+                    className="-mr-px -mb-px border-r border-b border-border p-5 text-left enabled:hover:bg-surface-2"
                   >
-                    <div className="text-[12px] text-muted">{h.label}</div>
-                    <div className="mt-1 text-[26px] leading-tight font-semibold">{fmt(h.unit, h.value)}</div>
-                    <div className="text-[11.5px] text-faint">{n ? `${n} ${n === 1 ? 'item' : 'items'} · last 4 weeks` : 'Nothing in the last 4 weeks'}</div>
+                    <div className="label">{h.label}</div>
+                    <div className="mt-3 text-[34px] leading-none tracking-[-0.03em] tabular">{fmt(h.unit, h.value)}</div>
+                    <div className="mt-3 font-sans text-[11.5px] text-faint">{n ? `${n} ${n === 1 ? 'item' : 'items'} · last 4 weeks` : 'Nothing in the last 4 weeks'}</div>
                   </button>
                 )
               })}
             </div>
+            </section>
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               {q!.metrics.map((m) => (
                 <Card key={m.key} m={m} weeks={weeks} pick={setDrill} />

@@ -85,7 +85,7 @@ checked-out branch, is flagged, because CI and new runs use `main`'s copy.
 
 **Audits**: the weekly `/audit` reports, newest first.
 
-Light and dark themes follow the system; switch in the sidebar or the palette.
+Light and dark themes follow the system; switch in the top bar or the palette. The look follows Warp's factory pages: Azeret Mono for structure, hairlines, square corners and figure frames.
 
 ## Keyboard
 
@@ -108,7 +108,7 @@ Light and dark themes follow the system; switch in the sidebar or the palette.
 | `.factory/events.jsonl` and each item's `events.jsonl` | stage events, agent and session lifecycle |
 | `tests/acceptance/<id>-*` | which test names which criterion |
 | `memory/`, `docs/factory/audits/`, `.claude/`, `factory/`, `CLAUDE.md` | memory, reflections, audits, configuration |
-| git history of `main` | merges, squash commits, reverts |
+| git history of `main` | merges, squash commits, reverts. `git fetch origin` runs with every GitHub refresh, so work done on GitHub (the factory workflow) shows up; it updates only remote-tracking branches |
 | `gh` (GraphQL) | issues, labels and their times, pull requests, checks, files, auto-merge |
 | `~/.claude/projects/**` | model and tokens per run. The format is not a stable interface: only files under that folder are read, lines are de-duplicated, and token figures are hidden when nothing can be read |
 

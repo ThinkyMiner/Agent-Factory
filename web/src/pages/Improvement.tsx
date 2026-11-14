@@ -103,13 +103,13 @@ export function Improvement() {
           <ErrorState title="Could not load improvement" error={error} onRetry={() => void refetch()} />
         ) : (
           <>
-            <section aria-labelledby="imp-prs" className="space-y-2">
-              <h2 id="imp-prs" className="font-semibold">Open improvement pull requests</h2>
+            <section aria-labelledby="imp-prs" className="fig space-y-2">
+              <div className="fig-cap"><h2 id="imp-prs" className="fig-title">Open improvement pull requests</h2></div>
               <Pulls v={v!} />
             </section>
 
-            <section aria-labelledby="imp-pred" className="space-y-2">
-              <h2 id="imp-pred" className="font-semibold">Did the predictions hold?</h2>
+            <section aria-labelledby="imp-pred" className="fig space-y-2">
+              <div className="fig-cap"><h2 id="imp-pred" className="fig-title">Did the predictions hold?</h2></div>
               {v!.predictions.length ? (
                 <>
                   <p className="text-muted">
@@ -118,9 +118,9 @@ export function Improvement() {
                       {v!.summary.worked} worked · {v!.summary.noEffect} no effect · {v!.summary.worse} made things worse · {v!.summary.unchecked} not checked yet
                     </span>
                   </p>
-                  <div className="overflow-x-auto rounded-lg border border-border bg-surface">
+                  <div className="panel overflow-x-auto">
                     <table className="w-full min-w-[900px] text-left text-[12.5px]">
-                      <thead className="text-[11.5px] text-muted">
+                      <thead className="text-muted">
                         <tr className="border-b border-border">
                           <th className="px-3 py-1.5 font-medium">Change</th>
                           <th className="px-3 py-1.5 font-medium">Evidence</th>
@@ -155,8 +155,8 @@ export function Improvement() {
               )}
             </section>
 
-            <section aria-labelledby="imp-ref" className="space-y-2">
-              <h2 id="imp-ref" className="font-semibold">Reflections</h2>
+            <section aria-labelledby="imp-ref" className="fig space-y-2">
+              <div className="fig-cap"><h2 id="imp-ref" className="fig-title">Reflections</h2></div>
               {!v!.reflections.length && <Empty title="No reflections yet">Run <Mono>/reflect</Mono> after the weekly <Mono>/audit</Mono>.</Empty>}
               {v!.reflections.map((r) => (
                 <details key={r.path} className="rounded-lg border border-border bg-surface px-4 py-2">

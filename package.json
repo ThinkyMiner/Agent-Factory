@@ -2,7 +2,9 @@
   "name": "control-room",
   "version": "0.1.0",
   "private": true,
-  "bin": { "control-room": "server/cli.ts" },
+  "bin": {
+    "control-room": "server/cli.ts"
+  },
   "type": "module",
   "description": "Local control room for an agentic software factory",
   "engines": {
@@ -18,6 +20,7 @@
     "typecheck": "tsc --noEmit -p . && tsc --noEmit -p web"
   },
   "dependencies": {
+    "@fontsource-variable/azeret-mono": "5.3.0",
     "@tanstack/react-query": "^5.107.1",
     "@tanstack/react-virtual": "^3.14.26",
     "clsx": "^2.1.1",

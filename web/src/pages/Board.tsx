@@ -100,15 +100,15 @@ export function Board() {
               if (c.key === 'merged' && !allMerged) list = list.slice(0, MERGED_SHOWN)
               return (
                 <section key={c.key} aria-labelledby={`col-${c.key}`} className="flex max-w-[320px] min-w-[158px] flex-1 basis-0 flex-col max-md:max-w-none">
-                  <h2 id={`col-${c.key}`} className={cn('mb-2 flex items-center gap-2 px-1 text-[12px] font-semibold', c.key === 'waiting' && total ? 'text-wait' : 'text-muted')} title={c.hint}>
+                  <h2 id={`col-${c.key}`} className={cn('mb-2 flex items-center gap-2 border-b border-border px-1 pb-2 text-[10.5px] font-normal tracking-[0.08em] uppercase', c.key === 'waiting' && total ? 'text-wait' : 'text-muted')} title={c.hint}>
                     {c.label}
-                    <span className="tabular text-faint">{total}</span>
+                    <span className="ml-auto tabular text-faint">{total}</span>
                   </h2>
                   <ul className="flex flex-col gap-1.5">
                     {list.map((i) => (
                       <Card key={i.id} i={i} />
                     ))}
-                    {!total && <li className="rounded-md border border-dashed border-border px-3 py-3 text-[12px] text-faint">None</li>}
+                    {!total && <li className="border border-dashed border-border-strong px-3 py-3 font-mono text-[11px] text-faint">none</li>}
                   </ul>
                   {c.key === 'merged' && total > MERGED_SHOWN && (
                     <button className="mt-2 text-left text-[12px] text-muted underline" onClick={() => set('merged', allMerged ? null : 'all')}>
@@ -133,8 +133,8 @@ function Card({ i }: { i: ItemSummary }) {
         data-nav-item
         to={`/items/${i.id}`}
         className={cn(
-          'block rounded-md border bg-surface px-2.5 py-2 hover:border-border-strong focus-visible:border-focus',
-          i.needs ? 'border-attention/50' : 'border-border',
+          'block border bg-surface px-3 py-2.5 hover:border-fg focus-visible:border-focus',
+          i.needs ? 'border-attention shadow-[inset_2px_0_0_var(--attention)]' : 'border-border',
         )}
       >
         <div className="flex items-center gap-1.5">
@@ -180,15 +180,15 @@ const short = (label: string) => label.replace('Pull request open', 'PR open').r
 
 function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div role="group" aria-label={label} className="flex items-center gap-0.5 rounded-md border border-border bg-surface p-0.5">
-      <span className="px-1.5 text-[11px] text-faint">{label}</span>
+    <div role="group" aria-label={label} className="flex items-center border border-border bg-surface">
+      <span className="label border-r border-border px-2 py-1">{label}</span>
       {children}
     </div>
   )
 }
 function Toggle({ on, onClick, label, children }: { on: boolean; onClick: () => void; label: string; children: React.ReactNode }) {
   return (
-    <button aria-pressed={on} aria-label={label} onClick={onClick} className={cn('rounded px-1.5 py-0.5 text-[12px] text-muted hover:text-fg', on && 'bg-fg text-bg hover:text-bg')}>
+    <button aria-pressed={on} aria-label={label} onClick={onClick} className={cn('px-2 py-1 text-[11.5px] text-muted hover:text-fg', on && 'bg-accent text-white hover:text-white')}>
       {children}
     </button>
   )

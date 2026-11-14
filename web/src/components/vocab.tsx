@@ -106,7 +106,7 @@ export const STATE: Record<State, { label: string; icon: LucideIcon; tone: Tone 
 export function StateBadge({ state, className }: { state: State; className?: string }) {
   const s = STATE[state]
   return (
-    <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-medium whitespace-nowrap', TONE_BG[s.tone], TONE_TEXT[s.tone], className)}>
+    <span className={cn('inline-flex items-center gap-1 border border-current/35 px-1.5 py-px font-mono text-[11px] whitespace-nowrap', TONE_BG[s.tone], TONE_TEXT[s.tone], className)}>
       <s.icon aria-hidden className="size-3.5" />
       {s.label}
     </span>
@@ -125,8 +125,8 @@ export const NEEDS: Record<NeedsKind, { label: string; verb: string; icon: Lucid
 export function NeedsTag({ kind, className }: { kind: NeedsKind; className?: string }) {
   const n = NEEDS[kind]
   return (
-    <span className={cn('inline-flex items-center gap-1 font-medium whitespace-nowrap', TONE_TEXT[n.tone], className)}>
-      <n.icon aria-hidden className="size-4" />
+    <span className={cn('inline-flex items-center gap-1.5 font-mono text-[11px] tracking-[0.08em] whitespace-nowrap uppercase', TONE_TEXT[n.tone], className)}>
+      <n.icon aria-hidden className="size-3.5" />
       {n.label}
     </span>
   )
@@ -177,8 +177,8 @@ export function ItemId({ id, link = true, className }: { id: string; link?: bool
 export function LiveDot({ label = 'agent active' }: { label?: string }) {
   return (
     <span className="relative inline-flex size-2" role="img" aria-label={label} title={label}>
-      <span className="absolute inline-flex size-full animate-ping rounded-full bg-run opacity-60 [animation-duration:2s]" />
-      <span className="relative inline-flex size-2 rounded-full bg-run" />
+      <span className="absolute inline-flex size-full animate-ping bg-run opacity-60 [animation-duration:2s]" />
+      <span className="relative inline-flex size-2 bg-run" />
     </span>
   )
 }
@@ -197,7 +197,9 @@ export function StageDots({ stages }: { stages: { stage: Stage; status: StageVie
 }
 
 /** Tab trigger look, shared by every tabbed page. */
-export const TAB = 'data-[state=active]:border-fg -mb-px border-b-2 border-transparent px-2.5 py-1.5 whitespace-nowrap text-muted hover:text-fg data-[state=active]:font-medium data-[state=active]:text-fg'
+export const TAB = 'border-r border-border px-4 py-2.5 text-[11px] tracking-[0.08em] whitespace-nowrap text-muted uppercase last:border-r-0 hover:bg-surface-2 hover:text-fg data-[state=active]:bg-accent data-[state=active]:text-white'
+/** The boxed row the TAB triggers sit in. */
+export const TAB_LIST = 'flex overflow-x-auto border border-border bg-surface'
 
 /** An observation's priority: a bracketed word, never colour alone. */
 export function PriorityTag({ p }: { p: string }) {
@@ -210,7 +212,7 @@ export function DriftFlag({ f, className }: { f?: { drift: Drift; where?: string
   const what = f.drift === 'modified' ? 'differs from main' : f.drift === 'added' ? 'not on main' : 'deleted here, still on main'
   const where = f.where === 'branch' ? 'committed on this branch' : 'uncommitted'
   return (
-    <span className={cn('inline-flex items-center gap-1 rounded-full bg-attention-bg px-2 py-0.5 text-[11.5px] font-medium whitespace-nowrap text-attention', className)} title="CI and new /work runs use the copy on main">
+    <span className={cn('inline-flex items-center gap-1 border border-current/35 bg-attention-bg px-1.5 py-px font-mono text-[11px] whitespace-nowrap text-attention', className)} title="CI and new /work runs use the copy on main">
       <FileDiff aria-hidden className="size-3.5" />
       {what} · {where}
     </span>

@@ -91,9 +91,9 @@ export function Runs() {
             <option key={a}>{a}</option>
           ))}
         </select>
-        <div role="group" aria-label="Status" className="inline-flex rounded-md border border-border bg-surface p-0.5">
+        <div role="group" aria-label="Status" className="inline-flex border border-border bg-surface">
           {(['', ...RUN_STATES] as const).map((s) => (
-            <button key={s || 'all'} aria-pressed={status === s} onClick={() => set('status', s)} className={cn('rounded px-2 py-0.5 text-[12px] text-muted hover:text-fg', status === s && 'bg-surface-2 font-medium text-fg')}>
+            <button key={s || 'all'} aria-pressed={status === s} onClick={() => set('status', s)} className={cn('border-r border-border px-2.5 py-1 font-mono text-[11.5px] text-muted last:border-r-0 hover:text-fg', status === s && 'bg-accent text-white hover:text-white')}>
               {s || 'all'}
               {s && <span className="ml-1 tabular text-faint">{counts[s]}</span>}
             </button>
@@ -112,7 +112,7 @@ export function Runs() {
         ) : (
           <div className="overflow-x-auto rounded-lg border border-border bg-surface" style={{ ['--tok' as string]: tokens ? '80px' : '0px' }}>
             <div role="table" aria-label="Agent runs" aria-rowcount={rows.length + 1} className="min-w-[1000px]">
-              <div role="row" className={cn(COLS, 'border-b border-border px-3 py-1.5 text-[11.5px] font-medium text-muted')}>
+              <div role="row" className={cn(COLS, 'label border-b border-border px-3 py-2')}>
                 <span role="columnheader">Item</span>
                 <span role="columnheader">Agent</span>
                 <span role="columnheader">Stage</span>
@@ -137,10 +137,18 @@ export function Runs() {
                         <div key={vi.key} role="row" aria-rowindex={vi.index + 2} className={cn(COLS, 'absolute inset-x-0 border-b border-border px-3 text-[12.5px]')} style={{ height: vi.size, transform: `translateY(${vi.start}px)` }}>
                           <span role="cell" className="flex min-w-0 items-center gap-1.5">
                             {s === 'running' && <LiveDot />}
-                            <ItemId id={r.workId} />
-                            <Link data-nav-item to={`/items/${r.workId}/activity`} className="truncate hover:underline" title={r.title}>
-                              {r.title ?? <span className="text-faint">unknown item</span>}
-                            </Link>
+                            {r.workId ? (
+                              <>
+                                <ItemId id={r.workId} />
+                                <Link data-nav-item to={`/items/${r.workId}/activity`} className="truncate hover:underline" title={r.title}>
+                                  {r.title ?? <span className="text-faint">unknown item</span>}
+                                </Link>
+                              </>
+                            ) : (
+                              <span className="truncate text-muted" title="A Claude Code session that was not running /work: setup, /groom, /audit or a plain chat">
+                                no work item
+                              </span>
+                            )}
                           </span>
                           <span role="cell" className="truncate">
                             <Mono>{r.agentType}</Mono>

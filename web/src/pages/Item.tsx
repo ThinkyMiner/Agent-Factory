@@ -12,7 +12,7 @@ import { Patch } from '@/components/Patch'
 import { Empty, ErrorState, Loading } from '@/components/States'
 import { CopyCommand } from './ControlRoom'
 import { ActionTrail, AnswerForm, ApproveAction, MarkReady } from '@/components/Actions'
-import { Mono, NEEDS, NeedsTag, STATUS, StageLabel, StateBadge, Status, StatusGlyph, TierChip, TONE_BORDER, needsTone } from '@/components/vocab'
+import { Mono, NEEDS, NeedsTag, STATUS, StageLabel, StateBadge, Status, StatusGlyph, TAB, TAB_LIST, TierChip, TONE_BORDER, needsTone } from '@/components/vocab'
 
 const TABS = ['spec', 'plan', 'changes', 'gates', 'review', 'activity', 'not-verified', 'observations'] as const
 type Tab = (typeof TABS)[number]
@@ -43,13 +43,9 @@ export function Item() {
             <NotVerifiedCallout item={data} onOpen={() => nav(`/items/${id}/not-verified`)} />
             <StageStrip item={data} />
             <Tabs.Root value={current} onValueChange={(v) => nav(`/items/${id}/${v}`, { replace: true })} className="mt-5">
-              <Tabs.List aria-label="Item details" className="flex gap-1 overflow-x-auto border-b border-border">
+              <Tabs.List aria-label="Item details" className={TAB_LIST}>
                 {TABS.map((t) => (
-                  <Tabs.Trigger
-                    key={t}
-                    value={t}
-                    className="-mb-px border-b-2 border-transparent px-2.5 py-1.5 whitespace-nowrap text-muted hover:text-fg data-[state=active]:border-fg data-[state=active]:font-medium data-[state=active]:text-fg"
-                  >
+                  <Tabs.Trigger key={t} value={t} className={TAB}>
                     {tabLabel(t, data)}
                   </Tabs.Trigger>
                 ))}
@@ -79,7 +75,7 @@ function tabLabel(t: Tab, d: ItemDetail) {
   return (
     <span className="inline-flex items-center gap-1.5">
       {base}
-      {n > 0 && <span className={cn('rounded-full px-1.5 text-[11px] tabular', t === 'not-verified' ? 'bg-block-bg text-block' : 'bg-surface-2 text-muted')}>{n}</span>}
+      {n > 0 && <span className={cn('px-1 text-[11px] tabular', t === 'not-verified' ? 'bg-block-bg text-block' : 'bg-surface-2 text-muted')}>{n}</span>}
       {bad && <FileWarning aria-label="could not parse" className="size-3.5 text-fail" />}
     </span>
   )
@@ -100,7 +96,7 @@ function Header({ item }: { item: ItemDetail }) {
         )}
         {item.reverted && <span className="rounded bg-fail-bg px-1.5 text-[12px] font-medium text-fail">Reverted by {item.reverted.ref}</span>}
       </div>
-      <h1 className="mt-1.5 text-[18px] leading-snug font-semibold">{item.title}</h1>
+      <h1 className="mt-2 text-[24px] leading-tight font-normal tracking-[-0.02em]">{item.title}</h1>
       <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-muted">
         <span>{item.reason}</span>
         {item.since && <span title={when(item.since)}>· since {ago(item.since, now)} ago</span>}
@@ -218,7 +214,7 @@ function StageStrip({ item }: { item: ItemDetail }) {
         const current = s.stage === item.stage && item.state === 'in-progress'
         return (
           <li key={s.stage} className={cn('border-r border-b border-border px-2.5 py-2 last:border-r-0 sm:border-b-0', current && 'bg-run-bg', s.status === 'pending' && 'text-faint')} aria-current={current ? 'step' : undefined}>
-            <div className="flex items-center gap-1 font-medium">
+            <div className="flex items-center gap-1.5 font-mono text-[12px]">
               <StatusGlyph status={s.status} />
               {s.stage}
             </div>

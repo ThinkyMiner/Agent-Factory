@@ -155,6 +155,9 @@ export class Factory {
 
   async refreshGitHub() {
     try {
+      // work run on GitHub (the factory workflow) pushes work/* branches this checkout has not seen
+      // ponytail: may briefly contend for a ref lock with a local push; per-ref fetch if that ever bites
+      await g.git(this.repo, ['fetch', '--quiet', '--prune', 'origin'], 30_000).catch(() => {})
       const slug = await repoSlug(this.repo)
       const data = await fetchGitHub(this.repo, slug)
       const fetchedAt = new Date().toISOString()

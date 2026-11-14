@@ -15,12 +15,12 @@ import { DriftFlag, Mono, TierChip } from '@/components/vocab'
 
 function Card({ title, id, children, aside }: { title: string; id: string; children: React.ReactNode; aside?: React.ReactNode }) {
   return (
-    <section aria-labelledby={id} className="min-w-0 rounded-lg border border-border bg-surface p-4">
-      <div className="mb-2 flex flex-wrap items-center gap-2">
-        <h2 id={id} className="font-semibold">{title}</h2>
+    <section aria-labelledby={id} className="fig">
+      <div className="fig-cap">
+        <h2 id={id} className="fig-title">{title}</h2>
         {aside}
       </div>
-      {children}
+      <div className="panel p-4">{children}</div>
     </section>
   )
 }

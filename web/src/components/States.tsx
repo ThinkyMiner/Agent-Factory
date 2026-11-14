@@ -5,8 +5,8 @@ import { cn } from '@/lib/utils'
 
 export function Empty({ title, children, icon, className }: { title: string; children?: ReactNode; icon?: ReactNode; className?: string }) {
   return (
-    <div className={cn('rounded-lg border border-dashed border-border px-5 py-6 text-muted', className)}>
-      <div className="flex items-center gap-2 font-medium text-fg">
+    <div className={cn('border border-dashed border-border-strong bg-surface px-5 py-6 text-muted', className)}>
+      <div className="flex items-center gap-2 font-mono text-[13px] text-fg">
         {icon}
         {title}
       </div>
@@ -29,7 +29,7 @@ export function Loading({ rows = 4, label = 'Loading' }: { rows?: number; label?
 export function ErrorState({ title, error, onRetry }: { title: string; error: unknown; onRetry?: () => void }) {
   return (
     <div role="alert" className="rounded-lg border border-fail/40 bg-fail-bg px-4 py-3">
-      <div className="flex items-center gap-2 font-medium text-fail">
+      <div className="flex items-center gap-2 font-mono text-[13px] text-fail">
         <TriangleAlert aria-hidden className="size-4" />
         {title}
       </div>
@@ -62,11 +62,11 @@ export function Banner({ tone, icon, children }: { tone: 'stale' | 'error' | 'in
 
 export function Section({ title, count, children, actions, id, className }: { title: ReactNode; count?: number; children: ReactNode; actions?: ReactNode; id?: string; className?: string }) {
   return (
-    <section aria-labelledby={id} className={cn('mt-6 first:mt-0', className)}>
-      <div className="mb-2 flex items-center gap-2">
-        <h2 id={id} className="text-[11.5px] font-semibold tracking-wide text-muted uppercase">
+    <section aria-labelledby={id} className={cn('fig mt-6 first:mt-0', className)}>
+      <div className="fig-cap">
+        <h2 id={id} className="fig-title">
           {title}
-          {count !== undefined && <span className="ml-1.5 tabular text-faint">{count}</span>}
+          {count !== undefined && <span className="tabular"> · {count}</span>}
         </h2>
         <div className="ml-auto flex items-center gap-2">{actions}</div>
       </div>

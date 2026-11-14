@@ -1,4 +1,4 @@
-// Read-only git access. Every call is execFile with an argument array (never a shell), and
+// Git access: reads, plus `fetch origin` with each GitHub refresh. Every call is execFile with an argument array (never a shell), and
 // GIT_OPTIONAL_LOCKS=0 so reading never takes the index lock from under a running factory.
 import { execFile, spawn } from 'node:child_process'
 

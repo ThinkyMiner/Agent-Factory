@@ -203,10 +203,10 @@ export function PaletteButton() {
   return (
     <button
       onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))}
-      className="flex w-full items-center gap-2 rounded-md border border-border bg-surface px-2 py-1.5 text-[12.5px] text-muted hover:border-border-strong hover:text-fg"
+      className="flex h-8 items-center gap-2 rounded-sm bg-fg px-3 text-[12px] text-bg hover:opacity-90"
     >
-      <Search aria-hidden className="size-3.5" /> Search
-      <kbd className="ml-auto font-mono text-[11px]">⌘K</kbd>
+      <Search aria-hidden className="size-3.5" /> <span className="max-sm:sr-only">Search</span>
+      <kbd className="text-[11px] opacity-70 max-sm:hidden">⌘K</kbd>
     </button>
   )
 }

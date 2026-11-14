@@ -277,6 +277,10 @@ describe('indexLifecycle', () => {
     expect(runs.filter((r) => r.agentType === 'foreman')).toMatchObject([{ agentId: 'session:sess', outcome: 'running', workId: '1' }])
     expect(sessions.get('sess')!.end).toBeUndefined()
   })
+  test('a subagent event with an empty agent_type is labelled "subagent", not blank', () => {
+    const { runs } = indexLifecycle([le('SubagentStop', 5, { agent_id: 'c', agent_type: '' })])
+    expect(runs.find((r) => r.agentId === 'c')?.agentType).toBe('subagent')
+  })
 })
 
 describe('deriveAll', () => {
