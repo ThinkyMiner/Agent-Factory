@@ -11,6 +11,7 @@
 #   - a session in Herdr's blocked state (a permission or trust dialog) for blocked_minutes [10]
 #   - a session working with no event for silent_minutes [30]
 #   - a build slot held for slot_hours [4]
+#   - a planning round (positions, discussion, review, decisions) open for round_minutes [60]
 # Each new finding becomes an escalation event in .factory/events.jsonl, and the orchestrator's
 # Herdr tab gets one fixed doorbell when it is idle, never the findings themselves. A finding is
 # escalated once while it lasts; a doorbell that could not ring is retried next pass.
@@ -110,6 +111,18 @@ while IFS=$'\t' read -r t since; do
   st=$(epoch "$since"); [ -n "$st" ] && valid_team_name "$t" || continue
   [ $(( (now - st) / 3600 )) -lt "$sh" ] || add "slot:$t:$since" slot "$t" "$t has held a build slot since $since"
 done < <(jq -r '.held // {} | objects | to_entries[] | [.key, (.value | strings)] | @tsv' "$dir/slots.json" 2>/dev/null)
+
+# ---- planning ----
+if cyc=$(active_cycle "$home" 2>/dev/null); then
+  IFS=$'\t' read -r st since < <(jq -r '[(.status // "" | strings), (.round_started_at // "" | strings)] | @tsv' "$home/planning/$cyc/state.json" 2>/dev/null) || true
+  case "${st:-}" in
+    positions|discussion-*|review|decisions)
+      t0=$(epoch "${since:-}")
+      if [ -n "$t0" ] && [ $(( (now - t0) / 60 )) -ge "$(limit round_minutes 60)" ]; then
+        add "round:$cyc:$st:$since" round "$cyc" "planning $cyc has been in its $st round for $(( (now - t0) / 60 )) minutes: run /plan to close it"
+      fi ;;
+  esac
+fi
 
 # ---- escalate what is new, remember what is current ----
 seen=$(jq -c '.seen // {} | if type == "object" then . else {} end' <<<"$state")

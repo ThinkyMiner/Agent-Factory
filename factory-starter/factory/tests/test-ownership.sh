@@ -139,6 +139,45 @@ test_rename_out_of_owned_path_fails() {
   run "$O" main; expect_rc 1; expect_out "web/a.js  (NOT OK"
 }
 
+# plan <cycle>: a planning branch with that cycle's record
+plan() {
+  git switch -q main && git switch -q -c "planning/$1"
+  mkdir -p "planning/$1"; echo brief > "planning/$1/BRIEF.md"; echo '{}' > "planning/$1/discussion.jsonl"
+}
+
+test_planning_pr_carries_only_its_cycle() {
+  setup; plan c002-share; commit
+  run "$O" main; expect_rc 0; expect_out "planning pull request for c002-share"; expect_out "ownership: ok"
+  echo x >> server/a.js; commit
+  run "$O" main; expect_rc 1; expect_out "server/a.js  (NOT OK: a planning pull request changes only planning/c002-share/)"
+  setup; plan c002-share; mkdir -p planning/c003-other; echo x > planning/c003-other/BRIEF.md; commit
+  run "$O" main; expect_rc 1; expect_out "planning/c003-other/BRIEF.md  (NOT OK"
+  setup; plan c002-share; echo '#' >> factory/teams.json; commit
+  run "$O" main; expect_rc 1; expect_out "factory/teams.json  (NOT OK"
+  setup; plan c002-share; mkdir -p work/12-share; echo x > work/12-share/spec.md; commit
+  run "$O" main; expect_rc 1; expect_out "work/12-share/spec.md  (NOT OK"
+}
+
+test_planning_pr_may_touch_earlier_decisions() {
+  setup; git switch -q main; mkdir -p planning/c001-first; echo '## c001-D01: x' > planning/c001-first/DECISIONS.md; commit
+  plan c002-share; echo '- status: superseded' >> planning/c001-first/DECISIONS.md; commit
+  run "$O" main; expect_rc 0; expect_out "planning/c001-first/DECISIONS.md  (an earlier cycle's decisions (superseding only))"
+}
+
+test_planning_branch_from_ci_env_and_bad_names() {
+  setup; item 12-share "team: backend"; echo new > server/a.js; commit
+  HEAD_REF=planning/c002-share run "$O" main; expect_rc 1; expect_out "NOT OK: a planning pull request"
+  HEAD_REF=work/12-share run "$O" main; expect_rc 0; expect_out "team backend"
+  for b in 'planning/../x' 'planning/c1-x' 'planning/c002-Share' 'planning/c002-$(id)' 'planning/'; do
+    HEAD_REF=$b run "$O" main; expect_rc 1; expect_err "is not a planning cycle's branch"
+  done
+}
+
+test_team_pr_cannot_touch_planning() {
+  setup; item 12-share "team: backend"; mkdir -p planning/c002-share; echo x > planning/c002-share/discussion.jsonl; commit
+  run "$O" main; expect_rc 1; expect_out "owned by orchestrator, not backend"
+}
+
 test_unknown_base_is_an_error() {
   setup; item 12-share "team: backend"; commit
   run "$O" no-such-ref; expect_rc 2

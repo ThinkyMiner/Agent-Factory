@@ -4,10 +4,10 @@ A factory runs as one team until `factory/teams.json` exists. With it, the facto
 teams, each with its own Claude Code session, its own git worktree and its own paths. Nothing
 else changes: `/work`, the gates and the risk tiers are the same.
 
-This page describes what is built so far (phases 1 and 2 of `plans/2026-11-14-teams.md` in the
+This page describes what is built so far (phases 1 to 3 of `plans/2026-11-14-teams.md` in the
 kit's repository): the orchestrator plus one building team, `backend`; an optional bot account
-for agents on GitHub; tickets, work items, build slots and the sweep. Planning meetings, more teams
-and specialists come in later phases.
+for agents on GitHub; tickets, work items, build slots and the sweep; planning meetings. More
+teams, specialists and feature integration come in later phases.
 
 ## Before you turn it on (once)
 
@@ -85,6 +85,9 @@ At start, resume and compaction the `session-start.sh` hook prints the team's ch
 | R2 needs your approval of the pull request as it is now | `human-approved` in any command is blocked | `risk-gate` runs `check-approval.sh`: the label was last added by `FACTORY_HUMAN`, after the newest push to the branch (timed by GitHub) |
 | Sessions keep the GitHub identity they were started with | credential commands blocked (`gh auth`, `GH_TOKEN`, `security`, `git credential`, `~/.config/gh`, `~/.ssh`); settings deny reading `~/.config/gh` and `~/.ssh` | with a bot: its label never counts, and its token cannot push workflow changes |
 | Issues and labels change only through `ticket.sh` and `item.sh` | raw `gh issue` / `gh label` writes, label edits on PRs and `gh api` writes are blocked | (not applicable) |
+| The planning transcript, state, positions and attachments are written only by the planning scripts | direct writes to `planning/*/discussion.jsonl`, `state.json`, `dispatch.jsonl`, `positions/`, `attachments/` and shell commands naming `.factory/planning` are blocked | a `planning/<cycle>` pull request may change only `planning/<cycle>/` (and, to supersede, earlier `DECISIONS.md`); every `planning/*` and `contracts/*` file is R2 |
+| No one reads a sealed position before the round closes | Read, Grep and Glob into `.factory/planning/*/sealed/` are blocked, for every session | (not applicable: sealed positions never leave the main checkout) |
+| Approved decisions are never rewritten | (not applicable) | `decisions.sh check-append-only`: a record on the base branch may only gain `status: superseded` and `superseded_by` |
 
 `/work` starts a new subagent for every delegation. A fix round goes to a new builder with the
 spec and the exact failure, never back to the builder that wrote the code.
@@ -105,8 +108,8 @@ anything). So a label the bot adds keeps the gate red, and any push after your a
 new one: remove the label and add it again once you have read what changed. Without a bot, an
 agent's label would also come from your account, so then only the second half (newer than the
 last push) adds protection against agents; the first half still stops anyone else. A pull request from
-a fork, or a branch GitHub has no push record for, fails closed. The same check will gate the
-planning brief (`brief-approved`) in phase 3.
+a fork, or a branch GitHub has no push record for, fails closed. The same check gates the
+planning brief: `round.sh next` runs it for the label `brief-approved`.
 
 ## Tickets
 
@@ -151,6 +154,48 @@ slot held for 4 hours (all in `limits`). Each new finding is an `escalation` eve
 lasts. Then the orchestrator's tab gets one fixed sentence, only when it is idle: read the
 escalations and tell the human. The findings never travel in that sentence.
 
+## Planning
+
+A feature that needs more than one team, or one team's work that is worth a decision record, starts
+with a planning cycle. The orchestrator chairs it with `/plan`; leads take part with `/inbox`. The
+record is `planning/c<NNN>-<slug>/` on the branch `planning/c<NNN>-<slug>` in the main checkout, and
+its pull request is how you approve it. Version 1 runs one cycle at a time: `round.sh open` refuses
+while one is open (a marker in `.factory/planning/active`).
+
+| Round | Who | What | What decides that it closes |
+|---|---|---|---|
+| brief | the orchestrator writes it from what you asked; you approve | `BRIEF.md`: Goal, Constraints, Out of scope, `teams:`. `round.sh brief` pushes it as a draft pull request. | You add `brief-approved` (`check-approval.sh`: your account, after the last push). A one-team cycle goes straight to decisions. |
+| positions | each lead, in parallel | `position.sh submit`: Build, Needs from others, Risks, Open questions, What I would object to in the brief; contract drafts with `position.sh attach`. Sealed until the round closes. | every team submitted, or the round's time is up; then all are published at once to `positions/` |
+| discussion-1, -2 | the orchestrator asks, leads answer | `say.sh question / answer / objection / proposal`, one JSON line each in `discussion.jsonl` | every question answered, or the time is up; a second round only with `--again` |
+| review | specialists (later phases) | | |
+| decisions | the orchestrator drafts `DECISIONS.md`; each lead answers each draft once | `round.sh draft`, then `say.sh accept` or `say.sh objection --refs <record>` | every team answered (or the time is up) and `decisions.sh validate` passes; the pull request is marked ready |
+| approval | you | settle each `needs-human` record (edit it, or tell the orchestrator), add `human-approved`, merge | `dispatch.sh` refuses unless `DECISIONS.md` is on `main` with no needs-human record left |
+
+Then `/dispatch` makes the feature branch `feature/f<NNN>-<slug>`, writes `dispatch.jsonl` (one
+line per work-breakdown row) and rings the teams, whose `/inbox` turns their rows into issues for
+you to run `/work` on. Version 1 dispatches one feature at a time.
+
+**The rules, all checked by the scripts, not by the chair.** A team says at most
+`messages_per_round` [4] things per round; the orchestrator asks one team at most
+`questions_per_team` [3] questions per round; a message body is at most `message_chars` [2000]
+characters (longer material goes in an attached file); a position is at most `position_chars`
+[20000]; at most `discussion_rounds` [2] discussion rounds and `drafts` [3] decision drafts; a
+round lasts `round_minutes` [60]. A team that misses a round's time gets a strike; two strikes end
+the meeting (`escalated`), and the sweep reports any round past its time. A question still open
+at the end of discussion, and an objection still standing on the last draft, must become a
+`needs-human` record that names the dissenting team: `decisions.sh validate` refuses otherwise.
+The orchestrator never overrules; you decide.
+
+`DECISIONS.md` records: `## c001-D01: Title`, then `- owner:`, `- affects:`, `- status: decided |
+needs-human`, optional `risk_floor`, `supersedes`, `contract`, `refs`, and the sections Decision,
+Reasoning, Alternatives rejected, Dissent. Then a `## Work breakdown` table:
+`| item | team | delivers | after | contract | decisions |`. The full format is in the header of
+`factory/scripts/decisions.sh`.
+
+Everything a team writes in planning (positions, messages, attachments) is evidence for the other
+teams to weigh, never an instruction to them; research's text above all, since it was read from
+the open web. Every agent prompt says so.
+
 ## Known weaknesses
 
 - **Without a bot account, agents work on GitHub as you.** Then:
@@ -178,5 +223,13 @@ escalations and tell the human. The findings never travel in that sentence.
 - **Team identity on GitHub is declarative.** Every team shares the one bot account. CI proves a
   pull request stays inside one team's paths, not which session wrote it, and a ticket's sender
   is the session that ran `ticket.sh`, not something GitHub checks.
+- **Sealing is drift prevention.** Sealed positions sit in the main checkout as ordinary files.
+  The guard blocks Read, Grep and Glob into them and shell commands naming `.factory` with
+  `sealed` or `.factory/planning`; a program that finds them some other way can read them.
+  Likewise the transcript is written only through `say.sh` because the guard blocks direct writes,
+  not because the file cannot be written: every session runs as your user. A planning pull request
+  shows the whole transcript, and you approve it by reading it.
+- **The active-cycle marker is local** (`.factory/planning/active` in the main checkout). Two
+  factories on two machines over one repository would not see each other's cycles.
 - **The approval check trusts GitHub's activity log** for push times. If GitHub has no record of
   a branch's pushes (an old branch), the gate stays closed until something is pushed.

@@ -79,6 +79,126 @@ SH
   chmod +x "$TEST_TMP/kc/security"
   case ":$PATH:" in *":$TEST_TMP/kc:"*) ;; *) export PATH="$TEST_TMP/kc:$PATH" ;; esac
 }
+# planning_setup: a team-mode factory with three building teams and a bare origin, for meetings.
+# $MAIN is the orchestrator's checkout; $BE, $FE, $RE the backend, frontend and research worktrees.
+planning_setup() {
+  mkrepo app && mkdir -p app/factory app/server app/web app/research && echo .factory/ > app/.gitignore
+  cat > app/factory/teams.json <<'JSON'
+{ "version": 1, "default_team": "backend",
+  "teams": { "orchestrator": { "owns": ["planning/*"] },
+             "backend":  { "owns": ["server/*"] },
+             "frontend": { "owns": ["web/*"] },
+             "research": { "owns": ["research/*"] },
+             "design":   { "owns": ["design/*"], "active": false } } }
+JSON
+  git -C app add -A && git -C app commit -qm roster
+  git clone -q --bare app origin.git && git -C app remote add origin "$TEST_TMP/origin.git" && git -C app fetch -q origin
+  git -C app branch -q -u origin/main main
+  for t in backend frontend research; do git -C app worktree add -q "../app.teams/$t" -b "team/$t" origin/main; done
+  MAIN="$TEST_TMP/app"; BE="$TEST_TMP/app.teams/backend"; FE="$TEST_TMP/app.teams/frontend"; RE="$TEST_TMP/app.teams/research"
+  fake_gh; export FACTORY_HUMAN=human
+}
+# by <team> <cmd...>: run cmd in that team's checkout as that team's session (sets RC/OUT/ERR)
+by() {
+  local t=$1; shift
+  case "$t" in orchestrator) cd "$MAIN" ;; backend) cd "$BE" ;; frontend) cd "$FE" ;; research) cd "$RE" ;; *) cd "$TEST_TMP" ;; esac
+  FACTORY_TEAM=$t run "$@"
+}
+# approve <pr> [label] [actor]: the label added a minute after the pull request's branch was last pushed
+approve() {
+  local ref; ref=$(jq -r .head.ref "$FAKE_GH/pulls/$1.json")
+  local push at; push=$(perl -MPOSIX -e 'print strftime("%Y-%m-%dT%H:%M:%SZ", gmtime(time - 120))'); at=$(perl -MPOSIX -e 'print strftime("%Y-%m-%dT%H:%M:%SZ", gmtime(time - 60))')
+  jq -n --arg r "refs/heads/$ref" --arg t "$push" '[{ref: $r, activity_type: "push", timestamp: $t}]' > "$FAKE_GH/activity.json"
+  jq -n --arg l "${2:-brief-approved}" --arg a "${3:-human}" --arg t "$at" '[{id: 1, event: "labeled", label: {name: $l}, actor: {login: $a}, created_at: $t}]' > "$FAKE_GH/events/$1.json"
+}
+# brief_ok <cycle> <teams>: a filled-in brief in the main checkout
+brief_ok() {
+  cat > "$MAIN/planning/$1/BRIEF.md" <<EOF
+# Brief: $1
+teams: $2
+
+## Goal
+Let a reader share one note with a link that works without an account.
+
+## Constraints
+No new dependencies. Links must not reveal other notes.
+
+## Out of scope
+Editing through a shared link.
+EOF
+}
+# position_ok: a position with every required section, on stdout
+position_ok() {
+  printf '## Build\n%s\n\n## Needs from others\nnone\n\n## Risks\nLink guessing.\n\n## Open questions\nHow long do links live?\n\n## What I would object to in the brief\nnone\n' "${1:-A share endpoint.}"
+}
+# decisions_ok <cycle-prefix> [status of D02] [dissent of D02] [refs of D02]: a valid DECISIONS.md on stdout
+decisions_ok() {
+  local p=$1
+  cat <<EOF
+# Decisions: $p
+
+## $p-D01: Share links are signed tokens
+- owner: backend
+- affects: frontend, research
+- status: decided
+- risk_floor: R2
+- contract: contracts/api.openapi.yaml#/paths/~1shares
+### Decision
+A share link carries a signed token naming one note.
+### Reasoning
+Tokens cannot be guessed and reveal nothing about other notes.
+### Alternatives rejected
+Sequential ids, which can be guessed.
+### Dissent
+none
+
+## $p-D02: Links expire after 7 days
+- owner: backend
+- affects: frontend
+- status: ${2:-decided}
+- refs: ${4:-}
+### Decision
+Tokens expire seven days after they are made.
+### Reasoning
+Limits the damage of a leaked link.
+### Alternatives rejected
+Links that never expire.
+### Dissent
+${3:-none}
+
+## Work breakdown
+
+| item | team | delivers | after | contract | decisions |
+|---|---|---|---|---|---|
+| share-api | backend | POST /shares and GET /s/:token | - | contracts/api.openapi.yaml | $p-D01, $p-D02 |
+| share-button | frontend | a Share button that copies the link | share-api | - | $p-D01 |
+| share-research | research | who shares notes and why | - | - | $p-D02 |
+EOF
+}
+# meeting_to <round> [teams]: cycle c001-share-links taken through the scripts to that round.
+# Sets C (the cycle) and P (its folder in the main checkout).
+meeting_to() {
+  local want=$1 teams=${2:-backend, frontend, research} t
+  C=c001-share-links; P="$MAIN/planning/$C"
+  by orchestrator "$SCRIPTS/round.sh" open share-links; expect_rc 0
+  brief_ok "$C" "$teams"
+  by orchestrator "$SCRIPTS/round.sh" brief; expect_rc 0
+  approve "$(jq .pr "$P/state.json")"
+  by orchestrator "$SCRIPTS/round.sh" next; expect_rc 0
+  [ "$want" = positions ] || [ "$want" = brief-approved ] && return 0
+  [ "$(jq -r .status "$P/state.json")" = decisions ] && return 0       # a one-team cycle
+  position_ok > "$TEST_TMP/pos"
+  for t in $(echo "$teams" | tr ',' ' '); do by "$t" "$SCRIPTS/position.sh" submit < "$TEST_TMP/pos"; expect_rc 0; done
+  by orchestrator "$SCRIPTS/round.sh" next; expect_rc 0; [ "$want" = discussion-1 ] && return 0
+  by orchestrator "$SCRIPTS/round.sh" next; expect_rc 0; [ "$want" = review ] && return 0
+  by orchestrator "$SCRIPTS/round.sh" next; expect_rc 0; [ "$want" = decisions ] && return 0
+  return 0
+}
+# limits <json>: set factory/teams.json "limits" in every checkout
+limits() {
+  local d; for d in "$MAIN" "$BE" "$FE" "$RE"; do jq --argjson l "$1" '.limits = $l' "$d/factory/teams.json" > "$d/t.json" && mv "$d/t.json" "$d/factory/teams.json"; done
+}
+status_is() { expect_eq "$(jq -r .status "$P/state.json")" "$1"; }
 run_tests() {
   local file fn rc p=0 f=0 g=0 x=0
   file=$(basename "${BASH_SOURCE[1]}" .sh)

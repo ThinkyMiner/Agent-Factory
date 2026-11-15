@@ -58,6 +58,7 @@ jobs:
       - name: Paths owned by the pull request's team
         env:
           BASE: origin/${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
         run: |
           if git cat-file -e "$BASE:factory/scripts/check-ownership.sh" 2>/dev/null; then
             mkdir -p /tmp/own
@@ -66,6 +67,18 @@ jobs:
             bash /tmp/own/check-ownership.sh "$BASE"
           else
             echo "No ownership check on $BASE: a single-team factory."
+          fi
+      - name: Approved decisions only gain status superseded
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: |
+          if git cat-file -e "$BASE:factory/scripts/decisions.sh" 2>/dev/null; then
+            mkdir -p /tmp/dec
+            git show "$BASE:factory/scripts/decisions.sh" > /tmp/dec/decisions.sh
+            git show "$BASE:factory/scripts/lib.sh" > /tmp/dec/lib.sh
+            bash /tmp/dec/decisions.sh check-append-only "$BASE"
+          else
+            echo "No decisions check on $BASE yet."
           fi
 
   risk-gate:

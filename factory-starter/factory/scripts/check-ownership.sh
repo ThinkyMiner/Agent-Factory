@@ -7,6 +7,8 @@
 # factory/, .github/, teams/, docs/factory/, memory/lessons.md, memory/reflections/) and the human's own
 # (CLAUDE.md, product/BRIEF.md, product/ROADMAP.md) is the human's change: R2 in
 # risk-rules.txt, so it needs the human-approved label, and it is exempt here.
+# A planning/<cycle> branch's pull request may change only planning/<cycle>/ (and, to supersede,
+# earlier cycles' DECISIONS.md).
 # The roster is read from the base branch (or $TEAMS_FILE), never from the pull request, so a
 # pull request cannot widen its own ownership. No roster on the base branch: single-team mode, ok.
 # Exit 0 ok, 1 a violation, 2 usage or environment.
@@ -49,6 +51,30 @@ while IFS= read -r -d '' f; do
 done < <(git diff -z --name-only --no-renames "$base"...HEAD)
 
 if [ "$n" -eq 0 ]; then echo "ownership: no changes"; exit 0; fi
+
+# A planning pull request (branch planning/<cycle>, from $HEAD_REF in CI) carries only its cycle's
+# record. The one exception: an earlier cycle's DECISIONS.md, where a record it supersedes gains
+# status: superseded (decisions.sh check-append-only checks that nothing else changed).
+head_ref=${HEAD_REF:-$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)}
+case "$head_ref" in
+  planning/*)
+    cyc=${head_ref#planning/}
+    if ! [[ "$cyc" =~ ^c[0-9]{3}-[a-z0-9][a-z0-9-]{0,40}$ ]]; then
+      echo "ownership: $head_ref is not a planning cycle's branch (planning/c001-slug)" >&2; exit 1
+    fi
+    echo "ownership: planning pull request for $cyc"
+    bad=0
+    while IFS= read -r -d '' f; do
+      case "$f" in
+        "planning/$cyc/"*) verdict="this cycle's record" ;;
+        planning/*/DECISIONS.md) verdict="an earlier cycle's decisions (superseding only)" ;;
+        *) bad=1; verdict="NOT OK: a planning pull request changes only planning/$cyc/" ;;
+      esac
+      printf '  %s  (%s)\n' "$f" "$verdict"
+    done < "$tmp/files"
+    [ "$bad" = 0 ] || { echo "ownership: this planning pull request changes paths outside planning/$cyc/" >&2; exit 1; }
+    echo "ownership: ok"; exit 0 ;;
+esac
 if [ "$nonfactory" -eq 0 ]; then
   echo "ownership: factory or human-owned files only (R2, read by the human): not a team's pull request"
   exit 0

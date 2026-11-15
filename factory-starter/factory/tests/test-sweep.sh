@@ -106,6 +106,25 @@ test_a_slot_held_for_hours() {
   true
 }
 
+test_a_planning_round_past_its_time() {
+  setup; echo '[]' > "$FAKE_GH/issues.json"; mkdir -p .factory/planning planning/c001-share
+  echo c001-share > .factory/planning/active
+  jq -n --arg a "$(ago 4000)" '{status: "discussion-1", teams: ["backend"], round_started_at: $a}' > planning/c001-share/state.json
+  run "$W"; expect_out "planning c001-share has been in its discussion-1 round for 66 minutes"
+  expect_eq "$(escalations)" "round c001-share"
+  run "$W"; expect_eq "$(escalations | wc -l | tr -d ' ')" 1
+  for st in brief approval '$(touch pwned)'; do
+    jq -n --arg a "$(ago 9000)" --arg s "$st" '{status: $s, round_started_at: $a}' > planning/c001-share/state.json
+    run "$W"; grep -q "planning c001" "$OUT" && fail "the $st status waits on the human, not a round"
+  done
+  jq -n --arg a "$(ago 600)" '{status: "positions", round_started_at: $a}' > planning/c001-share/state.json
+  run "$W"; grep -q "planning c001" "$OUT" && fail "a fresh round was reported"
+  printf '{"status": "positions", "round_started_at": 5}' > planning/c001-share/state.json; run "$W"; expect_rc 0
+  printf 'garbage' > planning/c001-share/state.json; run "$W"; expect_rc 0
+  echo '../../etc' > .factory/planning/active; run "$W"; expect_rc 0
+  [ ! -e pwned ] || fail "a status was run as a command"
+}
+
 test_a_finding_that_returns_is_escalated_again() {
   setup; echo '[]' > "$FAKE_GH/issues.json"; sessions orchestrator:idle backend:working
   mkdir -p .factory; printf '{"ts":"%s","type":"stage","team":"backend"}\n' "$(ago 2400)" > .factory/events.jsonl

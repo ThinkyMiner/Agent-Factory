@@ -119,6 +119,7 @@ from a second model vendor is a later upgrade for R2 changes.
 | What the factory has learned | `memory/` (see `MEMORY.md`) | `lessons.md` always; observations only by `/reflect` |
 | Team charters and roster (team mode) | `teams/<team>/CHARTER.md`, `factory/teams.json` (see `TEAMS.md`) | The charter at the start of that team's session |
 | Requests between teams (team mode) | Tickets: GitHub issues written only by `factory/scripts/ticket.sh`, each action also a `ticket` event | By the receiving team, the sweep and the orchestrator |
+| Planning meetings (team mode) | `planning/<cycle>/`: `BRIEF.md`, `positions/`, `discussion.jsonl` (written only by `say.sh` and `round.sh`), `state.json`, `DECISIONS.md`, `dispatch.jsonl`; merged by you as the approval | By the leads (`/inbox`), the chair (`/plan`) and you, in the planning pull request |
 | Live and per-item events | `.factory/events.jsonl` in the main checkout (one log shared by every worktree, appended under `.factory/events.lock`), `work/<id>-<slug>/events.jsonl` | By the control room and `/audit` |
 
 There is no hidden state. If a session dies, the next one can resume from the
@@ -194,7 +195,8 @@ same pipeline. Add a docs agent if docs lag.
 auth from a personal subscription token to an API key, run builders in parallel
 in separate git worktrees, and add a second-vendor reviewer for R2. Team mode
 (`TEAMS.md`) is the first step: one session and worktree per team, path ownership
-enforced by the guard and by CI.
+enforced by the guard and by CI, and a scripted planning meeting whose record you
+approve before any team builds.
 
 ## Changing the factory
 

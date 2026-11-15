@@ -23,6 +23,11 @@ test_single_paths() {
   expect_eq "$(tier_of .env.local)" R3 .env
   expect_eq "$(tier_of web/.env)" R3 "*/.env*"
   expect_eq "$(tier_of src/billing/invoice.ts)" R3 billing
+  expect_eq "$(tier_of planning/c001-share/BRIEF.md)" R2 "a planning brief, though *.md is R0"
+  expect_eq "$(tier_of planning/c001-share/DECISIONS.md)" R2 "planning decisions"
+  expect_eq "$(tier_of planning/c001-share/discussion.jsonl)" R2 "every planning record"
+  expect_eq "$(tier_of contracts/api.openapi.yaml)" R2 contracts
+  expect_eq "$(tier_of contracts/design/screens.md)" R2 "contracts, though *.md is R0"
 }
 
 test_highest_rule_wins_per_file() {

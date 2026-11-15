@@ -93,7 +93,8 @@ test_bypass_flags_blocked() {
   local c
   for c in 'git commit --no-verify -m x' 'gh pr merge 5 --admin' 'gh pr merge 5 --squash --admin' \
            'gh pr review 5 --approve' 'gh pr edit 5 --add-label human-approved' \
-           'gh issue edit 3 --add-label "human-approved"'; do
+           'gh issue edit 3 --add-label "human-approved"' 'gh pr edit 7 --add-label brief-approved' \
+           'gh api -X POST repos/o/r/issues/7/labels -f "labels[]=brief-approved"'; do
     bash_cmd "$c"; blocks "$c"
   done
 }
@@ -421,6 +422,50 @@ test_team_sessions_keep_the_identity_they_were_given() {
            'node server/security.js' 'git log --grep credential' 'cat server/credentials.test.js' 'ls server/.sshx'; do
     tb backend "$BE" "$c"; allows "$c"
   done
+}
+
+# rd <team> <checkout> <tool> <json tool_input>: a read payload as that team in that checkout
+rd() {
+  jq -n --arg t "$3" --argjson i "$4" '{tool_name:$t, tool_input:$i}' > "$TEST_TMP/in"
+  FACTORY_TEAM="$1" CLAUDE_PROJECT_DIR="$2" run "$G" < "$TEST_TMP/in"
+}
+
+test_sealed_positions_are_read_by_no_session() {
+  team_setup
+  local s="$MAIN/.factory/planning/c001-share/sealed"
+  mkdir -p "$s/frontend-attachments"; echo pos > "$s/frontend.md"; echo a > "$s/frontend-attachments/api.md"
+  ln -s "$s" "$BE/peek"
+  for i in "{\"file_path\":\"$s/frontend.md\"}" "{\"file_path\":\"$s/frontend-attachments/api.md\"}" \
+           "{\"file_path\":\"$MAIN/.factory/planning/c001-share/../c001-share/sealed/frontend.md\"}" \
+           "{\"file_path\":\"$BE/peek/frontend.md\"}" "{\"file_path\":\"$MAIN/.FACTORY/planning/c001-share/SEALED/frontend.md\"}"; do
+    rd backend "$BE" Read "$i"; blocks "Read $i"
+  done
+  expect_err "sealed planning positions"
+  rd orchestrator "$MAIN" Read "{\"file_path\":\"$s/frontend.md\"}"; blocks "the orchestrator too"
+  rd backend "$BE" Grep "{\"pattern\":\"api\",\"path\":\"$MAIN/.factory/planning\"}"; blocks "Grep over planning state"
+  rd backend "$BE" Grep "{\"pattern\":\"api\",\"path\":\"$MAIN/.factory\"}"; blocks "Grep over .factory"
+  rd backend "$BE" Glob "{\"pattern\":\"**/*.md\",\"path\":\"$s\"}"; blocks "Glob in sealed"
+  rd backend "$BE" Glob "{\"pattern\":\"**/.factory/**/*.md\",\"path\":\"$MAIN\"}"; blocks "Glob pattern naming .factory"
+  rd backend "$BE" Grep "{\"pattern\":\"x\",\"path\":\"$MAIN\",\"glob\":\"**/sealed/*\"}"; blocks "Grep glob naming sealed"
+  for c in "cat $s/frontend.md" "ls ~/x/.factory/planning/" "find $MAIN/.factory -name '*.md' | xargs grep sealed" \
+           "cp $MAIN/.factory/planning/c001-share/sealed/frontend.md /tmp/x" "echo c999-x > $MAIN/.factory/planning/active"; do
+    tb backend "$BE" "$c"; blocks "$c"
+  done
+  for f in discussion.jsonl state.json dispatch.jsonl positions/backend.md attachments/discussion-1-backend-api.md DISCUSSION.JSONL; do
+    tw orchestrator "$MAIN" Write "planning/c001-share/$f"; blocks "orchestrator writes $f directly"
+    tb orchestrator "$MAIN" "echo '{}' >> planning/c001-share/$f"; blocks "orchestrator appends to $f"
+  done
+  expect_err "only by the planning scripts"
+  tw orchestrator "$MAIN" Write planning/c001-share/BRIEF.md; allows "the chair writes the brief"
+  tw orchestrator "$MAIN" Edit planning/c001-share/DECISIONS.md; allows "the chair drafts the decisions"
+  tw backend "$BE" Write planning/c001-share/BRIEF.md; blocks "a team writes no planning file"
+  rd backend "$BE" Read "{\"file_path\":\"$MAIN/planning/c001-share/discussion.jsonl\"}"; allows "the published record"
+  rd backend "$BE" Read "{\"file_path\":\"$MAIN/.factory/planning/active\"}"; allows "the active marker"
+  rd backend "$BE" Grep "{\"pattern\":\"api\",\"path\":\"$MAIN/planning\"}"; allows "Grep over the published record"
+  rd backend "$BE" Glob "{\"pattern\":\"server/**/*.js\"}"; allows "an ordinary Glob"
+  rd backend "$BE" Read '{}'; allows "a Read with no path (Claude Code rejects it)"
+  tb backend "$BE" 'factory/scripts/position.sh submit < /tmp/pos.md'; allows "the position script"
+  tb backend "$BE" 'cat planning/c001-share/discussion.jsonl'; allows "the published record by shell"
 }
 
 run_tests

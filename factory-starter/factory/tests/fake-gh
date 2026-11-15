@@ -70,7 +70,7 @@ case "${1:-} ${2:-}" in
     shift 2; st=$(opt --state "$@") || st=open; f=$(opt --json "$@") || f=number,title
     ls=$(opts --label "$@" | jq -R . | jq -sc .); since=$(opt --search "$@" | sed -n 's/.*created:>=\([0-9-]*\).*/\1/p')
     jq --arg st "$st" --argjson ls "$ls" --arg since "$since" --arg f "$f" '
-      map(select(($st == "all" or (.state | ascii_downcase) == $st)
+      map(select(.pr != true and ($st == "all" or (.state | ascii_downcase) == $st)
                  and ([.labels[]?.name?] as $have | all($ls[]; . as $l | $have | index($l)))
                  and ($since == "" or .createdAt >= $since)))
       | sort_by(-.number) | map(with_entries(select(.key as $k | $f | split(",") | index($k))))' "$I" | out "$@" ;;
@@ -79,6 +79,21 @@ case "${1:-} ${2:-}" in
   "label create")
     jq -e --arg l "$3" 'index($l)' "$S/labels.json" >/dev/null && { echo "label with name \"$3\" already exists" >&2; exit 1; }
     jq --arg l "$3" '. + [$l]' "$S/labels.json" > "$S/l.new" && mv "$S/l.new" "$S/labels.json" ;;
+  "pr create")
+    shift 2; t=$(opt --title "$@") || { echo "--title required" >&2; exit 1; }; b=$(body "$@")
+    head=$(opt --head "$@") || head=$(git rev-parse --abbrev-ref HEAD); base=$(opt --base "$@") || base=main
+    draft=false; for x in "$@"; do [ "$x" = --draft ] && draft=true; done
+    n=$(( $(jq 'map(.number) | max // 0' "$I") + 1 ))
+    save --argjson n "$n" --arg t "$t" '. + [{number: $n, title: $t, pr: true, state: "OPEN", labels: [], comments: []}]'
+    jq -n --argjson n "$n" --arg t "$t" --arg b "$b" --arg h "$head" --arg base "$base" --argjson d "$draft" \
+      '{number: $n, title: $t, body: $b, draft: $d, state: "open", head: {ref: $h, repo: {full_name: "o/r"}}, base: {ref: $base, repo: {full_name: "o/r"}}}' > "$S/pulls/$n.json"
+    echo "https://github.com/o/r/pull/$n" ;;
+  "pr ready")
+    f="$S/pulls/$3.json"; [ -f "$f" ] || { echo "no pull request $3" >&2; exit 1; }
+    jq '.draft = false' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+  "pr close")
+    f="$S/pulls/$3.json"; [ -f "$f" ] || { echo "no pull request $3" >&2; exit 1; }
+    jq '.state = "closed"' "$f" > "$f.new" && mv "$f.new" "$f" ;;
   "auth git-credential")
     [ "${3:-}" = get ] && printf 'protocol=https\nhost=github.com\nusername=x-access-token\npassword=%s\n' "$user" ;;
   "pr view")

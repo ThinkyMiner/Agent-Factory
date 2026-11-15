@@ -7,7 +7,9 @@
 #
 # Always: no writes to .env files, to the factory's own controls (.claude/, factory/, .github/,
 # teams/, docs/factory/ except its audits/, memory/lessons.md, memory/reflections/), or to Claude Code's own configuration in
-# ~/.claude; no force push, no push to main, no --no-verify, no admin merge, no self-approval.
+# ~/.claude; no force push, no push to main, no --no-verify, no admin merge, no self-approval, no
+# approval labels; no Read, Grep or Glob of sealed planning positions; the planning record's
+# transcript, state, positions and attachments only through the planning scripts.
 # Paths are compared after resolving .. and symlinks, and without case (macOS volumes ignore it).
 # Shell commands are read for the files they write (best effort, see guard-paths.pl).
 #
@@ -38,6 +40,27 @@ root_raw="${CLAUDE_PROJECT_DIR:-$PWD}"
 resolve() { perl "$here/guard-paths.pl" resolve "$root_raw" "$1"; }
 root=$(resolve "$root_raw")
 home_dir=$(resolve "${HOME:-/nonexistent}")
+
+# Sealed planning positions (.factory/planning/<cycle>/sealed/) are published by round.sh when the
+# positions round closes. Until then no session reads them, its own team's included.
+case "$tool" in
+  Read|Grep|Glob)
+    sealed_why="sealed planning positions are read by round.sh when the round closes, never by a session."
+    p=$(jq -r '.tool_input.file_path // .tool_input.path // empty' <<<"$input")
+    if [ -n "$p" ]; then
+      rp=$(resolve "$p")
+      [ "$rp" != '!loop' ] || block "$p is a symlink loop."
+      shopt -s nocasematch
+      case "$tool:$rp" in
+        Read:*/.factory/planning/*/sealed|Read:*/.factory/planning/*/sealed/*) block "$sealed_why" ;;
+        Read:*) ;;
+        *:*/.factory|*:*/.factory/planning|*:*/.factory/planning/*) block "$sealed_why" ;;
+      esac
+    fi
+    q=$(jq -r '[.tool_input.pattern, .tool_input.glob] | map(strings) | join(" ")' <<<"$input")
+    if [ "$tool" != Read ] && [[ "$q" =~ (\.factory|sealed) ]]; then block "$sealed_why"; fi
+    exit 0 ;;
+esac
 self_edit=${FACTORY_ALLOW_SELF_EDIT:-0}
 teams=$(teams_file "$root_raw" || true)
 team=""
@@ -91,6 +114,10 @@ check_write() {
     .claude/*|factory/*|.github/*|teams/*|docs/factory/*|memory/lessons.md|memory/reflections/*)
       [ "$self_edit" = 1 ] && return 0
       block "$rel is part of the factory's own controls. Stop and report instead of editing it." ;;
+  esac
+  case "$rel" in
+    planning/*/discussion.jsonl|planning/*/state.json|planning/*/dispatch.jsonl|planning/*/positions/*|planning/*/attachments/*)
+      block "$rel is written only by the planning scripts (say.sh, position.sh, round.sh, dispatch.sh)." ;;
   esac
   [ -n "$teams" ] || return 0
   [ -n "$team" ] || block "this factory runs in team mode and this session has no valid team (FACTORY_TEAM=${FACTORY_TEAM:-unset}, checkout $root). Start sessions with 'factory team-up'."
@@ -159,8 +186,8 @@ case "$tool" in
     if grep -Eq 'gh +pr +review[^;&|]*--approve' <<<"$cmd"; then
       block "the factory does not approve its own pull requests."
     fi
-    if grep -Eq 'human-approved' <<<"$cmd"; then
-      block "the 'human-approved' label is applied by the human only."
+    if grep -Eq 'human-approved|brief-approved' <<<"$cmd"; then
+      block "the 'human-approved' and 'brief-approved' labels are applied by the human only."
     fi
 
     if [ -n "$teams" ]; then
@@ -216,6 +243,9 @@ case "$tool" in
             esac ;;
         esac
       done < <(perl "$here/guard-paths.pl" commands "$cmd")
+      if [[ "$cmd" =~ \.factory/+planning ]] || { [[ "$cmd" == *.factory* ]] && [[ "$cmd" == *sealed* ]]; }; then
+        block "planning state is changed only by the planning scripts (round.sh, position.sh, say.sh), and sealed positions are read by none of them until the round closes."
+      fi
       hname="$(basename "$(factory_home "$root_raw")").teams/"
       for t in $(team_names "$teams"); do
         [ "$t" = "$team" ] && continue

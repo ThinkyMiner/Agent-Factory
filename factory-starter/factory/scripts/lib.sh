@@ -154,3 +154,57 @@ ensure_labels() {
   have=$(gh label list --limit 1000 --json name --jq '.[].name') || return 1
   for l in "$@"; do grep -qxF -- "$l" <<<"$have" || gh label create "$l" >/dev/null 2>&1 || true; done
 }
+
+# ---- planning (team mode) ----
+# A cycle's record lives in the main checkout, on branch planning/<cycle>, in planning/<cycle>/:
+# BRIEF.md, state.json (round.sh only), discussion.jsonl (say.sh and round.sh only), positions/,
+# attachments/, DECISIONS.md, dispatch.jsonl. Version 1 runs one cycle at a time; the one in
+# progress is named in .factory/planning/active. Sealed positions wait in
+# .factory/planning/<cycle>/sealed/ until round.sh publishes them all at once.
+
+# active_cycle <home>: the cycle in progress, or nothing (returns 1).
+active_cycle() {
+  local c; c=$(head -1 "$1/.factory/planning/active" 2>/dev/null) || return 1
+  printf '%s' "$c" | grep -Eq '^c[0-9]{3}-[a-z0-9][a-z0-9-]{0,40}$' || return 1
+  echo "$c"
+}
+
+# planning_limit <teams.json> <key> <default>: a non-negative integer from .limits.
+planning_limit() {
+  local v; v=$(jq -r --arg k "$2" '.limits[$k] // empty' "$1" 2>/dev/null)
+  [[ "$v" =~ ^[0-9]{1,6}$ ]] && echo "$v" || echo "$3"
+}
+
+# transcript_append <file> <lock> <id-prefix> <json-object>: append one transcript line, stamped
+# with the next id (<prefix>-mNNN) and the time in front of the caller's fields, under an
+# exclusive lock. Prints the id. Exit 75 when the lock is not free within FACTORY_LOCK_TIMEOUT:
+# the transcript is never written unlocked, so the caller fails loudly and can retry.
+transcript_append() {
+  perl -e '
+    use strict; use Fcntl qw(:flock); use Time::HiRes qw(time sleep); use POSIX qw(strftime);
+    my ($file, $lock, $prefix, $json, $timeout) = @ARGV;
+    $json =~ /^\{"/ or exit 65;
+    open(my $lk, ">>", $lock) or exit 74;
+    my $deadline = time + $timeout;
+    until (flock($lk, LOCK_EX | LOCK_NB)) { exit 75 if time >= $deadline; sleep 0.02 }
+    my $n = 0; if (open(my $in, "<", $file)) { $n++ while <$in>; close $in }
+    my $id = sprintf("%s-m%03d", $prefix, $n + 1);
+    my $ts = strftime("%Y-%m-%dT%H:%M:%SZ", gmtime);
+    open(my $out, ">>", $file) or exit 74;
+    print $out "{\"id\":\"$id\",\"ts\":\"$ts\"," . substr($json, 1) . "\n";
+    close $out or exit 74;
+    print $id;
+  ' "$1" "$2" "$3" "$4" "${FACTORY_LOCK_TIMEOUT:-5}"
+}
+
+# ring_team <home> <team> <text>: the doorbell. Types a fixed line into the team's tab in this
+# factory's Herdr space, only if that session is idle. Never carries content: the line says where
+# to look. Returns 1 when it could not ring (no Herdr, no such tab, or the session is busy).
+ring_team() {
+  local term
+  command -v herdr-app >/dev/null 2>&1 && command -v hc >/dev/null 2>&1 || return 1
+  term=$(herdr-app ls 2>/dev/null | jq -r --arg l "$(basename "$1")" --arg t "$2" \
+    '[.spaces[]? | select(.name == $l)][0].tabs[]? | select(.name == $t) | .terminals[0].terminal // empty' 2>/dev/null | head -1)
+  [ -n "$term" ] || return 1
+  hc send "$term" "$3" --if idle >/dev/null 2>&1
+}
