@@ -12,7 +12,7 @@
 #   ## Findings                       - F1: <claim> [S1, S3]
 #   ## Assumptions                    - A1: <taken as given without a source>    or the single line - none
 #   ## Hypotheses                     - H1: <an untested idea>                   or - none
-#   ## Instructions found in sources  - S2: "<instruction-shaped text, quoted>" (not followed)   or - none
+#   ## Instructions found in sources  - S2: "<instruction-shaped text, quoted>" [(notes)] (not followed)   or - none
 #   ## Sources                        - S1: <http(s) URL> | accessed <YYYY-MM-DD> | "<exact quote>"
 # Rules: the first non-empty line is that header exactly; nothing but the # title before ## Question;
 # the six sections each once, in that order, and no other ## section; at least one finding; every
@@ -137,7 +137,10 @@ for my $f (@ARGV) {
             else { $say->($n, "not $lab->[1] in ## $s: " . quoted($l)) }
             next;
           }
-          my ($k, $t) = $l =~ /^- (S[1-9][0-9]*):[ \t]+"(.*)"(?:[ \t]+\(not followed\))?$/;
+          # The quote, then optional notes in parentheses (where it was, what it asked), ending in
+          # (not followed) or nothing; never (followed).
+          my ($k, $t, $rest) = $l =~ /^- (S[1-9][0-9]*):[ \t]+"(.*?)"((?:[ \t]+\(.*\))?)$/;
+          $t = undef if defined $rest && $rest =~ /\((?:was[ \t]+)?followed\)[ \t]*$/i;
           if (!defined $t || $t !~ /\S/) { $say->($n, "not a recorded instruction (- S<n>: \"<the text, quoted>\" (not followed)): " . quoted($l)) }
           elsif (!$src{$k}) { $say->($n, "names $k, which is not in ## Sources") }
         }

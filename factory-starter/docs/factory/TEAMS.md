@@ -339,6 +339,11 @@ agreement between teams. No team owns it.
   later version adds `--follow`, a symlink planted inside `research/` would be read through.
   WebFetch is not limited: a researcher can send anything it may read to any web address, and
   it may read only the evidence folders.
+- **WebFetch shows a page through a summary.** It quotes at most about 125 characters at a time,
+  so a researcher records only the opening of a long injected instruction, and hidden text the
+  summary leaves out can go unnoticed (seen in the phase 5 live check). The evidence reviewer
+  re-fetches with targeted questions and says what it could not see; the guard is what keeps a
+  followed instruction from reaching anything.
 - **Contract grants are local files** in the main checkout. A ticket closed on GitHub without
   `ticket.sh` keeps its grant until `ticket.sh` next acts on it. CI's ticket check holds anyway.
 - **The approval check trusts GitHub's activity log** for push times. If GitHub has no record of
