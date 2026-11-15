@@ -6,7 +6,8 @@
 #                                                    one per line, and exit 0. Reads the working tree
 #                                                    (committed or not), for /work mid-run.
 # <tier> is risk-tier.sh's result. Required, in the one work folder (work/<id>-<slug>/):
-#   review.md      always (reviewer)
+#   review.md      always (reviewer), except when the spec's team has "evidence_review": true in
+#                  the roster (research): evidence-review.md instead (evidence-reviewer)
 #   ui-review.md   when the spec's team has "ui_review": true in the roster (ui-reviewer)
 #   security.md    when <tier> is R2 or R3 (security-engineer)
 #   db-review.md   when a changed path matches the roster's "db_paths" (db-engineer); globs as in
@@ -72,7 +73,12 @@ fi
 
 # The requirements: "<report> TAB <why>".
 req() { printf '%s\t%s\n' "$1" "$2" >> "$tmp/req"; }
-req review.md "every item"
+# evidence_review swaps the reviewer, so only the value true does: anything else keeps review.md.
+if jq -e --arg t "$team" '.teams[$t].evidence_review == true' "$teams" >/dev/null 2>&1; then
+  req evidence-review.md "team $team has evidence_review"
+else
+  req review.md "every item"
+fi
 jq -e --arg t "$team" '.teams[$t].ui_review | . != null and . != false' "$teams" >/dev/null 2>&1 &&
   req ui-review.md "team $team has ui_review"
 case "$tier" in R2|R3) req security.md "tier $tier" ;; esac

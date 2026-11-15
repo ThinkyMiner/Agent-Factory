@@ -81,6 +81,47 @@ test_ui_review_team_needs_both_reviews() {
   run "$S" main R1; expect_rc 0; [ "$(grep -c ui-review "$OUT")" = 0 ] || fail "backend has no ui_review"
 }
 
+# research_team <evidence_review value, as JSON>: main's roster gets an active research team with
+# it; then a pull-request branch with a research item.
+research_team() {
+  setup; git switch -q main; roster ".teams.research = {\"owns\": [\"research/*\"], \"evidence_review\": $1}"; git commit -qam research
+  git switch -q -c work/13-r; item 13-r "team: research"; mkdir -p research/r1; echo brief > research/r1/brief.md
+}
+reviews_md() { grep -cE '^  [A-Z ok]+ +review\.md' "$OUT"; }   # rows for review.md itself
+
+test_evidence_review_team_needs_evidence_review_instead_of_review() {
+  research_team true; says 13-r review.md pass; commit
+  run "$S" main R1; expect_rc 1; expect_out "MISSING      evidence-review.md  (team research has evidence_review)"
+  expect_eq "$(reviews_md)" 0 "an evidence_review team needs no review.md"
+  says 13-r evidence-review.md changes-required; commit
+  run "$S" main R1; expect_rc 1; expect_out "NOT PASSING  evidence-review.md  (VERDICT: changes-required; team research has evidence_review)"
+  says 13-r evidence-review.md escalate; commit; run "$S" main R1; expect_rc 1
+  says 13-r evidence-review.md pass; git rm -q work/13-r/review.md; commit
+  run "$S" main R1; expect_rc 0; expect_out "ok           evidence-review.md"; expect_eq "$(grep -c '^  ' "$OUT")" 1
+  run "$S" main R2; expect_rc 1; expect_out "MISSING      security.md  (tier R2)"     # the other rules hold
+  run "$S" --needs main R1; expect_rc 0; expect_eq "$(cat "$OUT")" evidence-review.md
+  run "$S" --needs main R2; expect_eq "$(cat "$OUT" | tr '\n' ' ')" "evidence-review.md security.md "
+}
+
+test_evidence_review_comes_from_the_base_roster_and_only_true_counts() {
+  # Set in the pull request, not on base: review.md is still needed.
+  research_team false; roster '.teams.research.evidence_review = true'; says 13-r evidence-review.md pass; commit
+  run "$S" main R1; expect_rc 1; expect_out "MISSING      review.md  (every item)"
+  setup; item 12-share "team: backend"; echo x >> server/a.js; roster '.teams.backend.evidence_review = true'
+  says 12-share evidence-review.md pass; commit
+  run "$S" main R1; expect_rc 1; expect_out "MISSING      review.md  (every item)"
+  run "$S" --needs main R1; expect_eq "$(cat "$OUT")" review.md
+  # Removed in the pull request, but true on base: evidence-review.md is still needed.
+  research_team true; roster 'del(.teams.research.evidence_review)'; says 13-r review.md pass; commit
+  run "$S" main R1; expect_rc 1; expect_out "MISSING      evidence-review.md"
+  # Any value but true keeps review.md.
+  local v
+  for v in '"true"' 1 '"yes"' null '{}' '[true]'; do
+    research_team "$v"; says 13-r evidence-review.md pass; commit
+    run "$S" main R1; [ "$RC" = 1 ] || fail "evidence_review $v dropped review.md"; expect_out "MISSING      review.md"
+  done
+}
+
 test_db_path_change_needs_db_review() {
   local p
   for p in db/schema.sql server/migrations/001_add.sql server/user_schema.ts DB/Seed.SQL; do

@@ -36,11 +36,16 @@ here=$(cd "$(dirname "$0")" && pwd)
 input=$(cat)
 jq -e 'type == "object"' >/dev/null 2>&1 <<<"$input" || block "the hook payload is not a JSON object."
 tool=$(jq -r '.tool_name // empty' <<<"$input")
+# The subagent making the call, compared without case, whitespace, control characters or a plugin
+# prefix (plugin:name), so a variant of a limited agent's name is still limited.
+agent=$(jq -r '.agent_type | if type == "string" then ascii_downcase | gsub("[\\s\\p{Cc}\\p{Cf}]"; "") | sub("^.*:"; "")
+               elif . == null then "" else "not a string" end' <<<"$input")
+[ "$agent" != "not a string" ] || block "the hook payload's agent_type is not a string."
 
 # The ui-reviewer's one shell command is the browser tooling, `make ui-shots URL=<url> OUT=<dir>`,
 # with plain values: no shell syntax, quotes, globs, spaces, newlines or `..`. In and out of team
 # mode. An allowed command still meets every check below.
-if [ "$tool" = Bash ] && [ "$(jq -r '.agent_type // empty' <<<"$input")" = ui-reviewer ]; then
+if [ "$tool" = Bash ] && [ "$agent" = ui-reviewer ]; then
   jq -e '.tool_input.command | ((contains("\n") or contains("..")) | not)
          and test("^make ui-shots URL=[A-Za-z0-9._/:%+@,-]+ OUT=[A-Za-z0-9._/:%+@,-]+$")' >/dev/null 2>&1 <<<"$input" ||
     block "the ui-reviewer only runs make ui-shots, exactly: make ui-shots URL=<url> OUT=<work folder>/screens (values made of letters, digits and . _ / : % + @ , -)."
@@ -50,6 +55,36 @@ root_raw="${CLAUDE_PROJECT_DIR:-$PWD}"
 resolve() { perl "$here/guard-paths.pl" resolve "$root_raw" "$1"; }
 root=$(resolve "$root_raw")
 home_dir=$(resolve "${HOME:-/nonexistent}")
+
+# The research agents read the open web and user-submitted text. In and out of team mode they
+# read only this checkout's evidence folders, the researcher writes only research/, the
+# evidence-reviewer writes nothing, and neither runs a shell command. A relative path counts from
+# the payload's cwd, as the tools count it. An allowed call still meets every check below.
+if [ "$agent" = researcher ] || [ "$agent" = evidence-reviewer ]; then
+  shopt -s nocasematch
+  dirs="research product planning features contracts" key=file_path
+  why="research agents read only evidence folders: research/, product/, planning/, features/ and contracts/ of $root. Name a path inside one (a Grep or Glob too), with a glob that is not absolute and has no '..'."
+  case "$tool" in
+    Bash) block "research agents run no shell commands." ;;
+    Edit|Write|MultiEdit|NotebookEdit)
+      [ "$agent" = researcher ] || block "the evidence-reviewer writes nothing: the lead saves its reply."
+      dirs=research why="the researcher writes only in research/ of $root." ;;
+    Grep|Glob) key=path
+      if jq -e --arg t "$tool" '(if $t == "Glob" then .tool_input.pattern else .tool_input.glob end) | strings
+                                | test("(^|[\\s{,])[/~]") or contains("..")' >/dev/null 2>&1 <<<"$input"; then block "$why"; fi ;;
+    Read) ;;
+    *) dirs="" ;;
+  esac
+  if [ -n "$dirs" ]; then
+    jq -e --arg k "$key" '.tool_input[$k] | strings | length > 0' >/dev/null 2>&1 <<<"$input" || block "$why"
+    base=$(jq -r '.cwd | strings' <<<"$input")
+    while IFS= read -r -d '' p; do
+      rp=$(perl "$here/guard-paths.pl" resolve "${base:-$root_raw}" "$p") ok=0
+      for d in $dirs; do case "$rp" in "$root/$d"|"$root/$d"/*) ok=1 ;; esac; done
+      [ "$ok" = 1 ] || block "$p: $why"
+    done < <(jq -j '.tool_input | (.file_path, .path, .notebook_path) | strings | . + "\u0000"' <<<"$input")
+  fi
+fi
 
 # Sealed planning positions (.factory/planning/<cycle>/sealed/) are published by round.sh when the
 # positions round closes. Until then no session reads them, its own team's included.
@@ -132,6 +167,9 @@ check_write() {
   [ -n "$teams" ] || return 0
   [ -n "$team" ] || block "this factory runs in team mode and this session has no valid team (FACTORY_TEAM=${FACTORY_TEAM:-unset}, checkout $root). Start sessions with 'factory team-up'."
   [ "${3:-0}" = 1 ] && rel="$rel/"
+  case "$rel" in   # the human's, even inside research/: which feedback the research team reads
+    research/feedback/SOURCES.md) block "$rel lists the feedback sources the research team reads; only the human changes it. Stop and report the source you would add." ;;
+  esac
   case "$rel" in   # owned by no team: only under a grant from an accepted contract-change ticket
     contracts/*) has_contract_grant "$fhome" "$team" && return 0
       block "$rel is owned by no team: a contract changes only under a contract-change ticket your team accepted (ticket.sh accept). Stop and report, so the team that needs the change asks for one (ticket.sh create --type contract-change)." ;;

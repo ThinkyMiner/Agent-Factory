@@ -123,9 +123,10 @@ teams)
   [ -f factory/policy.env ] || die "run this inside a factory folder"
   [ ! -e factory/teams.json ] || die "factory/teams.json already exists"
   # Every top-level product entry goes to backend; the factory's own files, product/ (yours),
-  # memory/, work/ (by each spec's team) and CLAUDE.md stay out of every team's reach.
+  # memory/, work/ (by each spec's team), planning/, research/ and features/ (their own teams),
+  # contracts/ (no team) and CLAUDE.md stay out of backend's reach.
   owns=$(git ls-tree HEAD | awk -F'\t' '
-    $2 ~ /^(\.claude|\.github|factory|teams|memory|product|work|planning|CLAUDE\.md)$/ {next}
+    $2 ~ /^(\.claude|\.github|factory|teams|memory|product|work|planning|research|features|contracts|CLAUDE\.md)$/ {next}
     {split($1, a, " "); print (a[2] == "tree" ? $2 "/*" : $2)}' | jq -R . | jq -sc .)
   jq -n --argjson owns "$owns" '{version: 1, default_team: "backend",
     teams: {orchestrator: {owns: ["planning/*"]}, backend: {owns: $owns}},

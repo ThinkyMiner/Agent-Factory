@@ -191,4 +191,12 @@ test_frontend_team_runs_the_kits_frontend_lead() {
   expect_eq "$(git -C "$TEST_TMP/app.teams/frontend" rev-parse --abbrev-ref HEAD)" team/frontend
 }
 
+test_research_team_runs_the_kits_research_lead() {
+  kit; jq '.teams.research = {owns: ["research/*"], evidence_review: true}' factory/teams.json > t.json && cp t.json factory/teams.json
+  cp "$KIT/.claude/agents/research-lead.md" .claude/agents/
+  run "$U" --print; expect_rc 0
+  expect_out "cd $TEST_TMP/app.teams/research && FACTORY_TEAM=research $SCRIPTS/bot-session.sh claude --agent research-lead -n research"
+  expect_eq "$(git -C "$TEST_TMP/app.teams/research" rev-parse --abbrev-ref HEAD)" team/research
+}
+
 run_tests

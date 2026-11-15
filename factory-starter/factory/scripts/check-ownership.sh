@@ -5,7 +5,8 @@
 # Every changed path must then be: that work folder, a path the team owns, or an append-only
 # location that only grew. A pull request that changes only the factory's own files (.claude/,
 # factory/, .github/, teams/, docs/factory/, memory/lessons.md, memory/reflections/) and the human's own
-# (CLAUDE.md, product/BRIEF.md, product/ROADMAP.md) is the human's change: R2 in
+# (CLAUDE.md, product/BRIEF.md, product/ROADMAP.md, research/feedback/SOURCES.md: which feedback
+# sources the research team reads) is the human's change: R2 in
 # risk-rules.txt, so it needs the human-approved label, and it is exempt here.
 # A planning/<cycle> branch's pull request may change only planning/<cycle>/ (and, to supersede,
 # earlier cycles' DECISIONS.md), and add contracts/ files that are not on the base branch, each
@@ -40,7 +41,7 @@ is_factory_path() {
   return 1
 }
 is_human_path() {
-  case "$1" in CLAUDE.md|product/BRIEF.md|product/ROADMAP.md) return 0 ;; esac
+  case "$1" in CLAUDE.md|product/BRIEF.md|product/ROADMAP.md|research/feedback/SOURCES.md) return 0 ;; esac
   return 1
 }
 
@@ -137,6 +138,9 @@ while IFS= read -r -d '' f; do
   case "$f" in "work/$item/"*) verdict="own work folder" ;; esac
   if [ -z "$verdict" ] && is_factory_path "$f"; then           # even if a roster glob covers it
     bad=1; verdict="NOT OK: a factory file; factory changes go in their own pull request"
+  fi
+  if [ -z "$verdict" ] && is_human_path "$f"; then             # even if a roster glob covers it
+    bad=1; verdict="NOT OK: owned by no team, not $team"
   fi
   if [ -z "$verdict" ]; then
     case "$f" in contracts/*)                                    # even if a roster glob covers it

@@ -66,7 +66,7 @@ test_spec_floor_raises_the_tier() {
 
 test_each_report_raises_the_tier() {
   local r
-  for r in review.md ui-review.md security.md db-review.md; do
+  for r in review.md ui-review.md security.md db-review.md evidence-review.md; do
     setup; spec 12-share 'risk_floor: R1'; report 12-share "$r" $'VERDICT: pass\nRISK: R2   (touches login)'; commit
     tier_is R2 "$r"; expect_err "R2  work/12-share/$r RISK"
   done

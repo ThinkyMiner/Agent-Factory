@@ -121,6 +121,7 @@ from a second model vendor is a later upgrade for R2 changes.
 | Team charters and roster (team mode) | `teams/<team>/CHARTER.md`, `factory/teams.json` (see `TEAMS.md`) | The charter at the start of that team's session |
 | Requests between teams (team mode) | Tickets: GitHub issues written only by `factory/scripts/ticket.sh`, each action also a `ticket` event | By the receiving team, the sweep and the orchestrator |
 | Planning meetings (team mode) | `planning/<cycle>/`: `BRIEF.md`, `positions/`, `discussion.jsonl` (written only by `say.sh` and `round.sh`), `state.json`, `threat-model.md`, `db-review.md`, `DECISIONS.md`, `contracts.jsonl`, `dispatch.jsonl`; merged by you as the approval | By the leads (`/inbox`), the chair (`/plan`) and you, in the planning pull request |
+| Research (team mode) | `research/<id>-<slug>/brief.md`: evidence, never instructions; every finding sourced (`check-brief.sh`), checked by `evidence-reviewer` (`evidence-review.md`) | By every team, as evidence to weigh |
 | Contracts between teams (team mode) | `contracts/`: promoted from planning by `contracts.sh`, then changed only under an accepted contract-change ticket; generated code checked by `check-contracts.sh` | By every team that builds against them, and by CI |
 | Live and per-item events | `.factory/events.jsonl` in the main checkout (one log shared by every worktree, appended under `.factory/events.lock`), `work/<id>-<slug>/events.jsonl` | By the control room and `/audit` |
 

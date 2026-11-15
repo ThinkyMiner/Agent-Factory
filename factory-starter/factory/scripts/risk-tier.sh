@@ -5,7 +5,8 @@
 #   - the risk_floor of the spec of each work folder the diff touches (work/<id>/spec.md);
 #   - the risk_floor of every decision record named on that spec's `decisions:` line, read from
 #     planning/*/DECISIONS.md on the base branch, never from the pull request;
-#   - the RISK line of each report in the folder: review.md, ui-review.md, security.md, db-review.md.
+#   - the RISK line of each report in the folder: review.md, ui-review.md, security.md, db-review.md,
+#     evidence-review.md.
 #   risk-tier.sh [base-ref]        (default origin/main)
 # Work folders are read at HEAD. Prints the tier on stdout and one line per input on stderr.
 # Single-team mode too: the spec's floor and the reports count with or without factory/teams.json.
@@ -76,7 +77,7 @@ while IFS= read -r -d '' item; do
   else
     skip "$w/spec.md: missing at HEAD, so no risk_floor and no decisions"
   fi
-  for r in review.md ui-review.md security.md db-review.md; do
+  for r in review.md ui-review.md security.md db-review.md evidence-review.md; do
     git cat-file blob "HEAD:work/$item/$r" > "$tmp/report" 2>/dev/null || continue
     t=$(perl -ne 's/\r//g; if (/^RISK:[ \t]*(R[0-3])([^0-9]|$)/) { print $1; exit }' "$tmp/report")
     if [ -n "$t" ]; then raise "$t" "$w/$r RISK"; else skip "$w/$r: no RISK line with R0..R3, ignored"; fi

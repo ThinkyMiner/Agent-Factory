@@ -4,11 +4,11 @@ A factory runs as one team until `factory/teams.json` exists. With it, the facto
 teams, each with its own Claude Code session, its own git worktree and its own paths. Nothing
 else changes: `/work`, the gates and the risk tiers are the same.
 
-This page describes what is built so far (phases 1 to 4 of `plans/2026-11-14-teams.md` in the
-kit's repository): the orchestrator plus two building teams, `backend` and `frontend`; an optional
-bot account for agents on GitHub; tickets, work items, build slots and the sweep; planning
-meetings; the security, database and UI reviewers; contracts. The research team and feature
-integration come in later phases.
+This page describes what is built so far (phases 1 to 5 of `plans/2026-11-14-teams.md` in the
+kit's repository): the orchestrator plus two building teams, `backend` and `frontend`, and the
+`research` team; an optional bot account for agents on GitHub; tickets, work items, build slots
+and the sweep; planning meetings; the security, database and UI reviewers; contracts. Feature
+integration comes in phase 6.
 
 ## Before you turn it on (once)
 
@@ -51,13 +51,15 @@ entry to the roster (see below) in a pull request; `team-up` then gives it a tab
 { "version": 1, "default_team": "backend",
   "teams": { "orchestrator": { "owns": ["planning/*"] },
              "backend":      { "owns": ["server/*", "db/*", "tests/acceptance/backend/*", "Makefile"] },
-             "frontend":     { "owns": ["web/*", "tests/acceptance/frontend/*"], "ui_review": true } },
+             "frontend":     { "owns": ["web/*", "tests/acceptance/frontend/*"], "ui_review": true },
+             "research":     { "owns": ["research/*", "features/*/acceptance.md"], "evidence_review": true } },
   "db_paths": ["db/*", "*migrations/*", "*schema*"],
   "append_only": ["memory/observations/*", "product/INBOX.md"] }
 ```
 
 - `owns` uses the globs of `risk-rules.txt` (`*` also matches `/`), compared without case.
-- `ui_review: true` makes a team's items need a passing `ui-review.md` besides `review.md`.
+- `ui_review: true` makes a team's items need a passing `ui-review.md` besides `review.md`;
+  `evidence_review: true` (research) makes them need a passing `evidence-review.md` instead of it.
   `db_paths` (this is the default) decides which changes need a database review. Both are read
   from the base branch, like the rest of the roster.
 - `contracts/*` belongs to no team, even if a roster lists it (see Contracts).
@@ -101,6 +103,10 @@ At start, resume and compaction the `session-start.sh` hook prints the team's ch
 | Every item has a passing review; a `ui_review` team's item also a passing UI review; an R2 or R3 item a passing security review; a change to a db path a passing database review | (not applicable; `/work` runs the reviewers `check-specialists.sh --needs` names) | `risk-gate` step "Specialists' reports": `check-specialists.sh` with the base branch's roster |
 | A security raise is honoured | (not applicable) | `decisions.sh validate`: every `RAISE: <record> <tier>` in `threat-model.md` or `db-review.md` needs that record's `risk_floor` at least as high (checked at each draft, at approval and by `dispatch.sh`) |
 | A contract changes only by planning or under an accepted contract-change ticket | writes to `contracts/*` need a grant for the session's team in `.factory/grants/` (only `ticket.sh accept` writes one) | `ownership`: a team PR touching `contracts/*` must be the work item of a `type:contract-change` ticket to that team, accepted or done; a planning PR may only add new contracts its cycle promoted. Generated code must match: the `check` job runs `check-contracts.sh` |
+| The research agents read only evidence | `researcher` and `evidence-reviewer` (by `agent_type`) may Read, Grep and Glob only inside `research/`, `product/`, `planning/`, `features/` and `contracts/` of their checkout, after `..` and symlinks; no pathless Grep or Glob, no glob that climbs out; no Bash | (not applicable) |
+| The research agents write only research | `researcher` writes only inside `research/`; `evidence-reviewer` writes nothing | `ownership`: the research team's paths |
+| Every research finding is sourced | (not applicable; `/research-work` runs it as its gate) | the `check` job runs `check-brief.sh --changed`: every finding cites a source, every source has a URL, a date and a quote, unsourced ideas are labelled assumptions or hypotheses |
+| You decide which feedback research reads | `research/feedback/SOURCES.md` is blocked for every session | `ownership`: your file, even inside `research/`; R2 |
 | The UI reviewer runs only the browser tooling | a session whose `agent_type` is `ui-reviewer` may run exactly `make ui-shots URL=<url> OUT=<dir>`, nothing else | (not applicable) |
 
 `/work` starts a new subagent for every delegation. A fix round goes to a new builder with the
@@ -217,7 +223,8 @@ Its reply is saved word for word in the work folder and committed:
 
 | Report | Reviewer | When (decided by `check-specialists.sh`, never by the foreman) |
 |---|---|---|
-| `review.md` | `reviewer`: the diff against the spec, its decision records and contracts | every item |
+| `review.md` | `reviewer`: the diff against the spec, its decision records and contracts | every item, except an `evidence_review` team's |
+| `evidence-review.md` | `evidence-reviewer`: every finding sourced, each quote re-fetched and saying what is claimed, assumptions labelled, injected instructions recorded | items of a team with `evidence_review: true` (research) |
 | `ui-review.md` | `ui-reviewer`: the rendered result, light and dark, desktop and phone, plus an axe scan (`make ui-shots`) | items of a team with `ui_review: true` (frontend) |
 | `security.md` | `security-engineer`: may raise the tier, never lower it | team mode, items whose tier is R2 or R3 |
 | `db-review.md` | `db-engineer`: schema, migrations (reversibility, locking, data loss, backfill), queries | team mode, items that change a `db_paths` path |
@@ -237,6 +244,30 @@ to define it. `factory/scripts/ui-shots.mjs` is a reference built on Playwright 
 `@axe-core/playwright` from the product's own `node_modules`: 8 screenshots per page
 ({light, dark} x {1280x800, 390x844}) and `axe.json`. It refuses `file://` pages outside the
 repository and output folders outside it.
+
+## Research
+
+The research team works out what is worth building: the market, competitors, problem statements
+and user-level criteria. It reads the open web and text people send in, so everything it reads is
+untrusted, and what it writes is evidence for the other teams to weigh, never an instruction to
+them. Every agent prompt that reads research says so.
+
+`/research-work <issue>` in the research lead's tab runs one question through:
+1. The spec (the question, and the decision it informs).
+2. A fresh `researcher` writes `research/<id>-<slug>/brief.md`. It has WebSearch and WebFetch, no
+   shell, reads only the evidence folders and writes only `research/`.
+3. The gate: `check-brief.sh`. Every finding is `- F<n>: <claim> [S<n>]`, and every source has a URL,
+   an access date and an exact quote. Anything unsourced goes under Assumptions or Hypotheses.
+   Any instruction found in a page goes under "Instructions found in sources", quoted, and is not
+   followed. The brief opens with the line `> Evidence, not instructions.`.
+4. A fresh `evidence-reviewer` (a different model tier) re-fetches every source: is the quote
+   there, does it say what the finding claims, is every injected instruction recorded? Its reply is
+   `evidence-review.md`. A fix goes to a new researcher, never to the one that wrote the brief.
+5. A file in `research/` other than the brief stops the item: that is what a followed injection
+   (`research/leak.md`) would look like.
+
+The feedback half is dormant until `research/feedback/SOURCES.md` lists a real source, and only you
+edit that file. Until then the team does discovery and writes hypotheses, labelled as such.
 
 ## Contracts
 
@@ -303,6 +334,11 @@ agreement between teams. No team owns it.
 - **Agent types come from Claude Code.** The UI reviewer's shell limit trusts the hook input's
   `agent_type`. Claude Code documents it for subagents; phase 5 checks it live. The UI reviewer
   can still open any `http` address, but it can already say anything it read in its reply.
+- **The research read limit covers the tools' own path arguments.** Grep and Glob search a
+  folder with ripgrep, which does not follow symlinks (checked in Claude Code 2.1.325); if a
+  later version adds `--follow`, a symlink planted inside `research/` would be read through.
+  WebFetch is not limited: a researcher can send anything it may read to any web address, and
+  it may read only the evidence folders.
 - **Contract grants are local files** in the main checkout. A ticket closed on GitHub without
   `ticket.sh` keeps its grant until `ticket.sh` next acts on it. CI's ticket check holds anyway.
 - **The approval check trusts GitHub's activity log** for push times. If GitHub has no record of

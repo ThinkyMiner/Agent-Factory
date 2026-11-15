@@ -81,6 +81,16 @@ test_human_owned_files_in_team_pr_or_with_product_code_fail() {
   run "$O" main; expect_rc 1
 }
 
+test_feedback_sources_are_the_humans_even_inside_research() {
+  setup; git switch -q main; jq '.teams.research.active = true' factory/teams.json > t && mv t factory/teams.json; git commit -qam roster
+  git switch -q -c work/13-feedback; item 13-feedback "team: research"
+  mkdir -p research/feedback; echo brief > research/feedback/notes.md; echo "- https://example.com/forum" > research/feedback/SOURCES.md; commit
+  run "$O" main; expect_rc 1; expect_out "research/feedback/SOURCES.md  (NOT OK: owned by no team, not research)"
+  expect_out "research/feedback/notes.md  (owned by research)"
+  git switch -q -c human main; mkdir -p research/feedback; echo "- https://example.com/forum" > research/feedback/SOURCES.md; commit
+  run "$O" main; expect_rc 0; expect_out "human-owned files only"
+}
+
 test_pr_cannot_widen_its_own_ownership() {
   setup; item 12-share "team: backend"
   jq '.teams.backend.owns += ["web/*"]' factory/teams.json > t && mv t factory/teams.json

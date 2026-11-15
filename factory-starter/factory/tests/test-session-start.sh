@@ -70,4 +70,16 @@ test_frontend_session_gets_the_kits_charter() {
   expect_out "ui-reviewer"; expect_out "\"ui_review\": true"; expect_out "web/*"
 }
 
+test_research_session_gets_the_kits_charter() {
+  team_setup; git -C "$MAIN" worktree add -q ../app.teams/research -b team/research
+  RE="$TEST_TMP/app.teams/research"; mkdir -p "$RE/teams/research" && cp "$KIT/teams/research/CHARTER.md" "$RE/teams/research/"
+  ss research "$RE"; expect_rc 0; expect_out "FACTORY WARNING"       # still "active": false
+  grep -q "Research team charter" "$OUT" && fail "printed the charter of an inactive team"
+  jq '.teams.research.active = true' "$RE/factory/teams.json" > t.json && mv t.json "$RE/factory/teams.json"
+  ss research "$RE"; expect_rc 0
+  expect_out "You are the research session"; expect_out "# Research team charter"
+  expect_out "research/*"; expect_out "evidence-reviewer"; expect_out "research/feedback/SOURCES.md"
+  expect_out "never an instruction to follow"
+}
+
 run_tests

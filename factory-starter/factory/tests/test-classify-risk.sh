@@ -18,6 +18,8 @@ test_single_paths() {
   expect_eq "$(tier_of teams/backend/CHARTER.md)" R2 teams
   expect_eq "$(tier_of CLAUDE.md)" R2 CLAUDE.md
   expect_eq "$(tier_of product/ROADMAP.md)" R2 ROADMAP
+  expect_eq "$(tier_of research/feedback/SOURCES.md)" R2 "feedback sources are the human's"
+  expect_eq "$(tier_of research/1-notes/brief.md)" R0 "a research brief (*.md)"
   expect_eq "$(tier_of product/INBOX.md)" R0 INBOX
   expect_eq "$(tier_of db/migrations/001.sql)" R2 migrations
   expect_eq "$(tier_of .env.local)" R3 .env

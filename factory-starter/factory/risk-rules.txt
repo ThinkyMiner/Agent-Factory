@@ -15,6 +15,7 @@ R0 memory/observations/*
 R2 CLAUDE.md
 R2 product/BRIEF.md
 R2 product/ROADMAP.md
+R2 research/feedback/SOURCES.md
 R2 planning/*
 R2 contracts/*
 R2 docs/architecture.md

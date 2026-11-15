@@ -34,6 +34,20 @@ jobs:
             cp factory/scripts/check-contracts.sh /tmp/check-contracts.sh
           fi
           bash /tmp/check-contracts.sh
+      - name: Research briefs are sourced
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: |
+          # Every research/**/brief.md the pull request adds or changes: each finding cites a source
+          # that quotes it, anything unsourced is a labelled assumption or hypothesis. The base
+          # branch's copy of the check, like the contracts step; the pull request's only before.
+          if git cat-file -e "$BASE:factory/scripts/check-brief.sh" 2>/dev/null; then
+            git show "$BASE:factory/scripts/check-brief.sh" > /tmp/check-brief.sh
+          else
+            cp factory/scripts/check-brief.sh /tmp/check-brief.sh
+          fi
+          bash /tmp/check-brief.sh --changed "$BASE"
       - name: Acceptance tests unchanged since the tests commit
         if: github.event_name == 'pull_request'
         run: factory/scripts/check-acceptance-lock.sh "origin/${{ github.base_ref }}"
