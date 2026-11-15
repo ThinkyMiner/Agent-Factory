@@ -15,6 +15,9 @@ read every changed file in full where the diff alone is not enough.
 Review in passes:
 1. Contract. For each acceptance criterion: is it met, and does its acceptance
    test really exercise it? Flag tests that would pass with the feature removed.
+   In team mode, also read the decision records on the spec's `decisions:` line (in
+   `planning/*/DECISIONS.md`) and any `contracts/` file the item relies on: the change
+   must do what they decided and match the contract exactly.
 2. Correctness. Edge cases, error paths, partial failure, concurrency, data loss,
    off-by-one, time zones, empty and very large inputs.
 3. Security. Input validation, authorization on every new entry point, injection,

@@ -17,6 +17,8 @@
 # Every action comments with a machine-readable line, sets the state: label and writes a ticket
 # event. States: open -> accepted | declined; accepted -> done; done -> verified (closed) |
 # disputed; declined -> disputed; disputed -> accepted | declined; any but done -> withdrawn (closed).
+# Accepting a contract-change ticket writes <main checkout>/.factory/grants/contract-<n>.json,
+# which lets the receiving team write contracts/ (guard.sh); every other action removes it.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 . "$here/lib.sh"
@@ -137,9 +139,17 @@ $(clean_text "$reason")"
   printf '%s' "$comment" | gh issue comment "$n" --body-file - >/dev/null || die "GitHub refused the comment on #$n"
   gh issue edit "$n" --remove-label "state:$state" --add-label "state:$new" >/dev/null || die "could not set state:$new on #$n"
   case "$new" in verified|withdrawn) gh issue close "$n" >/dev/null || die "could not close #$n" ;; esac
+  grant=$(contract_grant_file "$(factory_home "$top")" "$n")
+  if [ "$new" = accepted ] && [ "$(get type:)" = contract-change ]; then
+    mkdir -p "${grant%/*}" && jq -n --argjson n "$n" --arg t "$me" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      '{ticket: $n, team: $t, ts: $ts}' > "$grant.new" && mv "$grant.new" "$grant" || die "#$n is accepted, but the contract grant $grant could not be written"
+    echo "ticket: $me may now change contracts/ for #$n, until it marks the ticket done"
+  else
+    rm -f "$grant"
+  fi
   event number="$n" action="$cmd" from="$from" to="$to" state="$new"
   echo "ticket #$n: $state → $new"
   ;;
 
-*) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1 ;;
+*) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1 ;;
 esac

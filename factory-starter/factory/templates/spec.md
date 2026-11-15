@@ -1,6 +1,8 @@
 ---
 id: <issue number>
 team: <your team, the session's $FACTORY_TEAM; delete this line outside team mode>
+feature: <the feature it is part of, like f001-share-links (team mode, dispatched items); else delete this line>
+decisions: <the decision records it carries out, like c001-D01, c001-D02; else delete this line>
 title: <outcome, in a few words>
 risk_floor: R1
 tests: required

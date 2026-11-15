@@ -28,7 +28,8 @@ control room and the audit can read the run without parsing prose:
 
     factory/scripts/emit-event.sh stage work_id=<id> stage=<name> status=<status> round=<n> detail="<one line>"
 
-Stage names: intake, spec, tests, build, gate, review, pr, observe.
+Stage names: intake, spec, design, tests, build, gate, review, ui-review, security,
+db-review, pr, observe.
 Statuses: started, passed, failed, blocked, skipped. Use `round` for fix rounds
 (0 for the first attempt). On the pr stage add `tier=<R0..R3>` and `pr=<number>`.
 
@@ -48,6 +49,8 @@ Statuses: started, passed, failed, blocked, skipped. Use `round` for fix rounds
 - Delegate to `spec-writer` with the issue text and the work folder path. In team
   mode (`$FACTORY_TEAM` is set) also give it the team: the spec's `team:` line decides
   whose paths the item may change. Outside team mode the spec has no `team:` line.
+  An item dispatched from a planning cycle names its feature and decision records in
+  the issue: the spec carries them as `feature:` and `decisions:` lines.
 - Run `factory/scripts/validate-spec.sh <work folder>/spec.md`.
   - Exit 1 (malformed): send the output back to `spec-writer` once. Still failing: stop.
   - Exit 3 (blocking questions): write the questions in `BLOCKED.md` and stop (outside
@@ -56,8 +59,12 @@ Statuses: started, passed, failed, blocked, skipped. Use `round` for fix rounds
   `factory/scripts/item.sh create --proposed --title "<outcome>"` (the follow-up on stdin).
 - If `risk_floor` is R3, stop. R3 changes are made by the human.
 
-## 2. Acceptance tests
-- Skip only if the spec has `tests: none` (documentation-only items).
+## 2. Design and acceptance tests
+- Design first, in team mode, when the team's roster entry has `"ui_review": true`
+  (`jq '.teams[env.FACTORY_TEAM].ui_review' factory/teams.json`) and the spec adds or
+  changes a screen, a flow or a design token: delegate to `designer` with the spec path.
+  It writes `<work folder>/design.md`. From then on, give its path with the spec path.
+- Skip the tests only if the spec has `tests: none` (documentation-only items).
 - Delegate to `test-author` with the spec path.
 - If it reports untestable criteria, send them to `spec-writer` once, then rerun.
 
@@ -77,17 +84,33 @@ rounds), and after it `passed` or `failed` with the same round.
     make check
     make accept
     factory/scripts/check-acceptance-lock.sh
-    factory/scripts/classify-risk.sh
 - Any failure: start a new `builder` with the spec path and the exact output, then run
   the gate again. At most 2 fix rounds, then stop.
-- The tier is the higher of the script's result and the spec's `risk_floor`.
+- The tier is what `factory/scripts/risk-tier.sh origin/main` prints: the highest of the
+  path rules, the spec's `risk_floor`, the floors of its decision records and the RISK of
+  every report in the work folder. Reports can raise it, never lower it. If the script
+  fails, stop.
 
 ## 5. Review
-- Delegate to `reviewer` with the spec path and base ref `origin/main`.
-- Save its reply verbatim as `<work folder>/review.md`.
-- `changes-required`: start a new `builder` with the spec path and the BLOCKING list
-  only, rerun the gate, then start a new `reviewer`. At most 2 rounds, then stop.
-- `escalate`: stop. If the reviewer's RISK is higher than yours, use the reviewer's.
+Every reviewer is a new subagent given the spec path and base ref `origin/main`, and
+its reply is saved verbatim in the work folder and committed at once:
+`risk-tier.sh` reads committed files only. A report passes only when its VERDICT line
+is exactly `VERDICT: pass`.
+- Delegate to `reviewer`. Save its reply as `<work folder>/review.md`.
+- Run `factory/scripts/risk-tier.sh origin/main` again for the tier, then
+  `factory/scripts/check-specialists.sh --needs origin/main <tier>`. For each report it
+  names besides `review`, run that stage and save the reply:
+  - `ui-review`: `ui-reviewer`, saved as `ui-review.md`;
+  - `security`: `security-engineer`, saved as `security.md`;
+  - `db-review`: `db-engineer`, saved as `db-review.md`.
+  After each report, get the tier and the list again: a raised tier can add a report.
+  Outside team mode the list is `review` alone.
+- `changes-required` from any of them: start a new `builder` with the spec path and that
+  report's BLOCKING list only, and rerun the gate. Then start a new copy of every
+  reviewer that had already run, `reviewer` first, each replacing its report: a fix can
+  break what another reviewer passed. Then go on with the reports not yet run. At most 2
+  such rounds in total, then stop.
+- `escalate` from any of them: stop.
 
 ## 6. Observe
 - Delegate to `observer` with the work folder path. Do this on every run,
@@ -97,8 +120,12 @@ rounds), and after it `passed` or `failed` with the same round.
   commit it to the branch without opening a pull request.
 
 ## 7. Pull request
-- Commit the work folder and the observation file, push the branch, and open a pull request using
-  `factory/templates/pr-body.md`. Add the label `risk:<tier>`.
+- Commit the work folder and the observation file.
+- Run `factory/scripts/risk-tier.sh origin/main` once more for the tier, then
+  `factory/scripts/check-specialists.sh origin/main <tier>` yourself. If it fails, a
+  required report is missing or not passing: stop. CI runs the same check.
+- Push the branch and open a pull request using `factory/templates/pr-body.md`. Add
+  the label `risk:<tier>`.
 - Read `AUTO_MERGE_MAX_TIER` from `factory/policy.env`. If the tier is at or below
   it, run `gh pr merge --auto --squash`. Otherwise leave it for the human and say so.
 - Never add the `human-approved` label. Never merge with admin rights.

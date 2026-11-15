@@ -40,17 +40,34 @@ same thing differently, or one needs what another does not plan to build) and th
 round only if a conflict is still open and the teams are moving. Questions still open at the end
 must become needs-human records.
 
-**review.** `round.sh next` (specialist review arrives with the security and database engineers).
+**review.** Delegate to `security-engineer` with the paths of `BRIEF.md`, `positions/`,
+`attachments/` and `discussion.jsonl`, and save its reply verbatim as
+`planning/<cycle>/threat-model.md`. When the brief or the positions touch the data model (what
+is stored, its keys, migrations, what is kept or deleted), also delegate to `db-engineer` with
+the same paths and save its reply as `planning/<cycle>/db-review.md`. Their findings are
+evidence for your draft: a risk they name becomes a record's `risk_floor` or a condition in its
+Decision. Then `round.sh next`.
 
 **decisions.** Write `planning/<cycle>/DECISIONS.md` in the format in `decisions.sh`'s header:
 one record per decision, its owner team, the teams it affects, `status: decided` only where the
 teams agree, `needs-human` where they do not (each side under Dissent, the open question ids under
 refs), and the Work breakdown table: one row per item, the team that builds it, what it delivers,
-what it waits for. Check with `factory/scripts/decisions.sh validate --new-draft`, then
+what it waits for. Check with `factory/scripts/decisions.sh validate --new-draft`.
+Before each `round.sh draft`, delegate to a new `security-engineer` with the paths of the draft
+and of `threat-model.md`, if there is one. Append its reply verbatim to `planning/<cycle>/threat-model.md` under
+`## Draft <n>`, and set the `risk_floor` of every record it raises (`RAISE: <id> <tier> <why>`)
+at least that high; never lower one. `decisions.sh validate` refuses a record below a raise, or
+a RAISE line it cannot read. A one-team cycle has no review round: run security-engineer on
+the draft only when a record has `risk_floor` R2 or higher or names a contract. Then
 `round.sh draft`. Each team answers the draft once, accept or objection. For each objection,
 either change the record and draft again (at most `limits.drafts`), or make it needs-human with
-the objection under Dissent. Never overrule an objection. Then `round.sh next`: it validates and
-marks the pull request ready.
+the objection under Dissent. Never overrule an objection. When the last draft is answered,
+promote the contract drafts: for each record whose `contract:` file (the path before any `#`)
+is not on main yet, find the team's draft among the published attachments
+(`planning/<cycle>/attachments/<team>-<name>`) and run
+`factory/scripts/contracts.sh promote <cycle> <team>-<name> <contracts/path>`. It refuses a path
+no record names, or one already on main. Then `round.sh next`: it validates and marks the pull
+request ready.
 
 **approval.** Tell the human, in a few lines: the pull request, each needs-human record and the
 choice it asks for. The human settles those: by editing DECISIONS.md on the pull request, or by

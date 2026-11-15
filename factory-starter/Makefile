@@ -10,3 +10,20 @@ accept:
 
 dev:
 	@echo "Define 'make dev' for your stack." && exit 1
+
+# Screenshots and an axe scan of the running product, for the ui-reviewer (ui-review.md).
+.PHONY: ui-shots
+ui-shots:
+	@echo "Define 'make ui-shots' for your stack: start the app, then node factory/scripts/ui-shots.mjs --out $(OUT) <url>" && exit 1
+
+# Contracts (contracts/): CI's check job runs factory/scripts/check-contracts.sh, which fails when
+# contract-gen changes any file (generated code drifted) or contract-check fails. These defaults
+# pass while contracts/ has no files, so a factory without contracts stays green.
+.PHONY: contract-gen contract-check
+contract-gen:
+	@if [ -n "$$(find contracts -type f ! -name '.*' 2>/dev/null | head -1)" ]; then \
+	  echo "Define 'make contract-gen' (generate both sides' code from contracts/) for your stack." && exit 1; fi
+
+contract-check:
+	@if [ -n "$$(find contracts -type f ! -name '.*' 2>/dev/null | head -1)" ]; then \
+	  echo "Define 'make contract-check' (check the code against contracts/) for your stack." && exit 1; fi

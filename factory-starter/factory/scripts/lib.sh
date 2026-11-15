@@ -208,3 +208,41 @@ ring_team() {
   [ -n "$term" ] || return 1
   hc send "$term" "$3" --if idle >/dev/null 2>&1
 }
+
+# ---- contracts ----
+# contracts/ is owned by no team. Its first author is a planning cycle (contracts.sh promote);
+# after that it changes only under a type:contract-change ticket the receiving team accepted,
+# which leaves a grant in <home>/.factory/grants/contract-<n>.json (ticket.sh) until it is done.
+
+# valid_contract_path <path>: a clean relative path of a file under contracts/. Each part starts
+# with a letter or digit and holds only letters, digits, . _ -; no .., at most 200 characters.
+valid_contract_path() {
+  [ "${#1}" -le 200 ] && [[ "$1" =~ ^contracts(/[A-Za-z0-9][A-Za-z0-9._-]*)+$ ]] && [[ "$1" != *..* ]]
+}
+
+# decision_contracts <DECISIONS.md>: "<record id> <path>" for each record's contract: line, the
+# #fragment dropped. Only a record's field lines count, not the text of its ### sections.
+decision_contracts() {
+  perl -ne 'chomp;      # a CRLF file works too: \S+ stops at the \r
+    if (/^## (c\d{3}-D\d{2}):/) { $id = $1; $sec = 0; next }
+    if (/^## /) { $id = undef; next }
+    next unless defined $id;
+    if (/^### /) { $sec = 1; next }
+    if (!$sec && /^- contract:\s*(\S+)/) { (my $p = $1) =~ s/#.*//; print "$id $p\n" }' "$1" 2>/dev/null
+}
+
+# contract_grant_file <home> <ticket number>: where ticket.sh keeps that ticket's grant.
+contract_grant_file() { echo "$1/.factory/grants/contract-$2.json"; }
+
+# has_contract_grant <home> <team>: does a grant name the team? A grant is a regular file
+# contract-<n>.json holding {"ticket": <n>, "team": ...}; anything else grants nothing.
+has_contract_grant() {
+  local g n
+  [ ! -L "$1/.factory" ] && [ ! -L "$1/.factory/grants" ] || return 1
+  for g in "$1"/.factory/grants/contract-*.json; do
+    n=${g##*/contract-}; n=${n%.json}
+    [[ "$n" =~ ^[1-9][0-9]{0,8}$ ]] && [ -f "$g" ] && [ ! -L "$g" ] || continue
+    [ "$(jq -r --argjson n "$n" 'if type == "object" and .ticket == $n then .team // empty else empty end' "$g" 2>/dev/null || true)" = "$2" ] && return 0
+  done
+  return 1
+}

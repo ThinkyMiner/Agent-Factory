@@ -183,4 +183,12 @@ test_sweep_is_not_a_team_name() {
   run "$U" --print; expect_rc 1; expect_err "'sweep' is the name of the sweep's tab"
 }
 
+test_frontend_team_runs_the_kits_frontend_lead() {
+  kit; jq '.teams.frontend.active = true' factory/teams.json > t.json && cp t.json factory/teams.json
+  cp "$KIT/.claude/agents/frontend-lead.md" .claude/agents/
+  run "$U" --print; expect_rc 0
+  expect_out "cd $TEST_TMP/app.teams/frontend && FACTORY_TEAM=frontend $SCRIPTS/bot-session.sh claude --agent frontend-lead -n frontend"
+  expect_eq "$(git -C "$TEST_TMP/app.teams/frontend" rev-parse --abbrev-ref HEAD)" team/frontend
+}
+
 run_tests

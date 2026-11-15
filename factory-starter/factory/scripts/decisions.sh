@@ -15,16 +15,19 @@
 # validate also checks, from state.json and the transcript: every question left open in discussion
 # is in the refs of a needs-human record, and every objection to the current draft made its record
 # needs-human with the objecting team named under Dissent (skipped with --new-draft).
+# validate and items also read the specialists' raises: a line "RAISE: c001-D02 R2 <why>" in the
+# cycle's threat-model.md or db-review.md (a plain file; either may be missing) needs that record of
+# this cycle to have risk_floor at least R2. A raise that is malformed, or names any other record, fails.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 . "$here/lib.sh"
 die() { echo "decisions: $*" >&2; exit 1; }
 
-# check <file> <cycle> <teams,> <unanswered,> <objections team:id,> <mode: validate|items>
+# check <file> <cycle> <teams,> <unanswered,> <objections team:id,> <mode: validate|items> [raise file...]
 check() {
   perl -e '
     use strict; use warnings;
-    my ($file, $cycle, $teams, $unans, $objs, $mode) = @ARGV;
+    my ($file, $cycle, $teams, $unans, $objs, $mode, @raises) = @ARGV;
     my %team = map { $_ => 1 } grep { length } split /,/, $teams;
     my ($pre) = $cycle =~ /^(c\d{3})-/ or die "decisions: bad cycle id\n";
     open(my $fh, "<", $file) or do { print STDERR "decisions: $file is missing\n"; exit 1 };
@@ -71,6 +74,23 @@ check() {
       if (!$r) { $e->("$t objected to $id, which is not in DECISIONS.md"); next }
       ($r->{f}{status} // "") eq "needs-human" && ($r->{s}{dissent} // "") =~ /\b\Q$t\E\b/i
         or $e->("$t objected to $id: an objection stands until the record is needs-human with $t named under Dissent");
+    }
+    for my $rf (@raises) {
+      next unless -e $rf || -l $rf;
+      (my $n = $rf) =~ s{.*/}{};
+      if (-l $rf || !-f $rf) { $e->("$n must be a plain file, not a link or a folder"); next }
+      open(my $rh, "<", $rf) or do { $e->("$n cannot be read"); next };
+      while (my $l = <$rh>) {
+        next unless $l =~ /^[\s>*`_-]*(?:RAISE\b|(?i:raise)[\s*`_]*:)/;   # anything that looks like one must be one
+        my $w = "$n line $.";   # a CR before the newline is \s, so CRLF reads the same
+        my ($id, $t) = $l =~ /^\s*(?:[-*]\s+)?RAISE:\s+(\S+)\s+(\S+)(?:\s|$)/;
+        defined $t && $id =~ /^c\d{3}-D\d{2}$/ && $t =~ /^R[0-3]$/ or do { $e->("$w: a raise must read RAISE: <record id like $pre-D01> <R0..R3> <why>"); next };
+        $id =~ /^\Q$pre\E-/ or do { $e->("$w: $id is not a record of this cycle; raise the record here that settles it"); next };
+        my ($r) = grep { $_->{id} eq $id } @recs;
+        $r or do { $e->("$w: raises $id, which is not in DECISIONS.md"); next };
+        (($r->{f}{risk_floor} // "R0") =~ /^R([0-3])$/ ? $1 : -1) >= substr($t, 1)
+          or $e->("$w: raises $id to $t, so its risk_floor must be at least $t");
+      }
     }
     my (@items, %item);
     if (!@rows) { $e->("no ## Work breakdown table") }
@@ -139,7 +159,7 @@ validate|items)
     ob=$(cat "$dir/discussion.jsonl" 2>/dev/null | jq -r --argjson d "$(jq '.draft // 0' <<<"$S")" \
       'select(type == "object" and .round == "decisions" and .kind == "objection" and .draft == $d) | .from as $f | (.refs // [])[] | strings | "\($f):\(.)"' 2>/dev/null | paste -sd, - || true)
   fi
-  check "$dir/DECISIONS.md" "$cyc" "$tm" "$un" "$ob" "$cmd"
+  check "$dir/DECISIONS.md" "$cyc" "$tm" "$un" "$ob" "$cmd" "$dir/threat-model.md" "$dir/db-review.md"
   ;;
 check-append-only)
   base=${1:-}; [ -n "$base" ] || die "usage: decisions.sh check-append-only <base-ref>"

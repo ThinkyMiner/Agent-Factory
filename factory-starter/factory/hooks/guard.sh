@@ -14,7 +14,8 @@
 # Shell commands are read for the files they write (best effort, see guard-paths.pl).
 #
 # Team mode (factory/teams.json exists): a session may write only inside its own worktree, and
-# there only its team's paths, its own work folders and the append-only locations (by appending).
+# there only its team's paths, its own work folders and the append-only locations (by appending);
+# contracts/ only while a grant in <factory home>/.factory/grants/ names its team (ticket.sh).
 # Its team is FACTORY_TEAM, which must also match the worktree it runs in (see lib.sh).
 # It works on GitHub as the factory's bot: no credential commands, issues and labels only through
 # ticket.sh and item.sh, gh api read-only.
@@ -35,6 +36,15 @@ here=$(cd "$(dirname "$0")" && pwd)
 input=$(cat)
 jq -e 'type == "object"' >/dev/null 2>&1 <<<"$input" || block "the hook payload is not a JSON object."
 tool=$(jq -r '.tool_name // empty' <<<"$input")
+
+# The ui-reviewer's one shell command is the browser tooling, `make ui-shots URL=<url> OUT=<dir>`,
+# with plain values: no shell syntax, quotes, globs, spaces, newlines or `..`. In and out of team
+# mode. An allowed command still meets every check below.
+if [ "$tool" = Bash ] && [ "$(jq -r '.agent_type // empty' <<<"$input")" = ui-reviewer ]; then
+  jq -e '.tool_input.command | ((contains("\n") or contains("..")) | not)
+         and test("^make ui-shots URL=[A-Za-z0-9._/:%+@,-]+ OUT=[A-Za-z0-9._/:%+@,-]+$")' >/dev/null 2>&1 <<<"$input" ||
+    block "the ui-reviewer only runs make ui-shots, exactly: make ui-shots URL=<url> OUT=<work folder>/screens (values made of letters, digits and . _ / : % + @ , -)."
+fi
 
 root_raw="${CLAUDE_PROJECT_DIR:-$PWD}"
 resolve() { perl "$here/guard-paths.pl" resolve "$root_raw" "$1"; }
@@ -116,12 +126,16 @@ check_write() {
       block "$rel is part of the factory's own controls. Stop and report instead of editing it." ;;
   esac
   case "$rel" in
-    planning/*/discussion.jsonl|planning/*/state.json|planning/*/dispatch.jsonl|planning/*/positions/*|planning/*/attachments/*)
-      block "$rel is written only by the planning scripts (say.sh, position.sh, round.sh, dispatch.sh)." ;;
+    planning/*/discussion.jsonl|planning/*/state.json|planning/*/dispatch.jsonl|planning/*/contracts.jsonl|planning/*/positions/*|planning/*/attachments/*)
+      block "$rel is written only by the planning scripts (say.sh, position.sh, round.sh, dispatch.sh, contracts.sh)." ;;
   esac
   [ -n "$teams" ] || return 0
   [ -n "$team" ] || block "this factory runs in team mode and this session has no valid team (FACTORY_TEAM=${FACTORY_TEAM:-unset}, checkout $root). Start sessions with 'factory team-up'."
   [ "${3:-0}" = 1 ] && rel="$rel/"
+  case "$rel" in   # owned by no team: only under a grant from an accepted contract-change ticket
+    contracts/*) has_contract_grant "$fhome" "$team" && return 0
+      block "$rel is owned by no team: a contract changes only under a contract-change ticket your team accepted (ticket.sh accept). Stop and report, so the team that needs the change asks for one (ticket.sh create --type contract-change)." ;;
+  esac
   team_owns "$teams" "$team" "$rel" && return 0
   case "$rel" in
     work/*/*)

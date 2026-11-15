@@ -129,7 +129,7 @@ test_huge_spec_is_handled() {
 
 test_crlf_spec_is_rejected_not_misread() {
   # Windows line endings break the frontmatter patterns; the script fails closed rather than passing.
-  good_spec | sed 's/$/\r/' > spec.md
+  good_spec | perl -pe 's/\n/\r\n/' > spec.md
   run single spec.md; expect_rc 1
 }
 
@@ -149,6 +149,52 @@ test_team_mode_requires_an_active_team() {
   with_team '.*';      run k/factory/scripts/validate-spec.sh s.md; expect_rc 1
   with_team '$(touch pwned)'; run k/factory/scripts/validate-spec.sh s.md; expect_rc 1
   [ ! -e pwned ] || fail "a team value was executed"
+}
+
+# with_line <line>: the good spec with one more frontmatter line
+with_line() { good_spec | awk -v l="$1" '{print} NR==2 {print l}' > s.md; }
+
+test_feature_and_decisions_are_optional_and_checked_when_present() {
+  local v
+  for v in 'feature: f001-share-links' 'feature: f999-a' 'decisions: c001-D01' \
+           'decisions: c001-D01, c002-D12' 'decisions: c001-D01,c001-D02 ' 'feature: f001-share-links  ' "feature: f001-$(printf 'a%.0s' $(seq 1 41))"; do
+    with_line "$v"; run single s.md; [ "$RC" = 0 ] || fail "[$v] gave exit $RC, expected 0: $(cat "$ERR")"
+  done
+  for v in 'feature:' 'feature: <the feature it is part of>' 'feature: f1-share' 'feature: f001-Share' \
+           'feature: f001-' 'feature: f001-a b' 'feature: f001-../x' 'feature: f001-$(touch pwned)' \
+           'feature: f001-a,f002-b' "feature: f001-$(printf 'a%.0s' $(seq 1 42))" \
+           'decisions:' 'decisions: c001-D01,' 'decisions: c001-D1' 'decisions: c001-d01' \
+           'decisions: c001-D01; c001-D02' 'decisions: c001-D01 c001-D02' 'decisions: `touch pwned2`' \
+           'decisions: <the decision records it carries out>' 'decisions: c001-D01, ../c002-D02'; do
+    with_line "$v"; run single s.md; [ "$RC" = 1 ] || fail "[$v] gave exit $RC, expected 1"
+  done
+  [ ! -e pwned ] && [ ! -e pwned2 ] || fail "a value was executed"
+  with_line 'feature: nope'; run single s.md; expect_err "'feature' must name one feature"
+  with_line 'decisions: nope'; run single s.md; expect_err "'decisions' must be decision ids"
+}
+
+test_feature_and_decisions_hostile_inputs() {
+  # Outside the frontmatter the words are prose, not fields.
+  good_spec > s.md; printf 'feature: whatever the text says\ndecisions: none yet\n' >> s.md
+  run single s.md; expect_rc 0
+  # A second, bad line is not hidden by a good one; CRLF fails closed; a 1 MB value is refused.
+  good_spec | awk '{print} NR==2 {print "feature: f001-ok"; print "feature: f002-$(id)"}' > s.md
+  run single s.md; expect_rc 1
+  good_spec | awk '{print} NR==2 {print "decisions: c001-D01"}' | perl -pe 's/\n/\r\n/' > s.md
+  run single s.md; expect_rc 1
+  { echo '---'; echo 'id: 42'; printf 'decisions: c001-D01'; head -c 1048576 /dev/zero | tr '\0' ','; echo
+    good_spec | sed 1,2d; } > s.md
+  run single s.md; expect_rc 1; expect_err "'decisions'"
+  # Valid in team mode too.
+  team_kit; good_spec | awk '{print} NR==2 {print "team: backend"; print "feature: f001-share-links"; print "decisions: c001-D01, c001-D02"}' > s.md
+  run k/factory/scripts/validate-spec.sh s.md; expect_rc 0
+}
+
+test_template_lines_are_placeholders_until_filled() {
+  # Copied as is, the template's feature and decisions lines are placeholders, so it is not valid.
+  grep -E '^(feature|decisions): <' "$KIT/factory/templates/spec.md" > lines
+  expect_eq "$(lines lines)" 2 "the template has both optional lines"
+  while IFS= read -r l; do with_line "$l"; run single s.md; expect_rc 1; done < lines
 }
 
 test_team_placeholder_rejected_outside_team_mode() {

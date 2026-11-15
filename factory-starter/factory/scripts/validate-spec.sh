@@ -36,6 +36,18 @@ elif grep -Eq -- '^team: *<' "$f"; then
   fail=1
 fi
 
+# Optional, in the frontmatter of dispatched items: the feature and the decision records the item
+# carries out. Absent is fine; present, each must be well formed (a leftover <placeholder> is not).
+fm=$(awk 'NR==1 && $0!="---" {exit} NR>1 && $0=="---" {exit} NR>1 {print}' < "$f")
+while IFS= read -r v; do
+  printf '%s\n' "$v" | grep -Eq '^f[0-9]{3}-[a-z0-9][a-z0-9-]{0,40}[[:blank:]]*$' ||
+    { echo "spec invalid: 'feature' must name one feature, like f001-share-links" >&2; fail=1; }
+done < <(printf '%s\n' "$fm" | sed -n 's/^feature:[[:blank:]]*//p')
+while IFS= read -r v; do
+  printf '%s\n' "$v" | grep -Eq '^c[0-9]{3}-D[0-9]{2}([[:blank:]]*,[[:blank:]]*c[0-9]{3}-D[0-9]{2})*[[:blank:]]*$' ||
+    { echo "spec invalid: 'decisions' must be decision ids separated by commas, like c001-D01, c001-D02" >&2; fail=1; }
+done < <(printf '%s\n' "$fm" | sed -n 's/^decisions:[[:blank:]]*//p')
+
 if grep -Eq -- '^- AC-[0-9]+: .*<' "$f"; then
   echo "spec invalid: an acceptance criterion still contains a <placeholder>" >&2
   fail=1

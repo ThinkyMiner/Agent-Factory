@@ -34,7 +34,7 @@ production yet, Claude Code on a subscription.
 | Builder (developer) | `builder` subagent | Minimal diff until the gates pass. |
 | Reviewer | `reviewer` subagent, read-only | Fresh context, different model tier, includes a security pass. |
 | Observer | `observer` subagent, once per run | Records what happened, with sources. Feeds `/reflect`. See `MEMORY.md`. |
-| Security | CI tools: secret scan now, SAST and dependency audit when there is code | Deterministic first. An agent is added later for threat modelling R2 changes. |
+| Security | CI tools: secret scan now, SAST and dependency audit when there is code. In team mode also the `security-engineer` subagent on every R2+ item and in planning (`docs/factory/TEAMS.md`) | Deterministic first. The agent may raise a tier, never lower it. |
 | Architect | You, with Claude in plan mode, writing `docs/architecture.md` | On an empty repo there is nothing for an architect agent to be consistent with. |
 | Product owner | You own BRIEF and ROADMAP; `/groom` proposes | "What to build" stays human even when "how" is automated. |
 | Release / SRE | Not yet | There is nothing to release. Added at first deploy. |
@@ -53,7 +53,7 @@ role would catch, not before.
 | 2 | Tests | test-author | `spec.md` | `tests/acceptance/*`, commit with `Factory-Stage: tests` | A criterion is untestable after one spec revision |
 | 3 | Build | builder | `spec.md`, tests | Code, `plan.md`, commit with `Factory-Stage: build` | Builder disputes a test and the test-author disagrees |
 | 4 | Gate | Scripts | The branch | Pass or fail, risk tier | Still failing after 2 fix rounds |
-| 5 | Review | reviewer | `spec.md`, diff | `review.md` | Verdict is `escalate`, or still `changes-required` after 2 rounds |
+| 5 | Review | reviewer, plus the specialists `check-specialists.sh --needs` names in team mode (ui-reviewer, security-engineer, db-engineer) | `spec.md`, diff | `review.md` (and `ui-review.md`, `security.md`, `db-review.md`) | A verdict is `escalate`, or still `changes-required` after 2 rounds |
 | 6 | Observe | observer | Work folder, transcripts | `memory/observations/<date>-<id>-<slug>.md` | Never |
 | 7 | PR | Foreman | Everything above | Pull request with evidence and tier | Never: opens the PR, then merge policy applies |
 | 8 | Merge | CI plus policy | Required checks, tier, label | Merge or wait | R2 without `human-approved`; any R3 |
@@ -71,9 +71,10 @@ something wrong is the failure to design against.
 | R2 | Schema and migrations, dependencies, auth, architecture doc, the factory's own files, CI, infrastructure | You, by adding the `human-approved` label after reading the diff |
 | R3 | Secrets, payments, destructive data operations | You, outside the pipeline. The factory stops. |
 
-The tier is the highest of three sources: the spec's `risk_floor`, the path rules
-in `factory/risk-rules.txt`, and the reviewer's assessment. Any source can raise
-it. Nothing can lower it. CI classifies using the base branch's copy of the rules,
+The tier is the highest of these sources: the spec's `risk_floor`, the path rules
+in `factory/risk-rules.txt`, the reviewers' `RISK` lines and, in team mode, the
+floors of the decision records the spec names. Any source can raise it. Nothing can
+lower it. CI computes it with `risk-tier.sh` and the base branch's copy of the rules,
 so a pull request cannot loosen the gate it has to pass.
 
 What stays human regardless of tier:
@@ -119,7 +120,8 @@ from a second model vendor is a later upgrade for R2 changes.
 | What the factory has learned | `memory/` (see `MEMORY.md`) | `lessons.md` always; observations only by `/reflect` |
 | Team charters and roster (team mode) | `teams/<team>/CHARTER.md`, `factory/teams.json` (see `TEAMS.md`) | The charter at the start of that team's session |
 | Requests between teams (team mode) | Tickets: GitHub issues written only by `factory/scripts/ticket.sh`, each action also a `ticket` event | By the receiving team, the sweep and the orchestrator |
-| Planning meetings (team mode) | `planning/<cycle>/`: `BRIEF.md`, `positions/`, `discussion.jsonl` (written only by `say.sh` and `round.sh`), `state.json`, `DECISIONS.md`, `dispatch.jsonl`; merged by you as the approval | By the leads (`/inbox`), the chair (`/plan`) and you, in the planning pull request |
+| Planning meetings (team mode) | `planning/<cycle>/`: `BRIEF.md`, `positions/`, `discussion.jsonl` (written only by `say.sh` and `round.sh`), `state.json`, `threat-model.md`, `db-review.md`, `DECISIONS.md`, `contracts.jsonl`, `dispatch.jsonl`; merged by you as the approval | By the leads (`/inbox`), the chair (`/plan`) and you, in the planning pull request |
+| Contracts between teams (team mode) | `contracts/`: promoted from planning by `contracts.sh`, then changed only under an accepted contract-change ticket; generated code checked by `check-contracts.sh` | By every team that builds against them, and by CI |
 | Live and per-item events | `.factory/events.jsonl` in the main checkout (one log shared by every worktree, appended under `.factory/events.lock`), `work/<id>-<slug>/events.jsonl` | By the control room and `/audit` |
 
 There is no hidden state. If a session dies, the next one can resume from the

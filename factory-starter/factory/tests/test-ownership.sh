@@ -42,7 +42,7 @@ test_foreign_path_fails() {
 }
 
 test_unowned_path_fails() {
-  setup; item 12-share "team: backend"; mkdir contracts && echo x > contracts/api.yaml; echo x > README.md; commit
+  setup; fake_gh; item 12-share "team: backend"; mkdir contracts && echo x > contracts/api.yaml; echo x > README.md; commit
   run "$O" main; expect_rc 1; expect_out "owned by no team"
 }
 
@@ -181,6 +181,104 @@ test_team_pr_cannot_touch_planning() {
 test_unknown_base_is_an_error() {
   setup; item 12-share "team: backend"; commit
   run "$O" no-such-ref; expect_rc 2
+}
+
+# ---- contracts ----
+
+# gh_issue <n> <label>...: issue n in the fake gh, with exactly these labels
+gh_issue() {
+  local n=$1; shift
+  jq -n --argjson n "$n" '[{number: $n, title: "t", body: "", state: "OPEN", labels: ($ARGS.positional | map({name: .})), comments: []}]' --args "$@" > "$FAKE_GH/issues.json"
+}
+
+test_team_pr_changes_contracts_only_under_an_accepted_contract_change_ticket() {
+  setup; fake_gh; git switch -q main && mkdir contracts && echo v1 > contracts/api.yaml && commit && git switch -q -C work/12-share
+  item 12-share "team: backend"; echo v2 > contracts/api.yaml; echo x >> server/a.js; commit
+  run "$O" main; expect_rc 1; expect_out "contracts/api.yaml  (NOT OK: a contract; cannot read issue #12"
+  for st in accepted done; do
+    gh_issue 12 ticket type:contract-change to:backend from:frontend "state:$st"
+    run "$O" main; expect_rc 0; expect_out "contracts/api.yaml  (contract change under ticket #12)"
+  done
+  for st in open declined disputed verified withdrawn; do
+    gh_issue 12 ticket type:contract-change to:backend "state:$st"
+    run "$O" main; expect_rc 1; expect_out "ticket #12 is not accepted"
+  done
+  gh_issue 12 ticket type:contract-change to:frontend state:accepted; run "$O" main; expect_rc 1; expect_out "(no label to:backend)"
+  gh_issue 12 ticket type:request to:backend state:accepted; run "$O" main; expect_rc 1; expect_out "(no label type:contract-change)"
+  gh_issue 12 type:contract-change to:backend state:accepted; run "$O" main; expect_rc 1; expect_out "(no label ticket)"
+  gh_issue 12 ticket type:contract-change 'to:backend,state:accepted'; run "$O" main; expect_rc 1        # one label with a comma
+  gh_issue 12 ticket type:contract-change to:backend 'state:accepted ' 'state:accepted-not'; run "$O" main; expect_rc 1
+  gh_issue 12 ticket type:contract-change to:backends state:accepted; run "$O" main; expect_rc 1; expect_out "(no label to:backend)"
+  gh_issue 12 not-a-ticket type:contract-change to:backend state:accepted; run "$O" main; expect_rc 1; expect_out "(no label ticket)"
+  gh_issue 12 ticket type:contract-change to:backend state:accepted
+  jq '.teams.backend.owns += ["contracts/*"]' factory/teams.json > "$TEST_TMP/wide.json"
+  echo 'issue view' > "$FAKE_GH/fail"
+  TEAMS_FILE="$TEST_TMP/wide.json" run "$O" main; expect_rc 1; expect_out "NOT OK: a contract; cannot read issue #12"   # a roster glob is no ticket
+  rm "$FAKE_GH/fail"; head -c 40 "$FAKE_GH/issues.json" > i && mv i "$FAKE_GH/issues.json"
+  run "$O" main; expect_rc 1; expect_out "cannot read issue #12"                                           # truncated JSON
+  gh_issue 12 ticket type:contract-change to:backend state:accepted; git rm -q contracts/api.yaml; mkdir -p contracts; echo n > contracts/new.yaml; commit
+  : > "$FAKE_GH/log"; run "$O" main; expect_rc 0
+  expect_out "contracts/api.yaml  (contract change under ticket #12)"; expect_out "contracts/new.yaml  (contract change"  # removing one, too
+  expect_eq "$(grep -c 'issue view' "$FAKE_GH/log")" 1 "one gh call per run"
+}
+
+test_team_pr_contract_ticket_id_comes_from_the_work_folder() {
+  setup; fake_gh; gh_issue 12 ticket type:contract-change to:backend state:accepted
+  for id in 'share' '012' '12$(id)' '12`id`' 'x12'; do
+    git switch -q main; git branch -q -D work/12-share; git switch -q -c work/12-share
+    item "$id-share" "team: backend"; mkdir -p contracts && echo x > contracts/api.yaml; commit
+    run "$O" main; expect_rc 1; expect_out "does not start with an issue number"
+  done
+  ! grep -q 'issue view' "$FAKE_GH/log" 2>/dev/null || fail "asked GitHub about a bad id"
+}
+
+# promoted <cycle> <path>...: on planning/<cycle>, each path promoted as contracts.sh does it
+promoted() {
+  local c=$1 p i=0; shift
+  for p in "$@"; do
+    i=$((i + 1)); mkdir -p "$(dirname "$p")"; echo "openapi: 3.1.0" > "$p"
+    printf '## %s-D%02d: Contract %s\n- owner: backend\n- contract: %s#/paths/~1shares\n### Decision\nx\n\n' "${c%%-*}" "$i" "$i" "$p" >> "planning/$c/DECISIONS.md"
+    jq -cn --arg c "$c" --arg p "$p" '{ts: "2026-11-15T10:00:00Z", cycle: $c, attachment: "backend-api.yaml", path: $p, decisions: ["x"]}' >> "planning/$c/contracts.jsonl"
+  done
+}
+
+test_planning_pr_adds_the_contracts_it_promoted() {
+  setup; plan c002-share; promoted c002-share contracts/api.openapi.yaml contracts/design/tokens.json; commit
+  run "$O" main; expect_rc 0
+  expect_out "contracts/api.openapi.yaml  (a new contract this cycle decides)"; expect_out "contracts/design/tokens.json  (a new contract"
+  echo extra > contracts/other.yaml; commit
+  run "$O" main; expect_rc 1; expect_out "contracts/other.yaml  (NOT OK: not promoted by contracts.sh"
+  setup; plan c002-share; promoted c002-share contracts/api.yaml; sed -i.bak 's/c002-share/c003-other/' planning/c002-share/contracts.jsonl; commit
+  run "$O" main; expect_rc 1; expect_out "not promoted by contracts.sh"                                   # another cycle's line
+  setup; plan c002-share; promoted c002-share contracts/api.yaml; sed -i.bak '/^- contract:/d' planning/c002-share/DECISIONS.md
+  printf -- '- contract: contracts/api.yaml\n' >> planning/c002-share/DECISIONS.md; commit                # only in a section's text
+  run "$O" main; expect_rc 1; expect_out "no record in planning/c002-share/DECISIONS.md names it"
+}
+
+test_planning_pr_contract_records_hostile_and_malformed() {
+  setup; plan c002-share; promoted c002-share contracts/api.yaml
+  printf '{"cycle":"c002-share","path":"contracts/api.y\n{not json\n[]\n' > planning/c002-share/contracts.jsonl
+  jq -cn '{cycle: "c002-share", path: "contracts/api.yaml"}' | perl -pe 's/\n/\r\n/' >> planning/c002-share/contracts.jsonl
+  perl -pi -e 's/\n/\r\n/' planning/c002-share/DECISIONS.md; commit
+  run "$O" main; expect_rc 0; expect_out "contracts/api.yaml  (a new contract"                            # CRLF and junk lines
+  printf '{"cycle":"c002-share","path":"contracts/api.y' > planning/c002-share/contracts.jsonl; commit
+  run "$O" main; expect_rc 1; expect_out "not promoted"                                                  # truncated JSON
+  setup; plan c002-share; promoted c002-share 'contracts/$(touch pwned).yaml' $'contracts/new\nline.yaml' 'contracts/a b.yaml'; commit
+  run "$O" main; expect_rc 1; expect_out "not a clean path of a file under contracts/"
+  [ ! -e pwned ] || fail "a file name was executed"
+  setup; plan c002-share; promoted c002-share contracts/api.yaml; rm contracts/api.yaml; ln -s ../factory/teams.json contracts/api.yaml; commit
+  run "$O" main; expect_rc 1; expect_out "contracts/api.yaml  (NOT OK: not a regular file)"
+  setup; plan c002-share; mkdir -p planning/c002-share; : > planning/c002-share/DECISIONS.md; mkdir contracts; echo x > contracts/api.yaml; commit
+  run "$O" main; expect_rc 1; expect_out "not promoted"                                                  # no contracts.jsonl at all
+}
+
+test_planning_pr_never_changes_an_approved_contract() {
+  setup; git switch -q main; mkdir contracts && echo v1 > contracts/api.yaml && commit
+  plan c002-share; promoted c002-share contracts/api.yaml; commit
+  run "$O" main; expect_rc 1; expect_out "contracts/api.yaml  (NOT OK: an approved contract changes only under a contract-change ticket)"
+  setup; git switch -q main; mkdir contracts && echo v1 > contracts/old.yaml && commit
+  plan c002-share; git rm -q contracts/old.yaml; commit
+  run "$O" main; expect_rc 1; expect_out "contracts/old.yaml  (NOT OK: an approved contract"
 }
 
 test_unreadable_roster_fails() {

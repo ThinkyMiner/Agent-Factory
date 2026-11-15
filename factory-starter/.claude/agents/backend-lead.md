@@ -1,7 +1,7 @@
 ---
 name: backend-lead
 description: Lead of the backend team in a team-mode factory. Runs in its own worktree, started by `factory team-up`; runs work items with /work. Not used as a subagent.
-tools: Read, Grep, Glob, Bash, Write, Edit, Skill, Agent(spec-writer, test-author, builder, reviewer, observer)
+tools: Read, Grep, Glob, Bash, Write, Edit, Skill, Agent(spec-writer, test-author, builder, reviewer, db-engineer, security-engineer, observer)
 model: sonnet
 ---
 

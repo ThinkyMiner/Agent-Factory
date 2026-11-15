@@ -73,6 +73,72 @@ test_items_are_json_and_refuse_needs_human() {
   echo '{"broken' > "$P/state.json"; run "$D" items "$P"; expect_rc 1; expect_err "state.json is missing or damaged"
 }
 
+raises() {  # raises <file> <printf text>: the file in the cycle folder, then validate
+  printf "$2" > "$P/$1"; run "$D" validate "$P"
+}
+
+test_security_raises_set_risk_floors() {
+  cycle; decisions_ok c001 > "$P/DECISIONS.md"          # D01 has risk_floor R2, D02 none
+  run "$D" validate "$P"; expect_rc 0                    # no threat-model.md: fine
+  raises threat-model.md 'THREAT MODEL:\n- Raise the token lifetime with backend: it matters.\nRAISES:\nRAISE: c001-D01 R2 a token grants read access\nNOT VERIFIED: - none\n'; expect_rc 0
+  raises threat-model.md 'RAISE: c001-D01 R1 lower than the floor changes nothing\n- RAISE: c001-D02 R2 a leaked link works for a week\n'
+  expect_rc 1; expect_err "threat-model.md line 2: raises c001-D02 to R2, so its risk_floor must be at least R2"
+  decisions_ok c001 | perl -0pe 's/(- status: decided\n)(- refs:)/$1- risk_floor: R3\n$2/' > "$P/DECISIONS.md"
+  run "$D" validate "$P"; expect_rc 0
+  run "$D" validate "$P" --new-draft; expect_rc 0
+  raises db-review.md 'RAISE: c001-D01 R3 dropping the column loses every share\n'
+  expect_rc 1; expect_err "db-review.md line 1: raises c001-D01 to R3"
+  run "$D" items "$P"; expect_rc 1; expect_err "raises c001-D01 to R3"   # dispatch refuses it too
+}
+
+test_malformed_and_hostile_raises_fail() {
+  cycle; decisions_ok c001 > "$P/DECISIONS.md"
+  for l in 'RAISE: c001-D01 R9 tier out of range' 'RAISE: c001-D1 R2 short id' 'RAISE: ../c001-D01 R2 climbs' \
+           'RAISE: c001-D01$(touch pwned) R2 subshell' 'RAISE: `touch pwned` R2 backticks' 'RAISE: "c001-D01" R2 quoted' \
+           'RAISE: c001-D01' 'RAISE:' 'RAISE c001-D01 R2 no colon' '**RAISE:** c001-D01 R2 bold' 'Raise: c001-D01 R2 lower case' \
+           'RAISE: c001-D01 R2, comma glued to the tier' 'RAISE:c001-D01 R2 no space'; do
+    printf '%s\n' "$l" > "$P/threat-model.md"
+    run "$D" validate "$P"; expect_rc 1 || fail "[$l]"; expect_err "threat-model.md line 1: a raise must read RAISE: <record id like c001-D01> <R0..R3> <why>"
+  done
+  [ ! -e pwned ] && [ ! -e "$P/pwned" ] || fail "a raise was executed"
+  raises threat-model.md 'RAISE: c001-D09 R2 a record nobody wrote\n'; expect_rc 1; expect_err "raises c001-D09, which is not in DECISIONS.md"
+  # an earlier cycle's record (say one this cycle supersedes) cannot be raised here: its floor is approved
+  raises threat-model.md 'RAISE: c000-D03 R3 the old record\n'; expect_rc 1; expect_err "c000-D03 is not a record of this cycle"
+  decisions_ok c001 | perl -0pe 's/(## c001-D02.*?)(- refs: )/$1- supersedes: c000-D03\n$2/s' > "$P/DECISIONS.md"
+  run "$D" validate "$P"; expect_rc 1; expect_err "c000-D03 is not a record of this cycle"
+  decisions_ok c001 > "$P/DECISIONS.md"
+  raises threat-model.md 'RAISE: c001-D01 R2 the "why" has '"'quotes'"', $(touch pwned) and `id`\n'; expect_rc 0
+  [ ! -e pwned ] || fail "a raise's reason was executed"
+}
+
+test_raises_survive_crlf_huge_files_and_links() {
+  cycle; decisions_ok c001 | sed 's/$/\r/' > "$P/DECISIONS.md"
+  raises threat-model.md 'RAISE: c001-D01 R2\r\nRAISE: c001-D02 R1 crlf\r\n'; expect_rc 1; expect_err "line 2: raises c001-D02 to R1"
+  raises threat-model.md 'RAISE: c001-D01 R2\r\n'; expect_rc 0
+  { perl -e 'print "prose without a raise in it.\n" x 40000'; echo 'RAISE: c001-D02 R2 at the end of 1 MB'; } > "$P/threat-model.md"
+  run "$D" validate "$P"; expect_rc 1; expect_err "line 40001: raises c001-D02 to R2"
+  perl -e 'print "RAISE: c001-D01 ", "x" x 1048576' > "$P/threat-model.md"
+  run "$D" validate "$P"; expect_rc 1; expect_err "line 1: a raise must read"
+  printf 'RAISE: c001-D02 R3 hidden behind a link\n' > "$TEST_TMP/outside.md"
+  rm "$P/threat-model.md"; ln -s ../../../outside.md "$P/threat-model.md"
+  run "$D" validate "$P"; expect_rc 1; expect_err "threat-model.md must be a plain file"
+  rm "$P/threat-model.md"; ln -s "$P/no-such-file" "$P/threat-model.md"
+  run "$D" validate "$P"; expect_rc 1; expect_err "threat-model.md must be a plain file"
+  rm "$P/threat-model.md"; mkdir "$P/threat-model.md"
+  run "$D" validate "$P"; expect_rc 1; expect_err "threat-model.md must be a plain file"
+}
+
+test_round_draft_refuses_a_draft_below_a_raise() {
+  planning_setup; meeting_to decisions
+  decisions_ok c001 > "$P/DECISIONS.md"
+  printf 'RAISE: c001-D02 R2 a leaked link works for a week\n' > "$P/threat-model.md"
+  by orchestrator "$SCRIPTS/round.sh" draft; expect_rc 1; expect_err "raises c001-D02 to R2"
+  expect_eq "$(jq .draft "$P/state.json")" 0
+  decisions_ok c001 | perl -0pe 's/(## c001-D02.*?)(- refs: )/$1- risk_floor: R2\n$2/s' > "$P/DECISIONS.md"
+  by orchestrator "$SCRIPTS/round.sh" draft; expect_rc 0
+  git -C "$MAIN" show --stat HEAD | grep -q threat-model.md || fail "the threat model is not in the planning record"
+}
+
 test_approved_records_only_gain_superseded() {
   mkrepo r && cd r && mkdir -p planning/c001-share-links && decisions_ok c001 > planning/c001-share-links/DECISIONS.md
   git add -A && git commit -qm approved && git switch -q -c later

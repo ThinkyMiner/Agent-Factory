@@ -146,6 +146,39 @@ test_not_a_ticket_or_a_damaged_one_is_refused() {
   as backend accept 77; expect_rc 1; expect_err "cannot read issue #77"
 }
 
+# ---- contract-change tickets leave a grant in the main checkout while accepted ----
+ask_contract() { as frontend create --to backend --type contract-change --needs "$NEEDS" --why "$WHY" --blocks "#12" --done "$DONE"; }
+grant() { cat "$MAIN/.factory/grants/contract-$1.json" 2>/dev/null; }
+no_grant() { [ ! -e "$MAIN/.factory/grants/contract-$1.json" ] || fail "a grant for #$1 is left: $(grant "$1")"; }
+
+test_accepting_a_contract_change_grants_contracts_until_done() {
+  setup; ask_contract; expect_rc 0
+  no_grant 1
+  as backend accept 1; expect_rc 0; expect_out "backend may now change contracts/ for #1"
+  expect_eq "$(grant 1 | jq -c '[.ticket, .team]')" '[1,"backend"]'
+  grant 1 | jq -e '.ts | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$")' >/dev/null || fail "no time in the grant: $(grant 1)"
+  [ ! -e "$BE/.factory/grants" ] || fail "the grant went to the worktree, not the main checkout"
+  as backend done 1 --pr 5; expect_rc 0; no_grant 1
+  as frontend dispute 1 --reason "The new field is optional in the contract but the client needs it"; no_grant 1
+  as backend accept 1; expect_rc 0; expect_eq "$(grant 1 | jq -r .team)" backend
+  as frontend withdraw 1 --reason "We will keep the old field and drop this change for now"; expect_rc 0; no_grant 1
+  expect_eq "$(issue 1 | jq -r .state)" CLOSED
+}
+
+test_only_an_accepted_contract_change_ticket_grants() {
+  setup; jq '.limits = {open_tickets_per_pair: 9}' "$FE/factory/teams.json" > t && mv t "$FE/factory/teams.json"
+  ask; as backend accept 1; expect_rc 0; no_grant 1                             # a request
+  ask_contract; as backend decline 2 --reason "The contract already has this field under another name"; no_grant 2
+  ask_contract; as frontend accept 3; expect_rc 1; no_grant 3                    # the asking side
+  cd "$FE"; FACTORY_TEAM=backend run "$T" accept 3; expect_rc 1; no_grant 3      # spoofed team
+  echo 'issue edit' > "$FAKE_GH/fail"; as backend accept 3; expect_rc 1; no_grant 3   # GitHub refused
+  rm "$FAKE_GH/fail"
+  jq 'map(if .number == 3 then .labels += [{name: "type:request"}] else . end)' "$FAKE_GH/issues.json" > i && mv i "$FAKE_GH/issues.json"
+  as backend accept 3; expect_rc 0; no_grant 3                                   # two type: labels are no type
+  ls "$MAIN/.factory/grants" 2>/dev/null | grep . && fail "grants were written"
+  return 0
+}
+
 test_github_failures_stop_without_a_false_record() {
   setup; echo 'issue create' > "$FAKE_GH/fail"
   ask; expect_rc 1; expect_err "GitHub refused the ticket"

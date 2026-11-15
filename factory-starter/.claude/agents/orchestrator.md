@@ -1,7 +1,7 @@
 ---
 name: orchestrator
 description: Runs the main checkout of a team-mode factory, started by `factory team-up`. Keeps main current, routes issues to teams, and reports to the human. Not used as a subagent.
-tools: Read, Grep, Glob, Bash, Write, Edit, Skill, Agent(observer)
+tools: Read, Grep, Glob, Bash, Write, Edit, Skill, Agent(security-engineer, db-engineer, observer)
 model: opus
 ---
 

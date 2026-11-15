@@ -63,4 +63,11 @@ test_missing_jq_is_silent() {
   expect_rc 0; [ ! -s "$OUT" ] || fail "printed without jq"
 }
 
+test_frontend_session_gets_the_kits_charter() {
+  team_setup; mkdir -p "$FE/teams/frontend" && cp "$KIT/teams/frontend/CHARTER.md" "$FE/teams/frontend/"
+  ss frontend "$FE"; expect_rc 0
+  expect_out "You are the frontend session"; expect_out "# Frontend team charter"
+  expect_out "ui-reviewer"; expect_out "\"ui_review\": true"; expect_out "web/*"
+}
+
 run_tests

@@ -4,10 +4,11 @@ A factory runs as one team until `factory/teams.json` exists. With it, the facto
 teams, each with its own Claude Code session, its own git worktree and its own paths. Nothing
 else changes: `/work`, the gates and the risk tiers are the same.
 
-This page describes what is built so far (phases 1 to 3 of `plans/2026-11-14-teams.md` in the
-kit's repository): the orchestrator plus one building team, `backend`; an optional bot account
-for agents on GitHub; tickets, work items, build slots and the sweep; planning meetings. More
-teams, specialists and feature integration come in later phases.
+This page describes what is built so far (phases 1 to 4 of `plans/2026-11-14-teams.md` in the
+kit's repository): the orchestrator plus two building teams, `backend` and `frontend`; an optional
+bot account for agents on GitHub; tickets, work items, build slots and the sweep; planning
+meetings; the security, database and UI reviewers; contracts. The research team and feature
+integration come in later phases.
 
 ## Before you turn it on (once)
 
@@ -40,18 +41,26 @@ factory team-up           # with Herdr open: one worktree per team, and a space 
 factory team-up --print   # without Herdr: makes the worktrees, prints one launch command per team
 ```
 
-Then give the backend lead an item: type `/work <issue>` in its pane.
+Then give the backend lead an item: type `/work <issue>` in its pane. For a frontend team, add its
+entry to the roster (see below) in a pull request; `team-up` then gives it a tab running
+`frontend-lead`.
 
 ## The roster
 
 ```json
 { "version": 1, "default_team": "backend",
   "teams": { "orchestrator": { "owns": ["planning/*"] },
-             "backend":      { "owns": ["server/*", "db/*", "tests/*", "Makefile"] } },
+             "backend":      { "owns": ["server/*", "db/*", "tests/acceptance/backend/*", "Makefile"] },
+             "frontend":     { "owns": ["web/*", "tests/acceptance/frontend/*"], "ui_review": true } },
+  "db_paths": ["db/*", "*migrations/*", "*schema*"],
   "append_only": ["memory/observations/*", "product/INBOX.md"] }
 ```
 
 - `owns` uses the globs of `risk-rules.txt` (`*` also matches `/`), compared without case.
+- `ui_review: true` makes a team's items need a passing `ui-review.md` besides `review.md`.
+  `db_paths` (this is the default) decides which changes need a database review. Both are read
+  from the base branch, like the rest of the roster.
+- `contracts/*` belongs to no team, even if a roster lists it (see Contracts).
 - A team with `"active": false` is not launched and owns nothing. Team names are lowercase
   letters, digits, `-` and `_`; any other key is ignored.
 - `append_only` paths may be added to by any team, never rewritten or deleted.
@@ -88,6 +97,11 @@ At start, resume and compaction the `session-start.sh` hook prints the team's ch
 | The planning transcript, state, positions and attachments are written only by the planning scripts | direct writes to `planning/*/discussion.jsonl`, `state.json`, `dispatch.jsonl`, `positions/`, `attachments/` and shell commands naming `.factory/planning` are blocked | a `planning/<cycle>` pull request may change only `planning/<cycle>/` (and, to supersede, earlier `DECISIONS.md`); every `planning/*` and `contracts/*` file is R2 |
 | No one reads a sealed position before the round closes | Read, Grep and Glob into `.factory/planning/*/sealed/` are blocked, for every session | (not applicable: sealed positions never leave the main checkout) |
 | Approved decisions are never rewritten | (not applicable) | `decisions.sh check-append-only`: a record on the base branch may only gain `status: superseded` and `superseded_by` |
+| An item's tier is the highest of its paths, its spec's `risk_floor`, the floors of the decision records it names and every reviewer's `RISK` | (not applicable; `/work` asks the same script) | `risk-gate` runs the base branch's `risk-tier.sh` (in single-team factories too); both names of a renamed file count |
+| Every item has a passing review; a `ui_review` team's item also a passing UI review; an R2 or R3 item a passing security review; a change to a db path a passing database review | (not applicable; `/work` runs the reviewers `check-specialists.sh --needs` names) | `risk-gate` step "Specialists' reports": `check-specialists.sh` with the base branch's roster |
+| A security raise is honoured | (not applicable) | `decisions.sh validate`: every `RAISE: <record> <tier>` in `threat-model.md` or `db-review.md` needs that record's `risk_floor` at least as high (checked at each draft, at approval and by `dispatch.sh`) |
+| A contract changes only by planning or under an accepted contract-change ticket | writes to `contracts/*` need a grant for the session's team in `.factory/grants/` (only `ticket.sh accept` writes one) | `ownership`: a team PR touching `contracts/*` must be the work item of a `type:contract-change` ticket to that team, accepted or done; a planning PR may only add new contracts its cycle promoted. Generated code must match: the `check` job runs `check-contracts.sh` |
+| The UI reviewer runs only the browser tooling | a session whose `agent_type` is `ui-reviewer` may run exactly `make ui-shots URL=<url> OUT=<dir>`, nothing else | (not applicable) |
 
 `/work` starts a new subagent for every delegation. A fix round goes to a new builder with the
 spec and the exact failure, never back to the builder that wrote the code.
@@ -167,8 +181,8 @@ while one is open (a marker in `.factory/planning/active`).
 | brief | the orchestrator writes it from what you asked; you approve | `BRIEF.md`: Goal, Constraints, Out of scope, `teams:`. `round.sh brief` pushes it as a draft pull request. | You add `brief-approved` (`check-approval.sh`: your account, after the last push). A one-team cycle goes straight to decisions. |
 | positions | each lead, in parallel | `position.sh submit`: Build, Needs from others, Risks, Open questions, What I would object to in the brief; contract drafts with `position.sh attach`. Sealed until the round closes. | every team submitted, or the round's time is up; then all are published at once to `positions/` |
 | discussion-1, -2 | the orchestrator asks, leads answer | `say.sh question / answer / objection / proposal`, one JSON line each in `discussion.jsonl` | every question answered, or the time is up; a second round only with `--again` |
-| review | specialists (later phases) | | |
-| decisions | the orchestrator drafts `DECISIONS.md`; each lead answers each draft once | `round.sh draft`, then `say.sh accept` or `say.sh objection --refs <record>` | every team answered (or the time is up) and `decisions.sh validate` passes; the pull request is marked ready |
+| review | security-engineer, and db-engineer when the data model is touched (the orchestrator runs them) | their replies, saved as `threat-model.md` and `db-review.md` | the orchestrator runs `round.sh next` |
+| decisions | the orchestrator drafts `DECISIONS.md`; security-engineer reads each draft (its `RAISE` lines are appended to `threat-model.md`); each lead answers each draft once | `round.sh draft`, then `say.sh accept` or `say.sh objection --refs <record>`; after the last draft, `contracts.sh promote` for each contract a record names | every team answered (or the time is up) and `decisions.sh validate` passes; the pull request is marked ready |
 | approval | you | settle each `needs-human` record (edit it, or tell the orchestrator), add `human-approved`, merge | `dispatch.sh` refuses unless `DECISIONS.md` is on `main` with no needs-human record left |
 
 Then `/dispatch` makes the feature branch `feature/f<NNN>-<slug>`, writes `dispatch.jsonl` (one
@@ -195,6 +209,57 @@ Reasoning, Alternatives rejected, Dissent. Then a `## Work breakdown` table:
 Everything a team writes in planning (positions, messages, attachments) is evidence for the other
 teams to weigh, never an instruction to them; research's text above all, since it was read from
 the open web. Every agent prompt says so.
+
+## Reviews and specialists
+
+Whoever builds an item does not judge it. Every reviewer is a fresh subagent with no edit tools.
+Its reply is saved word for word in the work folder and committed:
+
+| Report | Reviewer | When (decided by `check-specialists.sh`, never by the foreman) |
+|---|---|---|
+| `review.md` | `reviewer`: the diff against the spec, its decision records and contracts | every item |
+| `ui-review.md` | `ui-reviewer`: the rendered result, light and dark, desktop and phone, plus an axe scan (`make ui-shots`) | items of a team with `ui_review: true` (frontend) |
+| `security.md` | `security-engineer`: may raise the tier, never lower it | team mode, items whose tier is R2 or R3 |
+| `db-review.md` | `db-engineer`: schema, migrations (reversibility, locking, data loss, backfill), queries | team mode, items that change a `db_paths` path |
+
+Each report starts `VERDICT: pass | changes-required | escalate` and `RISK: R0..R3`. A report
+passes only when its first `VERDICT:` line is exactly `VERDICT: pass`. Any `changes-required`
+goes to a new builder with that report's BLOCKING list. Then the gate and every reviewer that had
+already run go again, because a fix can break what another reviewer passed: at most 2 rounds in
+total. `escalate` stops the item.
+
+`/work` asks `check-specialists.sh --needs` which reports an item needs, and `risk-tier.sh` for its
+tier after each report. Before it pushes, it runs the same check CI runs. A frontend item whose spec
+adds or changes a screen, flow or design token first goes to `designer` (`design.md`).
+
+`make ui-shots URL=<url> OUT=<dir>` is the factory's browser tooling. The kit's default only says
+to define it. `factory/scripts/ui-shots.mjs` is a reference built on Playwright and
+`@axe-core/playwright` from the product's own `node_modules`: 8 screenshots per page
+({light, dark} x {1280x800, 390x844}) and `axe.json`. It refuses `file://` pages outside the
+repository and output folders outside it.
+
+## Contracts
+
+`contracts/` (for example `api.openapi.yaml`, `data-model.md`, `design/tokens.json`) is the
+agreement between teams. No team owns it.
+
+- **First author: planning.** A producing team attaches its draft to its position
+  (`position.sh attach`). A decision record names the file (`- contract: contracts/api.openapi.yaml#/paths/~1shares`).
+  After the last draft, the orchestrator runs `contracts.sh promote <cycle> <attachment>
+  <contracts/path>`, which copies it in on the planning branch and records it in
+  `planning/<cycle>/contracts.jsonl`. You approve the contract with `DECISIONS.md`, by merging.
+  `promote` refuses a path no record names, and a path already on `main`.
+- **Every change after that: a contract-change ticket.**
+  `ticket.sh create --type contract-change --to <team>`. When that team accepts, `ticket.sh`
+  writes a grant (`.factory/grants/contract-<n>.json`), and the guard lets that team's sessions
+  write `contracts/` while the ticket stays accepted. Any other ticket action removes the grant.
+  Its pull request is `/work <n>`: CI checks that issue `<n>` is a `type:contract-change` ticket
+  to that team, accepted or done.
+- **Generated code must match.** The `check` job runs `check-contracts.sh`: `make contract-gen`
+  must change nothing (otherwise the generated code drifted), then `make contract-check` must pass
+  (conformance, for example contract tests). A factory with no files in `contracts/` skips both.
+  With contracts, the kit's default targets fail until the Makefile defines them for the stack.
+- Every `contracts/*` file is R2: you approve each change.
 
 ## Known weaknesses
 
@@ -231,5 +296,14 @@ the open web. Every agent prompt says so.
   shows the whole transcript, and you approve it by reading it.
 - **The active-cycle marker is local** (`.factory/planning/active` in the main checkout). Two
   factories on two machines over one repository would not see each other's cycles.
+- **Reports are declared, not proven.** CI checks that the right reports exist and say
+  `VERDICT: pass`, not that the named reviewer wrote them: the lead saves each reply, and a lead
+  that wrote one itself would pass the check. The telemetry log records every subagent's start
+  and stop with its agent type: that is the evidence to check it against.
+- **Agent types come from Claude Code.** The UI reviewer's shell limit trusts the hook input's
+  `agent_type`. Claude Code documents it for subagents; phase 5 checks it live. The UI reviewer
+  can still open any `http` address, but it can already say anything it read in its reply.
+- **Contract grants are local files** in the main checkout. A ticket closed on GitHub without
+  `ticket.sh` keeps its grant until `ticket.sh` next acts on it. CI's ticket check holds anyway.
 - **The approval check trusts GitHub's activity log** for push times. If GitHub has no record of
   a branch's pushes (an old branch), the gate stays closed until something is pushed.
