@@ -9,8 +9,9 @@
 #     running `env FACTORY_TEAM=<team> bot-session.sh claude --agent <agent> -n <team>`. <agent>
 #     is the team's "agent" in the roster, else orchestrator / <team>-lead;
 # plus a tab named sweep running `sweep.sh --loop` in the main checkout.
-# Every session works on GitHub as the factory's bot (bot-session.sh: the token comes from the
-# keychain). team-up refuses to start anything until that token works and is not your own.
+# With a bot token in the keychain (item factory-github-bot), every session works on GitHub as
+# the bot (bot-session.sh), and team-up refuses to start anything until that token works and is
+# not your own. Without one, sessions work as you, and team-up says what that costs.
 # Idempotent: a team whose tab runs claude is skipped, so this also restarts a closed tab.
 # --print makes the worktrees, then prints plain launch commands instead of using Herdr.
 # Sessions cannot run this (the guard blocks it): identities are handed out by the human.
@@ -68,22 +69,30 @@ bad=$(jq -c '.teams | keys[] | select(test("^[a-z][a-z0-9_-]{0,31}$") | not)' "$
 [ -z "$bad" ] || die "invalid team name in factory/teams.json: $bad (lowercase letters, digits, - and _)"
 ! grep -qx sweep <<<"$list" || die "'sweep' is the name of the sweep's tab; give that team another name"
 
-# Agents work as the bot: its token must work and must not be yours.
+# Whose GitHub identity the agents get: the bot's if its token is stored (it must work and must
+# not be yours), else yours.
 command -v gh >/dev/null 2>&1 || die "gh is not installed"
-botlogin=$("$bot" gh api user --jq .login 2>&1) || die "agents work on GitHub as the factory's bot, and its token does not work: $botlogin"
 you=$(env -u GH_TOKEN gh api user --jq .login 2>/dev/null) || die "gh is not logged in as you (run gh auth login)"
-[ "$(tr '[:upper:]' '[:lower:]' <<<"$botlogin")" != "$(tr '[:upper:]' '[:lower:]' <<<"$you")" ] ||
-  die "the keychain's factory-github-bot token is yours ($you). Store the bot account's own token, so agents cannot act as you."
-echo "agents work on GitHub as $botlogin"
+as=()
+if security find-generic-password -s factory-github-bot -w >/dev/null 2>&1; then
+  botlogin=$("$bot" gh api user --jq .login 2>&1) || die "the keychain holds a bot token (factory-github-bot), and it does not work: $botlogin"
+  [ "$(tr '[:upper:]' '[:lower:]' <<<"$botlogin")" != "$(tr '[:upper:]' '[:lower:]' <<<"$you")" ] ||
+    die "the keychain's factory-github-bot token is yours ($you). Store the bot account's own token, or delete the item to run agents as you."
+  as=("$bot")
+  echo "agents work on GitHub as $botlogin"
+else
+  echo "agents work on GitHub as you ($you): there is no bot token in the keychain. risk-gate cannot tell"
+  echo "  your human-approved label from an agent's; only the guard keeps agents from adding it (docs/factory/TEAMS.md)."
+fi
 
 if [ "$print" = 1 ]; then
   echo "# One terminal per team:"
   for t in $list; do
     a=$(agent_of "$t"); dir=$(checkout_of "$t")
-    printf 'cd %q && FACTORY_TEAM=%q %q claude --agent %q -n %q\n' "$dir" "$t" "$bot" "$a" "$t"
+    printf 'cd %q && FACTORY_TEAM=%q %sclaude --agent %q -n %q\n' "$dir" "$t" "${as[*]:+$(printf '%q ' "${as[@]}")}" "$a" "$t"
   done
   echo "# And one for the sweep:"
-  printf 'cd %q && %q bash %q --loop\n' "$home" "$bot" "$here/sweep.sh"
+  printf 'cd %q && %sbash %q --loop\n' "$home" "${as[*]:+$(printf '%q ' "${as[@]}")}" "$here/sweep.sh"
   exit 0
 fi
 
@@ -104,7 +113,7 @@ for t in $list; do
     continue
   fi
   a=$(agent_of "$t"); dir=$(checkout_of "$t")
-  argv=$(jq -nc --arg t "$t" --arg a "$a" --arg b "$bot" '["env", "FACTORY_TEAM=\($t)", $b, "claude", "--agent", $a, "-n", $t]')
+  argv=$(jq -nc --arg t "$t" --arg a "$a" '$ARGS.positional as $as | ["env", "FACTORY_TEAM=\($t)"] + $as + ["claude", "--agent", $a, "-n", $t]' --args ${as[@]+"${as[@]}"})
   if [ -z "$space" ]; then
     out=$(herdr-app do space.new --name "$label" --folder "$dir" --tab "$t" --argv "$argv") || die "Herdr did not start $t: $out"
     space=$(jq -r '.space // empty' <<<"$out" 2>/dev/null)
@@ -122,7 +131,7 @@ sw=$(jq -r --arg s "$space" '[.spaces[] | select(.id == $s) | .tabs[] | select(.
 if [ -n "$sw" ]; then
   echo "sweep: already running in $sw"
 else
-  argv=$(jq -nc --arg b "$bot" --arg s "$here/sweep.sh" '[$b, "bash", $s, "--loop"]')
+  argv=$(jq -nc --arg s "$here/sweep.sh" '$ARGS.positional + ["bash", $s, "--loop"]' --args ${as[@]+"${as[@]}"})
   out=$(herdr-app do tab.new --space "$space" --name sweep --folder "$home" --argv "$argv") || die "Herdr did not start the sweep: $out"
   echo "sweep: started in $(jq -r '.terminal // "?"' <<<"$out" 2>/dev/null) (every 15 minutes)"
 fi

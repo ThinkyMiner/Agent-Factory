@@ -151,12 +151,22 @@ test_start_that_fails_outright_stops() {
   run "$U"; expect_rc 1; expect_err "Herdr did not start orchestrator"
 }
 
-test_refuses_to_start_anything_without_the_bots_token() {
+test_without_a_bot_token_sessions_work_as_you_and_it_says_so() {
   kit; fake_app; fake_keychain
-  run "$U"; expect_rc 1; expect_err "the factory's bot, and its token does not work: bot-session: no bot token in the keychain"
-  run "$U" --print; expect_rc 1
-  [ ! -e "$(BE)" ] || fail "made a worktree without the bot"
-  grep -q '^do ' "$TEST_TMP/app.log" 2>/dev/null && fail "started a tab without the bot"
+  run "$U"; expect_rc 0; expect_out "agents work on GitHub as you (human): there is no bot token"
+  expect_out "risk-gate cannot tell"
+  plain=$(jq -nc '["env", "FACTORY_TEAM=backend", "claude", "--agent", "backend-lead", "-n", "backend"]')
+  grep -qxF -- "do tab.new --space sp1 --name backend --folder $(BE) --argv $plain" "$TEST_TMP/app.log" || fail "backend tab wrong: $(cat "$TEST_TMP/app.log")"
+  grep -qF -- "--name sweep --folder $TEST_TMP/app --argv [\"bash\"," "$TEST_TMP/app.log" || fail "sweep tab wrong: $(cat "$TEST_TMP/app.log")"
+  run "$U" --print; expect_rc 0; expect_out "cd $(BE) && FACTORY_TEAM=backend claude --agent backend-lead -n backend"
+  expect_out "cd $TEST_TMP/app && bash $SCRIPTS/sweep.sh --loop"
+}
+
+test_a_stored_bot_token_that_does_not_work_stops_everything() {
+  kit; fake_app; fake_keychain 'not a token'
+  run "$U"; expect_rc 1; expect_err "the keychain holds a bot token (factory-github-bot), and it does not work"
+  [ ! -e "$(BE)" ] || fail "made a worktree with a broken bot token"
+  grep -q '^do ' "$TEST_TMP/app.log" 2>/dev/null && fail "started a tab with a broken bot token"
   true
 }
 

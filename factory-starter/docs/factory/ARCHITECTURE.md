@@ -137,7 +137,8 @@ files, plus CODEOWNERS for R2 paths.
 4. Branch protection with required checks: nothing merges red, whoever asks. In team
    mode the `ownership` check fails a pull request that leaves its team's paths, and
    `risk-gate` counts a `human-approved` label only if your account added it after the
-   last push (agents work as a bot account whose token cannot change workflows).
+   last push. With the optional bot account for agents, an agent's label never counts and
+   the bot cannot change workflows (`TEAMS.md`).
 5. Credentials: the machine and the CI job that run agents hold no production
    secrets. This is the only layer that holds against a model that is confused or
    has been fed hostile input, so it is the one to be strict about.

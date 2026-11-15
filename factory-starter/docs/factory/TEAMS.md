@@ -5,23 +5,28 @@ teams, each with its own Claude Code session, its own git worktree and its own p
 else changes: `/work`, the gates and the risk tiers are the same.
 
 This page describes what is built so far (phases 1 and 2 of `plans/2026-11-14-teams.md` in the
-kit's repository): the orchestrator plus one building team, `backend`; agents working on GitHub
-as a bot account; tickets, work items, build slots and the sweep. Planning meetings, more teams
+kit's repository): the orchestrator plus one building team, `backend`; an optional bot account
+for agents on GitHub; tickets, work items, build slots and the sweep. Planning meetings, more teams
 and specialists come in later phases.
 
 ## Before you turn it on (once)
 
-Agents work on GitHub as a bot account, so only you appear as yourself and only your labels
-count as approval.
+`factory github` sets the repository variable `FACTORY_HUMAN` to your login (for a factory made
+before phase 2: `gh variable set FACTORY_HUMAN --body <your login>`). That is all that is required.
+
+**Optional, stronger: a bot account for the agents.** Without one, agents work on GitHub as you,
+which costs two things (see Known weaknesses): risk-gate cannot tell your `human-approved` label
+from an agent's, and a pull request could rewrite its own gates in `.github/workflows/`. With a
+bot, only your labels count and the bot cannot change workflows. To set one up:
 1. Create a GitHub account for the bot (it needs its own email address), invite it to the
    repository as a collaborator (write, never admin) and accept the invitation as the bot.
 2. As the bot, create a **classic** token with only the **`repo`** scope. Leave `workflow`
    unticked: GitHub then refuses any push from the bot that changes `.github/workflows/`, so no
    pull request can rewrite its own gates. (Fine-grained tokens cannot yet reach a repository
    where the account is only a collaborator.)
-3. Store it in your keychain, from a terminal: `security add-generic-password -s factory-github-bot -a factory -w`
-4. `factory github` sets the repository variable `FACTORY_HUMAN` to your login. For a factory
-   made before phase 2: `gh variable set FACTORY_HUMAN --body <your login>`.
+3. Store it in your keychain, from a terminal: `security add-generic-password -s factory-github-bot -a factory -w`.
+   `team-up` then starts every session as the bot, and refuses to start anything if the token
+   does not work or is yours. Delete the item to go back to running agents as you.
 
 ## Turning it on
 
@@ -31,8 +36,7 @@ factory teams init        # writes factory/teams.json: orchestrator + backend, o
 factory team-up           # with Herdr open: one worktree per team, and a space named after the repo
                           # with one tab per team running its claude, plus a tab for the sweep; run
                           # it again to restart a closed tab. A new folder asks whether you trust
-                          # it: answer that yourself. It refuses to start anything until the bot's
-                          # token works and is not yours
+                          # it: answer that yourself. It says whose GitHub identity the agents get
 factory team-up --print   # without Herdr: makes the worktrees, prints one launch command per team
 ```
 
@@ -79,7 +83,7 @@ At start, resume and compaction the `session-start.sh` hook prints the team's ch
 | Your files (`CLAUDE.md`, `product/BRIEF.md`, `product/ROADMAP.md`) change only in your pull requests | owned by no team, so blocked | `ownership` exempts a PR that changes only these and factory files; `risk-gate` makes them R2 (your label) |
 | Sessions do not message each other | `crossSessionInbound: "refuse"`, `ListAgents` denied | (not applicable) |
 | R2 needs your approval of the pull request as it is now | `human-approved` in any command is blocked | `risk-gate` runs `check-approval.sh`: the label was last added by `FACTORY_HUMAN`, after the newest push to the branch (timed by GitHub) |
-| Agents work as the bot, never as you | credential commands blocked (`gh auth`, `GH_TOKEN`, `security`, `git credential`, `~/.config/gh`, `~/.ssh`); settings deny reading `~/.config/gh` and `~/.ssh` | the bot's label never counts; its token cannot push workflow changes |
+| Sessions keep the GitHub identity they were started with | credential commands blocked (`gh auth`, `GH_TOKEN`, `security`, `git credential`, `~/.config/gh`, `~/.ssh`); settings deny reading `~/.config/gh` and `~/.ssh` | with a bot: its label never counts, and its token cannot push workflow changes |
 | Issues and labels change only through `ticket.sh` and `item.sh` | raw `gh issue` / `gh label` writes, label edits on PRs and `gh api` writes are blocked | (not applicable) |
 
 `/work` starts a new subagent for every delegation. A fix round goes to a new builder with the
@@ -98,7 +102,9 @@ The guard and its rules run from each worktree's own checkout. `/work` starts ev
 `human-approved` was added, your account (`FACTORY_HUMAN`) added it, and that this was after the
 newest push to the branch, as GitHub's activity log times it (a commit's own date can be
 anything). So a label the bot adds keeps the gate red, and any push after your approval needs a
-new one: remove the label and add it again once you have read what changed. A pull request from
+new one: remove the label and add it again once you have read what changed. Without a bot, an
+agent's label would also come from your account, so then only the second half (newer than the
+last push) adds protection against agents; the first half still stops anyone else. A pull request from
 a fork, or a branch GitHub has no push record for, fails closed. The same check will gate the
 planning brief (`brief-approved`) in phase 3.
 
@@ -147,14 +153,23 @@ escalations and tell the human. The findings never travel in that sentence.
 
 ## Known weaknesses
 
+- **Without a bot account, agents work on GitHub as you.** Then:
+  - risk-gate cannot tell your `human-approved` label from one an agent added. Only the guard
+    (which blocks any command containing `human-approved`) stands in the way, and the guard is
+    drift prevention, not a wall.
+  - A pull request runs its own copy of `ci.yml`, so one that rewrote the `risk-gate` or
+    `ownership` job could pass its own gates. The guard blocks sessions from writing
+    `.github/`; with a bot whose token lacks the `workflow` scope, GitHub refuses the push itself.
+  The fix for both is the optional bot under "Before you turn it on".
+
 - The guard reads shell commands for the files they write. It is a guardrail against drift and
   mistakes, not a sandbox: a program that writes files without naming them on the command line
   gets past it. CI's ownership check and branch protection are the boundaries that hold.
   The same goes for Herdr: a session runs inside a Herdr terminal, so a program that opens the
   core's socket itself could type into another session. The guard blocks the commands that do
   it by name; Claude Code's `crossSessionInbound: "refuse"` stops its own messages.
-- **Your credentials are on the same machine.** Agent sessions work under the bot's token, but
-  every session runs as your macOS user, so your `gh` login, git credentials, keychain and SSH
+- **Your credentials are on the same machine.** Even with a bot token, every session runs as
+  your macOS user, so your `gh` login, git credentials, keychain and SSH
   keys are readable by any program it runs. The guard blocks the obvious ways (`gh auth`,
   `GH_TOKEN`, `security`, `git credential`, `~/.config/gh`, `~/.ssh`), which is drift prevention,
   not a wall. Only running the agents as another OS user or in a container, with none of your
