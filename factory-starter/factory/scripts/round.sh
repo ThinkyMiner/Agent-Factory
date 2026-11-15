@@ -150,8 +150,8 @@ push() {  # push <message>: commit the cycle's folder and push its branch
 }
 say_as() {  # say_as <from> <to> <kind> <body>: a transcript line written by the chair
   local line id
-  line=$(jq -cn --arg c "$cyc" --arg r "$status" --arg f "$1" --arg t "$2" --arg k "$3" --arg b "$4" \
-    '{cycle: $c, round: $r, from: $f, to: $t, kind: $k, refs: [], body: $b}')
+  line=$(jq -cn --arg c "$cyc" --arg r "$status" --arg f "$1" --arg t "$2" --arg k "$3" --arg b "$4" --argjson d "$draft" \
+    '{cycle: $c, round: $r, from: $f, to: $t, kind: $k, refs: [], body: $b} + (if $r == "decisions" then {draft: $d} else {} end)')
   id=$(transcript_append "$tx" "$lock" "${cyc%%-*}" "$line") || die "the transcript is locked by another writer; try again"
   event message cycle="$cyc" round="$status" id="$id" from="$1" to="$2" kind="$3"
 }

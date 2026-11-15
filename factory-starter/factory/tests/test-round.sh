@@ -53,6 +53,7 @@ test_a_brief_changed_after_approval_stops_the_approval() {
   planning_setup; meeting_to decisions "backend"
   decisions_ok c001 | grep -vE 'share-button|share-research' | sed 's/^- affects: .*/- affects: none/' > "$P/DECISIONS.md"
   by orchestrator "$R" draft; expect_rc 0
+  expect_eq "$(jq -c 'select(.kind == "decision") | [.draft, .body]' "$P/discussion.jsonl")" '[1,"draft 1: planning/c001-share-links/DECISIONS.md"]' "the chair's line names its draft"
   by backend "$SCRIPTS/say.sh" accept --to orchestrator --body ok
   echo "One more goal." >> "$P/BRIEF.md"
   by orchestrator "$R" next; expect_rc 1; expect_err "BRIEF.md changed after it was approved"
