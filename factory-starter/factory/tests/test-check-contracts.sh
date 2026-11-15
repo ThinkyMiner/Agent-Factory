@@ -43,14 +43,20 @@ test_contract_gen_failing_is_red() {
   run "$CC"; expect_rc 1; expect_err "make contract-gen failed"
 }
 
+# kit_defaults: the factory's Makefile still has the kit's default contract targets. A factory
+# replaces them with its stack's generator; then there are no defaults left to test.
+kit_defaults() { grep -qF "Define 'make contract-gen'" "$KIT/Makefile" 2>/dev/null; }
+
 test_no_contracts_is_green() {
   mkrepo r && cd r; run "$CC"; expect_rc 0; expect_out "no contracts"
   mkdir -p contracts/design && touch contracts/.gitkeep contracts/design/.keep; run "$CC"; expect_rc 0; expect_out "no contracts"
+  kit_defaults || return 0
   cp "$KIT/Makefile" .; run make -s contract-gen; expect_rc 0; run make -s contract-check; expect_rc 0
   rm -rf contracts; run make -s contract-gen; expect_rc 0
 }
 
 test_contracts_with_the_kits_default_makefile_are_red() {
+  kit_defaults || return 0
   mkrepo r && cd r; cp "$KIT/Makefile" .; mkdir -p contracts/design && echo '{}' > contracts/design/tokens.json
   git add -A && git commit -qm contracts
   run "$CC"; expect_rc 1; expect_err "make contract-gen failed"; expect_out "Define 'make contract-gen'"
