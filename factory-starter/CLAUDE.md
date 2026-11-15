@@ -3,7 +3,7 @@
 <One paragraph: what this is and who it is for. Details live in product/BRIEF.md.>
 
 ## Commands (agents use these and nothing else to judge "green")
-- `make check`  : lint, typecheck, unit tests. Must pass before anything is pushed.
+- `make check`  : <what it runs, e.g. lint, typecheck, unit tests>. Must pass before anything is pushed.
 - `make accept` : acceptance tests in tests/acceptance/.
 - `make dev`    : run the product locally.
 
