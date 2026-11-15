@@ -17,6 +17,12 @@
 #       command sets them itself; any other variable is left in the target as written.
 #       It cannot see through eval, scripts or other languages; the guard is a drift layer
 #       and CI is the wall.
+#
+#   guard-paths.pl commands <shell command>
+#       Prints each simple command the shell would run, one per line, its words joined by \x1f,
+#       after VAR=value prefixes and wrappers (env, sudo, exec ...); the program is its basename.
+#       Quoted text is one word, so prose in an argument is never read as a command. The script
+#       of sh -c / bash -c and the words of eval are read as commands too.
 use strict;
 use warnings;
 
@@ -203,7 +209,30 @@ sub targets {
   return grep { length && !m{^\+?/dev/} } @out;
 }
 
+sub commands {
+  my ($s, $depth) = @_;
+  my @out;
+  for my $c (lex($s)) {
+    my @w = @{ $c->[0] };
+    shift @w while @w && $w[0] =~ /^[A-Za-z_][A-Za-z0-9_]*=/;
+    while (@w && $w[0] =~ m{^(?:.*/)?(?:sudo|env|command|nohup|nice|time|exec|xargs)$}) {
+      shift @w;
+      shift @w while @w && ($w[0] =~ /^-/ || $w[0] =~ /^[A-Za-z_][A-Za-z0-9_]*=/);
+    }
+    next unless @w;
+    $w[0] =~ s{.*/}{};
+    push @out, join "\x1f", map { (my $t = $_) =~ s/[\n\x1f]/ /g; $t } @w;
+    next if $depth > 3;
+    if ($w[0] =~ /^(?:(?:ba|z|da|k|fi)?sh)$/) {            # sh -c 'script': the script runs
+      for my $k (1 .. $#w - 1) { if ($w[$k] =~ /^-[A-Za-z]*c[A-Za-z]*$/) { push @out, commands($w[$k + 1], $depth + 1); last } }
+    }
+    push @out, commands(join(' ', @w[1 .. $#w]), $depth + 1) if $w[0] eq 'eval' && @w > 1;
+  }
+  return @out;
+}
+
 my $mode = shift @ARGV // '';
 if ($mode eq 'resolve') { my $base = shift @ARGV; print resolve($base, $_), "\n" for @ARGV }
 elsif ($mode eq 'targets') { print "$_\n" for targets(join ' ', @ARGV) }
-else { print STDERR "usage: guard-paths.pl resolve <base> <path>... | targets <command>\n"; exit 64 }
+elsif ($mode eq 'commands') { print "$_\n" for commands(join(' ', @ARGV), 0) }
+else { print STDERR "usage: guard-paths.pl resolve <base> <path>... | targets <command> | commands <command>\n"; exit 64 }

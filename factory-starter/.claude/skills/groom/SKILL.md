@@ -19,8 +19,8 @@ edit `product/BRIEF.md` or `product/ROADMAP.md`.
 3. Propose at most five issues. For each: a title that states the outcome, the
    problem in two sentences, a first guess at acceptance criteria, what it depends
    on, and your risk guess (R0 to R3).
-4. Create them with `gh issue create --label factory:proposed`. Do not apply
-   `factory:ready`; the human does that.
+4. Create each with `factory/scripts/item.sh create --proposed --title "<outcome>"`,
+   the rest on stdin. Do not apply `factory:ready`; the human does that.
 5. If the inbox or the code suggests the roadmap is wrong or missing something,
    append the argument to `product/INBOX.md` under today's date. Do not act on it.
 

@@ -10,6 +10,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  issues: read          # risk-gate reads who added the human-approved label, and when
 
 jobs:
   check:
@@ -95,16 +96,29 @@ jobs:
       - name: Enforce the human gate
         env:
           TIER: ${{ steps.risk.outputs.tier }}
-          APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'human-approved') }}
+          BASE: origin/${{ github.base_ref }}
+          PR: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          # Your GitHub login. Agents work as a bot account, so only a label you add counts.
+          FACTORY_HUMAN: ${{ vars.FACTORY_HUMAN }}
         run: |
           case "$TIER" in
             R0|R1)
               echo "No human gate for $TIER." ;;
             R2)
-              if [ "$APPROVED" != "true" ]; then
-                echo "::error::R2 change. Read the diff, then add the 'human-approved' label."
+              # The label must be yours and newer than the last push (check-approval.sh), using
+              # main's copy of the check, like the classifier.
+              if git cat-file -e "$BASE:factory/scripts/check-approval.sh" 2>/dev/null; then
+                git show "$BASE:factory/scripts/check-approval.sh" > /tmp/approval.sh
+              else
+                cp factory/scripts/check-approval.sh /tmp/approval.sh
+              fi
+              if ! out=$(bash /tmp/approval.sh "$PR" human-approved 2>&1); then
+                echo "::error::R2 change. ${out#approval: }"
                 exit 1
-              fi ;;
+              fi
+              echo "$out" ;;
             R3)
               echo "::error::R3 change. The factory does not make these; a human does, outside this pipeline."
               exit 1 ;;

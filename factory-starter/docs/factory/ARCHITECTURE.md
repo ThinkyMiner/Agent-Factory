@@ -118,6 +118,7 @@ from a second model vendor is a later upgrade for R2 changes.
 | Ideas and objections | `product/INBOX.md` | When grooming |
 | What the factory has learned | `memory/` (see `MEMORY.md`) | `lessons.md` always; observations only by `/reflect` |
 | Team charters and roster (team mode) | `teams/<team>/CHARTER.md`, `factory/teams.json` (see `TEAMS.md`) | The charter at the start of that team's session |
+| Requests between teams (team mode) | Tickets: GitHub issues written only by `factory/scripts/ticket.sh`, each action also a `ticket` event | By the receiving team, the sweep and the orchestrator |
 | Live and per-item events | `.factory/events.jsonl` in the main checkout (one log shared by every worktree, appended under `.factory/events.lock`), `work/<id>-<slug>/events.jsonl` | By the control room and `/audit` |
 
 There is no hidden state. If a session dies, the next one can resume from the
@@ -134,7 +135,9 @@ files, plus CODEOWNERS for R2 paths.
    In team mode the guard also keeps each session inside its own worktree and its
    team's paths (`TEAMS.md`).
 4. Branch protection with required checks: nothing merges red, whoever asks. In team
-   mode the `ownership` check fails a pull request that leaves its team's paths.
+   mode the `ownership` check fails a pull request that leaves its team's paths, and
+   `risk-gate` counts a `human-approved` label only if your account added it after the
+   last push (agents work as a bot account whose token cannot change workflows).
 5. Credentials: the machine and the CI job that run agents hold no production
    secrets. This is the only layer that holds against a model that is confused or
    has been fed hostile input, so it is the one to be strict about.

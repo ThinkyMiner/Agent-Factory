@@ -60,6 +60,25 @@ JSON
   git -C app worktree add -q ../app.teams/frontend -b team/frontend
   BE="$TEST_TMP/app.teams/backend"; FE="$TEST_TMP/app.teams/frontend"; MAIN="$TEST_TMP/app"
 }
+# fake_gh: the fake gh (factory/tests/fake-gh) first on PATH, its repository in $FAKE_GH.
+fake_gh() {
+  export FAKE_GH="$TEST_TMP/gh" FAKE_GH_USER=human
+  mkdir -p "$FAKE_GH/bin" "$FAKE_GH/pulls" "$FAKE_GH/events"
+  ln -sf "$KIT/factory/tests/fake-gh" "$FAKE_GH/bin/gh"
+  export PATH="$FAKE_GH/bin:$PATH"
+}
+# fake_keychain [token]: a fake macOS `security` on PATH holding the bot's token (none if omitted).
+fake_keychain() {
+  mkdir -p "$TEST_TMP/kc"
+  if [ $# -gt 0 ]; then printf '%s\n' "$1" > "$TEST_TMP/kc/token"; else rm -f "$TEST_TMP/kc/token"; fi
+  cat > "$TEST_TMP/kc/security" <<'SH'
+#!/usr/bin/env bash
+[ "$1" = find-generic-password ] && [ -f "$TEST_TMP/kc/token" ] || exit 44
+case " $* " in *" -s factory-github-bot "*"-w "*) cat "$TEST_TMP/kc/token" ;; *) exit 44 ;; esac
+SH
+  chmod +x "$TEST_TMP/kc/security"
+  case ":$PATH:" in *":$TEST_TMP/kc:"*) ;; *) export PATH="$TEST_TMP/kc:$PATH" ;; esac
+}
 run_tests() {
   local file fn rc p=0 f=0 g=0 x=0
   file=$(basename "${BASH_SOURCE[1]}" .sh)

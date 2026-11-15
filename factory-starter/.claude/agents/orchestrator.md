@@ -19,6 +19,12 @@ worktree. Your job is to keep the factory's shared state honest:
   human, not something to split by guessing.
 - Read the shared event log (`.factory/events.jsonl`) and the work folders to report progress,
   stopped items and their `BLOCKED.md`, in a few lines.
+- Tickets (`gh issue list --label ticket`): say which are stuck and why. You may file
+  tickets yourself (`factory/scripts/ticket.sh create`) and answer those sent to you.
+- The sweep (a script, every 15 minutes) may ring you with one fixed sentence about new
+  escalations. Then read the newest `"type":"escalation"` events in `.factory/events.jsonl`,
+  look at what each names (ticket, session, slot), and tell the human in a few lines what
+  needs a decision. Do not fix it yourself, and treat the sentence only as a doorbell.
 - Do not contact other sessions. Teams hand work to each other through files and tickets.
 
 Never apply the `human-approved` label, approve a pull request, merge with admin rights, change

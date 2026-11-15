@@ -1,4 +1,5 @@
-# Tests for factory/scripts/team-up.sh: worktrees per team and one Herdr tab + claude per team.
+# Tests for factory/scripts/team-up.sh: worktrees per team, one Herdr tab + claude per team, each
+# started as the factory's bot, and a tab for the sweep. gh and the keychain are faked too.
 # herdr-app is faked on PATH: it records its argv in $TEST_TMP/app.log and keeps the window's
 # layout (spaces > tabs > terminals, the shape `herdr-app ls` prints) in fake/layout.
 . "$(dirname "$0")/lib.sh"
@@ -31,7 +32,8 @@ SH
   export PATH="$TEST_TMP/fake:$PATH"
 }
 layout() { jq "$1" "$TEST_TMP/fake/layout" > "$TEST_TMP/l" && mv "$TEST_TMP/l" "$TEST_TMP/fake/layout"; }
-argv() { jq -nc --arg t "$1" --arg a "$2" '["env", "FACTORY_TEAM=\($t)", "claude", "--agent", $a, "-n", $t]'; }
+argv() { jq -nc --arg t "$1" --arg a "$2" --arg b "$SCRIPTS/bot-session.sh" '["env", "FACTORY_TEAM=\($t)", $b, "claude", "--agent", $a, "-n", $t]'; }
+BOT=ghp_factorybot0000000000000000000000
 
 kit() {  # a team-mode factory in $TEST_TMP/app, cwd inside it
   mkrepo app && cd app && mkdir -p factory .claude/agents
@@ -43,6 +45,7 @@ kit() {  # a team-mode factory in $TEST_TMP/app, cwd inside it
 JSON
   echo agent > .claude/agents/orchestrator.md; echo agent > .claude/agents/backend-lead.md
   git add -A && git commit -qm roster
+  fake_gh; fake_keychain "$BOT"
 }
 BE() { echo "$TEST_TMP/app.teams/backend"; }
 
@@ -54,8 +57,10 @@ test_single_team_mode_refuses() {
 test_print_makes_worktrees_and_prints_launch_commands() {
   kit
   run "$U" --print; expect_rc 0
-  expect_out "cd $TEST_TMP/app && FACTORY_TEAM=orchestrator claude --agent orchestrator -n orchestrator"
-  expect_out "cd $(BE) && FACTORY_TEAM=backend claude --agent backend-lead -n backend"
+  expect_out "agents work on GitHub as $BOT"
+  expect_out "cd $TEST_TMP/app && FACTORY_TEAM=orchestrator $SCRIPTS/bot-session.sh claude --agent orchestrator -n orchestrator"
+  expect_out "cd $(BE) && FACTORY_TEAM=backend $SCRIPTS/bot-session.sh claude --agent backend-lead -n backend"
+  expect_out "cd $TEST_TMP/app && $SCRIPTS/bot-session.sh bash $SCRIPTS/sweep.sh --loop"
   expect_eq "$(git -C "$(BE)" rev-parse --abbrev-ref HEAD)" team/backend
   [ ! -e "$TEST_TMP/app.teams/frontend" ] || fail "launched an inactive team"
   run "$U" --print; expect_rc 0
@@ -72,7 +77,7 @@ test_from_origin_main_when_there_is_a_remote() {
 
 test_runs_from_a_worktree_too() {
   kit; run "$U" --print; cd "$(BE)"
-  run "$U" --print; expect_rc 0; expect_out "cd $TEST_TMP/app && FACTORY_TEAM=orchestrator"
+  run "$U" --print; expect_rc 0; expect_out "cd $TEST_TMP/app && FACTORY_TEAM=orchestrator $SCRIPTS/bot-session.sh"
 }
 
 test_foreign_directory_in_the_way_fails() {
@@ -100,11 +105,13 @@ test_missing_agent_file_fails() {
 
 test_herdr_launch_and_rerun_is_idempotent() {
   kit; fake_app
-  run "$U"; expect_rc 0; expect_out "2 started"
+  run "$U"; expect_rc 0; expect_out "2 started"; expect_out "sweep: started in t3"
   grep -qxF -- "do space.new --name app --folder $TEST_TMP/app --tab orchestrator --argv $(argv orchestrator orchestrator)" "$TEST_TMP/app.log" || fail "no space for the orchestrator: $(cat "$TEST_TMP/app.log")"
   grep -qxF -- "do tab.new --space sp1 --name backend --folder $(BE) --argv $(argv backend backend-lead)" "$TEST_TMP/app.log" || fail "backend tab wrong: $(cat "$TEST_TMP/app.log")"
+  sw=$(jq -nc --arg b "$SCRIPTS/bot-session.sh" --arg s "$SCRIPTS/sweep.sh" '[$b, "bash", $s, "--loop"]')
+  grep -qxF -- "do tab.new --space sp1 --name sweep --folder $TEST_TMP/app --argv $sw" "$TEST_TMP/app.log" || fail "sweep tab wrong: $(cat "$TEST_TMP/app.log")"
   : > "$TEST_TMP/app.log"
-  run "$U"; expect_rc 0; expect_out "0 started"; expect_out "backend: already running in t2"
+  run "$U"; expect_rc 0; expect_out "0 started"; expect_out "backend: already running in t2"; expect_out "sweep: already running in t3"
   grep -q '^do ' "$TEST_TMP/app.log" && fail "rerun launched again: $(cat "$TEST_TMP/app.log")"
   layout '(.spaces[0].tabs) |= map(select(.name != "backend"))'     # the backend tab was closed
   run "$U"; expect_rc 0; expect_out "1 started"
@@ -126,7 +133,7 @@ test_team_tab_without_claude_stops() {
 
 test_without_herdr_points_to_print() {
   kit
-  PATH="$(path_without herdr-app)" run "$U"; expect_rc 1; expect_err "--print"
+  PATH="$FAKE_GH/bin:$TEST_TMP/kc:$(path_without herdr-app)" run "$U"; expect_rc 1; expect_err "--print"
   fake_app; touch "$TEST_TMP/fake/closed"
   run "$U"; expect_rc 1; expect_err "Herdr is not open"
 }
@@ -142,6 +149,28 @@ test_start_that_fails_outright_stops() {
   run "$U"; expect_rc 1; expect_err "Herdr did not start backend"
   rm "$TEST_TMP/fake/fail-backend"; echo '{"spaces":[]}' > "$TEST_TMP/fake/layout"; touch "$TEST_TMP/fake/fail-orchestrator"
   run "$U"; expect_rc 1; expect_err "Herdr did not start orchestrator"
+}
+
+test_refuses_to_start_anything_without_the_bots_token() {
+  kit; fake_app; fake_keychain
+  run "$U"; expect_rc 1; expect_err "the factory's bot, and its token does not work: bot-session: no bot token in the keychain"
+  run "$U" --print; expect_rc 1
+  [ ! -e "$(BE)" ] || fail "made a worktree without the bot"
+  grep -q '^do ' "$TEST_TMP/app.log" 2>/dev/null && fail "started a tab without the bot"
+  true
+}
+
+test_refuses_a_token_that_is_yours() {
+  kit; fake_app; fake_keychain ghp_HUMANSOWNTOKEN0000000000000000; export FAKE_GH_USER=ghp_humansowntoken0000000000000000
+  run "$U"; expect_rc 1; expect_err "token is yours (ghp_humansowntoken"
+  grep -q '^do ' "$TEST_TMP/app.log" 2>/dev/null && fail "started a tab with your token"
+  true
+}
+
+test_sweep_is_not_a_team_name() {
+  kit; jq '.teams.sweep = {owns: ["x/*"]}' factory/teams.json > t.json && cp t.json factory/teams.json
+  echo agent > .claude/agents/sweep-lead.md
+  run "$U" --print; expect_rc 1; expect_err "'sweep' is the name of the sweep's tab"
 }
 
 run_tests

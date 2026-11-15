@@ -140,3 +140,17 @@ spec_team() {
   t=$(awk 'NR==1 && $0!="---" {exit} NR>1 && $0=="---" {exit} /^team:/ {sub(/^team:[ \t]*/, ""); sub(/[ \t]+$/, ""); print; exit}' < "$1" 2>/dev/null)
   echo "${t:-${2:-}}"
 }
+
+# ---- GitHub text ----
+
+# clean_text <text>: safe to post on GitHub. An @name cannot notify anyone (a zero-width space
+# follows the @), HTML is escaped so it cannot render or hide text, control characters go.
+clean_text() { printf '%s' "$1" | perl -pe 's/&/&amp;/g; s/</&lt;/g; s/>/&gt;/g; s/\@(?=[A-Za-z0-9])/\@\xE2\x80\x8B/g; s/[\x00-\x08\x0B-\x1F\x7F]//g'; }
+
+# ensure_labels <label>...: create the labels that do not exist yet, since gh cannot apply a
+# missing one. Returns 1 if the labels cannot be listed.
+ensure_labels() {
+  local have l
+  have=$(gh label list --limit 1000 --json name --jq '.[].name') || return 1
+  for l in "$@"; do grep -qxF -- "$l" <<<"$have" || gh label create "$l" >/dev/null 2>&1 || true; done
+}

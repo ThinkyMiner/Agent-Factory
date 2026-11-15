@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# A small fake of the gh CLI for the factory's tests: the commands the factory's scripts use,
+# against a repository kept as JSON files in $FAKE_GH. Every call is appended to $FAKE_GH/log.
+#   issues.json   [{number, title, body, state, labels:[{name}], comments:[{author:{login}, body, createdAt}], createdAt, author}]
+#   labels.json   ["name", ...]
+#   pulls/<n>.json, events/<n>.json, activity.json   raw API answers for gh api
+# FAKE_GH_USER is the logged-in account (GH_TOKEN=<login> overrides it, as a token would);
+# FAKE_GH_NOW the clock. A line in $FAKE_GH/fail is a pattern: a call matching it fails.
+set -uo pipefail
+S=${FAKE_GH:?}; printf '%s\n' "$*" >> "$S/log"
+[ -f "$S/issues.json" ] || echo '[]' > "$S/issues.json"
+[ -f "$S/labels.json" ] || echo '[]' > "$S/labels.json"
+if [ -f "$S/fail" ]; then
+  while IFS= read -r p; do [ -n "$p" ] && [[ "$*" == *$p* ]] && { echo "HTTP 502: fake failure" >&2; exit 1; }; done < "$S/fail"
+fi
+now=${FAKE_GH_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
+user=${GH_TOKEN:-${FAKE_GH_USER:-human}}
+I="$S/issues.json"
+
+opt() { local want=$1; shift; while [ $# -gt 0 ]; do [ "$1" = "$want" ] && { printf '%s' "$2"; return 0; }; shift; done; return 1; }
+opts() { local want=$1; shift; while [ $# -gt 0 ]; do [ "$1" = "$want" ] && printf '%s\n' "$2"; shift; done; }
+out() { local q; if q=$(opt --jq "$@"); then jq -r "$q"; else cat; fi; }   # out <args>: apply --jq if given
+body() { local f; f=$(opt --body-file "$@") || { opt --body "$@"; return; }; if [ "$f" = - ]; then cat; else cat "$f"; fi; }
+save() { jq "$@" "$I" > "$I.new" && mv "$I.new" "$I"; }
+need() { jq -e --argjson n "$1" 'any(.[]; .number == $n)' "$I" >/dev/null || { echo "GraphQL: Could not resolve to an issue with the number of $1." >&2; exit 1; }; }
+label_ok() { jq -e --arg l "$1" 'index($l)' "$S/labels.json" >/dev/null || { echo "could not add label: '$1' not found" >&2; exit 1; }; }
+
+case "${1:-} ${2:-}" in
+  "api "*)
+    shift; path=""; a=("$@")
+    for ((k = 0; k < ${#a[@]}; k++)); do
+      case "${a[k]}" in --paginate|--slurp|--silent|-i|--include) ;; -*) k=$((k + 1)) ;; *) path=${a[k]}; break ;; esac
+    done
+    path=${path#repos/\{owner\}/\{repo\}/}
+    case "$path" in
+      user) jq -n --arg u "$user" '{login: $u}' | out "$@" ;;
+      pulls/*) f="$S/pulls/${path#pulls/}.json"; [ -f "$f" ] || { echo "HTTP 404: Not Found" >&2; exit 1; }; out "$@" < "$f" ;;
+      issues/*/events) f="$S/events/$(echo "$path" | cut -d/ -f2).json"; [ -f "$f" ] || echo '[]' > "$f"; out "$@" < "$f" ;;
+      activity\?*) ref=$(printf '%s' "${path#*ref=}" | sed 's/&.*//' | perl -pe 's/%([0-9A-Fa-f]{2})/chr hex $1/ge')
+                   jq --arg r "$ref" '[.[] | select(.ref == $r)] | sort_by(.timestamp) | reverse' "$S/activity.json" | out "$@" ;;
+      *) echo "fake gh: no api $path" >&2; exit 1 ;;
+    esac ;;
+  "issue create")
+    shift 2; t=$(opt --title "$@") || { echo "--title required" >&2; exit 1; }
+    b=$(body "$@"); ls=$(opts --label "$@" | tr ',' '\n')
+    while IFS= read -r l; do [ -z "$l" ] || label_ok "$l"; done <<<"$ls"
+    n=$(( $(jq 'map(.number) | max // 0' "$I") + 1 ))
+    save --argjson n "$n" --arg t "$t" --arg b "$b" --arg ls "$ls" --arg now "$now" --arg u "$user" \
+      '. + [{number: $n, title: $t, body: $b, state: "OPEN", createdAt: $now, author: {login: $u},
+             labels: ($ls | split("\n") | map(select(length > 0)) | unique | map({name: .})), comments: []}]'
+    echo "https://github.com/o/r/issues/$n" ;;
+  "issue view")
+    n=$3; need "$n"; shift 3; f=$(opt --json "$@") || f=number,title,body,state,labels
+    jq --argjson n "$n" --arg f "$f" '.[] | select(.number == $n) | with_entries(select(.key as $k | $f | split(",") | index($k)))' "$I" | out "$@" ;;
+  "issue edit")
+    n=$3; need "$n"; shift 3
+    add=$(opts --add-label "$@" | tr ',' '\n'); rm=$(opts --remove-label "$@" | tr ',' '\n')
+    while IFS= read -r l; do [ -z "$l" ] || label_ok "$l"; done <<<"$add"
+    save --argjson n "$n" --arg a "$add" --arg r "$rm" 'map(if .number == $n then
+      .labels = ((.labels | map(.name)) - ($r | split("\n")) + ($a | split("\n") | map(select(length > 0))) | unique | map({name: .})) else . end)'
+    echo "https://github.com/o/r/issues/$n" ;;
+  "issue comment")
+    n=$3; need "$n"; shift 3; b=$(body "$@")
+    save --argjson n "$n" --arg b "$b" --arg now "$now" --arg u "$user" \
+      'map(if .number == $n then .comments += [{author: {login: $u}, body: $b, createdAt: $now}] else . end)'
+    echo "https://github.com/o/r/issues/$n#issuecomment-1" ;;
+  "issue close")
+    n=$3; need "$n"; save --argjson n "$n" 'map(if .number == $n then .state = "CLOSED" else . end)' ;;
+  "issue list")
+    shift 2; st=$(opt --state "$@") || st=open; f=$(opt --json "$@") || f=number,title
+    ls=$(opts --label "$@" | jq -R . | jq -sc .); since=$(opt --search "$@" | sed -n 's/.*created:>=\([0-9-]*\).*/\1/p')
+    jq --arg st "$st" --argjson ls "$ls" --arg since "$since" --arg f "$f" '
+      map(select(($st == "all" or (.state | ascii_downcase) == $st)
+                 and ([.labels[]?.name?] as $have | all($ls[]; . as $l | $have | index($l)))
+                 and ($since == "" or .createdAt >= $since)))
+      | sort_by(-.number) | map(with_entries(select(.key as $k | $f | split(",") | index($k))))' "$I" | out "$@" ;;
+  "label list")
+    shift 2; jq 'map({name: .})' "$S/labels.json" | out "$@" ;;
+  "label create")
+    jq -e --arg l "$3" 'index($l)' "$S/labels.json" >/dev/null && { echo "label with name \"$3\" already exists" >&2; exit 1; }
+    jq --arg l "$3" '. + [$l]' "$S/labels.json" > "$S/l.new" && mv "$S/l.new" "$S/labels.json" ;;
+  "auth git-credential")
+    [ "${3:-}" = get ] && printf 'protocol=https\nhost=github.com\nusername=x-access-token\npassword=%s\n' "$user" ;;
+  "pr view")
+    f="$S/pulls/$3.json"; [ -f "$f" ] || { echo "no pull requests found for $3" >&2; exit 1; }; shift 3; out "$@" < "$f" ;;
+  *) echo "fake gh: unsupported: $*" >&2; exit 1 ;;
+esac

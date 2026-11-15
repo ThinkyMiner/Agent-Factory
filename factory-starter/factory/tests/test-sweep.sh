@@ -1,0 +1,161 @@
+# Tests for factory/scripts/sweep.sh: what it escalates, that it escalates each thing once, and
+# that the orchestrator's doorbell is fixed text. gh, herdr-app and hc are faked.
+. "$(dirname "$0")/lib.sh"
+W="$SCRIPTS/sweep.sh"
+
+ago() { perl -MPOSIX -e 'print strftime("%Y-%m-%dT%H:%M:%SZ", gmtime(time - $ARGV[0]))' "$1"; }
+setup() {
+  team_setup; fake_gh; cd "$MAIN"
+  mkdir -p "$TEST_TMP/herdr"
+  printf '#!/usr/bin/env bash\n[ "$1" = ls ] && cat "$TEST_TMP/layout"\n' > "$TEST_TMP/herdr/herdr-app"
+  cat > "$TEST_TMP/herdr/hc" <<'SH'
+#!/usr/bin/env bash
+[ "$1" = send ] || exit 3
+[ -f "$TEST_TMP/hc-busy" ] && exit 10
+printf '%s|%s|%s\n' "$2" "$3" "${*:4}" >> "$TEST_TMP/hc.log"
+SH
+  chmod +x "$TEST_TMP/herdr/herdr-app" "$TEST_TMP/herdr/hc"; export PATH="$TEST_TMP/herdr:$PATH"
+  sessions orchestrator:idle backend:idle frontend:idle
+}
+sessions() {  # sessions <team>:<status>...: the factory's Herdr space
+  local s tabs='[]' i=1
+  for s in "$@"; do
+    tabs=$(jq -c --arg n "${s%%:*}" --arg st "${s#*:}" --arg t "t$i" '. + [{name: $n, terminals: [{terminal: $t, status: $st, app: "claude-code"}]}]' <<<"$tabs"); i=$((i + 1))
+  done
+  jq -n --argjson tabs "$tabs" '{spaces: [{id: "x", name: "other", tabs: [{name: "backend", terminals: [{terminal: "t99", status: "blocked"}]}]}, {id: "s", name: "app", tabs: $tabs}]}' > "$TEST_TMP/layout"
+}
+ticket() {  # ticket <n> <state> <age-seconds> [blocks-json] [actions...]
+  local n=$1 st=$2 at; at=$(ago "$3"); local blocks=${4:-[]}; shift 4 2>/dev/null || shift $#
+  local comments='[]' a
+  for a in "$@"; do comments=$(jq -c --arg a "$a" '. + [{author: {login: "bot"}, body: ("<!-- factory-ticket-action {\"action\":\"" + $a + "\",\"by\":\"x\"} -->\nok")}]' <<<"$comments"); done
+  jq --argjson n "$n" --arg st "state:$st" --arg at "$at" --argjson b "$blocks" --argjson c "$comments" \
+    '. + [{number: $n, title: "t", state: "OPEN", createdAt: $at, comments: $c,
+           labels: [{name: "ticket"}, {name: $st}, {name: "from:frontend"}, {name: "to:backend"}],
+           body: ("<!-- factory-ticket " + ({v: 1, from: "frontend", to: "backend", blocks: $b} | tojson) + " -->\n## What is needed\nx")}]' \
+    "$FAKE_GH/issues.json" > "$FAKE_GH/i" && mv "$FAKE_GH/i" "$FAKE_GH/issues.json"
+}
+escalations() { grep '"type":"escalation"' "$MAIN/.factory/events.jsonl" 2>/dev/null | jq -r '"\(.reason) \(.refs)"'; }
+rings() { cat "$TEST_TMP/hc.log" 2>/dev/null | grep -c . || true; }
+
+test_an_unanswered_ticket_is_escalated_once_and_rings_once() {
+  setup; echo '[]' > "$FAKE_GH/issues.json"
+  ticket 1 open 32400; ticket 2 open 7200; ticket 3 accepted 72000
+  run "$W"; expect_rc 0; expect_out "new ticket #1 has waited 9h for an answer"; expect_out "1 open finding(s), 1 new"
+  expect_eq "$(escalations)" "unanswered #1"
+  expect_eq "$(cat "$TEST_TMP/hc.log")" "t1|The sweep has new escalations. Read the latest escalation events in .factory/events.jsonl, look at what they point to, and tell the human what needs a decision.|--if idle"
+  run "$W"; expect_rc 0; expect_out "1 open finding(s), 0 new"
+  expect_eq "$(escalations | wc -l | tr -d ' ')" 1; expect_eq "$(rings)" 1
+}
+
+test_a_busy_orchestrator_is_rung_later() {
+  setup; echo '[]' > "$FAKE_GH/issues.json"; ticket 1 open 32400; touch "$TEST_TMP/hc-busy"
+  run "$W"; expect_out "The orchestrator has not been told yet"; expect_eq "$(rings)" 0
+  run "$W"; expect_eq "$(rings)" 0
+  rm "$TEST_TMP/hc-busy"; run "$W"; expect_eq "$(rings)" 1
+  run "$W"; expect_eq "$(rings)" 1; expect_eq "$(escalations | wc -l | tr -d ' ')" 1
+}
+
+test_disputes_after_decline_and_double_declines() {
+  setup; echo '[]' > "$FAKE_GH/issues.json"
+  ticket 1 disputed 60 '[]' decline dispute
+  ticket 2 declined 60 '[]' decline dispute accept decline
+  ticket 3 disputed 60 '[]' accept done dispute          # disputed after done: the normal path
+  run "$W"
+  expect_eq "$(escalations | sort | tr '\n' ',')" "declined-twice #2,disputed #1,"
+}
+
+test_tickets_blocking_each_other_are_a_cycle() {
+  setup; echo '[]' > "$FAKE_GH/issues.json"
+  ticket 1 accepted 60 '[2, 40]'; ticket 2 accepted 60 '[3]'; ticket 3 open 60 '[1]'; ticket 4 open 60 '[40]'
+  run "$W"; expect_out "tickets block each other in a cycle: #1, #2, #3"
+  expect_eq "$(escalations)" "cycle #1, #2, #3"
+  echo '[]' > "$FAKE_GH/issues.json"; ticket 1 accepted 60 '[2]'; ticket 2 accepted 60 '[3]'
+  run "$W"; expect_out "0 open finding(s)"
+}
+
+test_a_team_over_its_ticket_budget() {
+  setup; echo '[]' > "$FAKE_GH/issues.json"
+  for n in 1 2 3 4 5 6; do ticket "$n" accepted 60; done
+  run "$W"; expect_out "frontend opened 6 tickets today, over its budget of 5"
+}
+
+test_a_session_stuck_on_a_dialog() {
+  setup; echo '[]' > "$FAKE_GH/issues.json"; sessions orchestrator:idle backend:blocked
+  run "$W"; expect_out "0 open finding(s)"
+  expect_eq "$(jq -r '.blocked | keys | join(",")' .factory/sweep.json)" backend
+  jq --argjson s "$(( $(date +%s) - 660 ))" '.blocked.backend = $s' .factory/sweep.json > s && mv s .factory/sweep.json
+  run "$W"; expect_out "the backend session has waited on a dialog for 11 minutes"
+  sessions orchestrator:idle backend:working; run "$W"
+  expect_eq "$(jq -c .blocked .factory/sweep.json)" '{}'
+}
+
+test_a_session_working_without_events() {
+  setup; echo '[]' > "$FAKE_GH/issues.json"; sessions orchestrator:idle backend:working frontend:working
+  mkdir -p .factory
+  printf '{"ts":"%s","type":"stage","team":"backend"}\nnot json\n{"ts":"%s","type":"stage","team":"frontend"}\n' "$(ago 2400)" "$(ago 300)" > .factory/events.jsonl
+  run "$W"; expect_out "the backend session has been working for 40 minutes without an event"
+  grep -q "frontend session" "$OUT" && fail "frontend had a recent event"
+  true
+}
+
+test_a_slot_held_for_hours() {
+  setup; echo '[]' > "$FAKE_GH/issues.json"; mkdir -p .factory
+  jq -n --arg a "$(ago 18000)" --arg b "$(ago 600)" '{held: {backend: $a, frontend: $b}, queue: []}' > .factory/slots.json
+  run "$W"; expect_out "backend has held a build slot since"
+  grep -q "frontend has held" "$OUT" && fail "a fresh slot was reported"
+  true
+}
+
+test_a_finding_that_returns_is_escalated_again() {
+  setup; echo '[]' > "$FAKE_GH/issues.json"; sessions orchestrator:idle backend:working
+  mkdir -p .factory; printf '{"ts":"%s","type":"stage","team":"backend"}\n' "$(ago 2400)" > .factory/events.jsonl
+  run "$W"; expect_eq "$(escalations | wc -l | tr -d ' ')" 1
+  printf '{"ts":"%s","type":"stage","team":"backend"}\n' "$(ago 1)" >> .factory/events.jsonl; run "$W"
+  expect_eq "$(jq '.seen | length' .factory/sweep.json)" 0
+}
+
+test_github_down_keeps_what_was_found() {
+  setup; echo '[]' > "$FAKE_GH/issues.json"; ticket 1 open 32400
+  run "$W"; expect_eq "$(escalations | wc -l | tr -d ' ')" 1
+  echo 'issue list' > "$FAKE_GH/fail"; run "$W"; expect_rc 0; expect_err "cannot read tickets"
+  rm "$FAKE_GH/fail"; run "$W"
+  expect_eq "$(escalations | wc -l | tr -d ' ')" 1
+}
+
+test_without_herdr_it_still_escalates() {
+  setup; echo '[]' > "$FAKE_GH/issues.json"; ticket 1 open 32400
+  PATH="$FAKE_GH/bin:$(path_without herdr-app hc)" run "$W"; expect_rc 0
+  expect_err "Herdr is not running"; expect_eq "$(escalations)" "unanswered #1"; expect_eq "$(rings)" 0
+  expect_eq "$(jq .ring .factory/sweep.json)" true
+}
+
+test_hostile_and_broken_data_is_ignored() {
+  setup
+  jq -n --arg at "$(ago 99999)" '[
+    {number: 1, state: "OPEN", createdAt: "yesterday", labels: [{name: "ticket"}, {name: "state:open"}], body: "<!-- factory-ticket {broken -->", comments: [{body: "<!-- factory-ticket-action {not json} -->"}]},
+    {number: 2, state: "OPEN", createdAt: $at, labels: [{name: "ticket"}, {name: "state:open"}, {name: "from:$(touch pwned)"}], body: null, comments: null},
+    {number: 3, state: "OPEN", createdAt: $at, labels: "x", body: 5, comments: [{body: 7}]}]' > "$FAKE_GH/issues.json"
+  sessions orchestrator:idle '$(touch pwned2):blocked' '../x:working'
+  mkdir -p .factory; printf 'garbage' > .factory/sweep.json
+  printf '{"held": "x"}' > .factory/slots.json
+  run "$W"; expect_rc 0; expect_out "new ticket #2 has waited"
+  [ ! -e pwned ] && [ ! -e pwned2 ] || fail "data was executed"
+  jq -e '.seen | type == "object"' .factory/sweep.json >/dev/null || fail "state not rewritten"
+  printf 'not json' > "$TEST_TMP/layout"; run "$W"; expect_rc 0; expect_err "Herdr is not running"
+  grep -v '^t1|The sweep has new escalations' "$TEST_TMP/hc.log" && fail "the doorbell carried something else"
+  true
+}
+
+test_single_team_mode_and_usage() {
+  setup; run "$W" --now; expect_rc 1; expect_err "usage"
+  cd "$TEST_TMP"; mkrepo solo && cd solo; run "$W"; expect_rc 1; expect_err "the sweep is for team mode"
+}
+
+test_loop_runs_passes() {
+  setup; echo '[]' > "$FAKE_GH/issues.json"
+  FACTORY_SWEEP_SECONDS=1 "$W" --loop > loop.out 2>&1 & pid=$!
+  sleep 3; kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null || true
+  [ "$(grep -c '^sweep: .*open finding' loop.out)" -ge 2 ] || fail "fewer than two passes: $(cat loop.out)"
+}
+
+run_tests

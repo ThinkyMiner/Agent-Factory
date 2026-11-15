@@ -14,6 +14,8 @@
 # Team mode (factory/teams.json exists): a session may write only inside its own worktree, and
 # there only its team's paths, its own work folders and the append-only locations (by appending).
 # Its team is FACTORY_TEAM, which must also match the worktree it runs in (see lib.sh).
+# It works on GitHub as the factory's bot: no credential commands, issues and labels only through
+# ticket.sh and item.sh, gh api read-only.
 #
 # To work on the factory itself (agents, skills, rules, CI), start the session with
 #   FACTORY_ALLOW_SELF_EDIT=1 claude
@@ -172,6 +174,48 @@ case "$tool" in
       if [[ "$cmd" =~ $hr_re ]]; then
         block "sessions do not drive Herdr or launch sessions: that would let one session type into another. Teams talk through files and tickets."
       fi
+      # GitHub: a session acts as the factory's bot (team-up starts it with the bot's token) and
+      # never reaches for another identity: yours is on the same machine. Issues and labels change
+      # only through ticket.sh and item.sh, and gh api only reads.
+      cred_re='(^|[^A-Za-z0-9_])(GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN|GH_CONFIG_DIR|GH_HOST|GIT_ASKPASS|SSH_ASKPASS|GIT_CONFIG_[A-Z0-9_]*)([^A-Za-z0-9_]|$)'
+      if [[ "$cmd" =~ $cred_re ]] || [[ "$cmd" =~ \.config/gh([^A-Za-z0-9_.-]|$) ]] || [[ "$cmd" =~ (^|[^A-Za-z0-9_])\.ssh(/|[^A-Za-z0-9_.-]|$) ]]; then
+        block "a session works as the GitHub identity it was started with (the factory's bot). It does not set, unset or read GitHub credentials."
+      fi
+      while IFS=$'\x1f' read -r -a w; do
+        case "${w[0]:-}" in
+          security|git-credential*) block "sessions do not read the keychain or git's credentials." ;;
+          git)
+            for ((k = 1; k < ${#w[@]}; k++)); do
+              case "${w[k]}" in
+                -c|--config-env) [[ "${w[k+1]:-}" == credential* ]] && block "sessions do not change git's credentials."; k=$((k + 1)) ;;
+                --config-env=credential*) block "sessions do not change git's credentials." ;;
+                -C) k=$((k + 1)) ;;
+                -*) ;;
+                credential*) block "sessions do not read git's credentials." ;;
+                *) break ;;
+              esac
+            done ;;
+          gh)
+            gh_why="issues and labels change only through factory/scripts/ticket.sh (requests to other teams) and item.sh (your team's work items)."
+            # Factory feedback goes to the kit's repository (CLAUDE.md, "Rules for every agent").
+            kit=0; prev=""
+            for a in "${w[@]:3}"; do
+              [[ "$prev" =~ ^(-R|--repo)$ && "$a" == [Tt]hinky[Mm]iner/[Aa]gent-[Ff]actory ]] && kit=1
+              [[ "$a" == --repo=[Tt]hinky[Mm]iner/[Aa]gent-[Ff]actory ]] && kit=1
+              prev=$a
+            done
+            [[ "$kit" = 1 && "${w[1]:-}" = issue && "${w[2]:-}" =~ ^(create|comment|list|view)$ ]] && continue
+            case "${w[1]:-}:${w[2]:-}" in
+              auth:*|alias:*|extension:*) block "sessions do not change gh's login, aliases or extensions." ;;
+              issue:create|issue:edit|issue:close|issue:reopen|issue:delete|issue:comment|issue:transfer|issue:pin|issue:unpin|issue:lock|issue:unlock|issue:develop) block "$gh_why" ;;
+              label:|label:list) ;;
+              label:*) block "$gh_why" ;;
+              pr:edit) for a in "${w[@]:3}"; do case "$a" in --add-label*|--remove-label*) block "$gh_why" ;; esac; done ;;
+              api:*) for a in "${w[@]:2}"; do case "$a" in -X*|--method*|-f*|-F*|--field*|--raw-field*|--input*)
+                       block "gh api only reads in a session. $gh_why" ;; esac; done ;;
+            esac ;;
+        esac
+      done < <(perl "$here/guard-paths.pl" commands "$cmd")
       hname="$(basename "$(factory_home "$root_raw")").teams/"
       for t in $(team_names "$teams"); do
         [ "$t" = "$team" ] && continue

@@ -4,9 +4,24 @@ A factory runs as one team until `factory/teams.json` exists. With it, the facto
 teams, each with its own Claude Code session, its own git worktree and its own paths. Nothing
 else changes: `/work`, the gates and the risk tiers are the same.
 
-This page describes what is built so far (phase 1 of `plans/2026-11-14-teams.md` in the kit's
-repository): the orchestrator plus one building team, `backend`. Planning meetings, tickets,
-more teams and specialists come in later phases.
+This page describes what is built so far (phases 1 and 2 of `plans/2026-11-14-teams.md` in the
+kit's repository): the orchestrator plus one building team, `backend`; agents working on GitHub
+as a bot account; tickets, work items, build slots and the sweep. Planning meetings, more teams
+and specialists come in later phases.
+
+## Before you turn it on (once)
+
+Agents work on GitHub as a bot account, so only you appear as yourself and only your labels
+count as approval.
+1. Create a GitHub account for the bot (it needs its own email address), invite it to the
+   repository as a collaborator (write, never admin) and accept the invitation as the bot.
+2. As the bot, create a **classic** token with only the **`repo`** scope. Leave `workflow`
+   unticked: GitHub then refuses any push from the bot that changes `.github/workflows/`, so no
+   pull request can rewrite its own gates. (Fine-grained tokens cannot yet reach a repository
+   where the account is only a collaborator.)
+3. Store it in your keychain, from a terminal: `security add-generic-password -s factory-github-bot -a factory -w`
+4. `factory github` sets the repository variable `FACTORY_HUMAN` to your login. For a factory
+   made before phase 2: `gh variable set FACTORY_HUMAN --body <your login>`.
 
 ## Turning it on
 
@@ -14,8 +29,10 @@ more teams and specialists come in later phases.
 factory teams init        # writes factory/teams.json: orchestrator + backend, owning today's paths
                           # read it, then merge it through a pull request (R2: you approve it)
 factory team-up           # with Herdr open: one worktree per team, and a space named after the repo
-                          # with one tab per team running its claude; run it again to restart a
-                          # closed tab. A new folder asks whether you trust it: answer that yourself
+                          # with one tab per team running its claude, plus a tab for the sweep; run
+                          # it again to restart a closed tab. A new folder asks whether you trust
+                          # it: answer that yourself. It refuses to start anything until the bot's
+                          # token works and is not yours
 factory team-up --print   # without Herdr: makes the worktrees, prints one launch command per team
 ```
 
@@ -61,6 +78,9 @@ At start, resume and compaction the `session-start.sh` hook prints the team's ch
 | Factory files change only in their own pull request | blocked for sessions | `ownership` fails a team PR that touches them; `risk-gate` makes them R2 |
 | Your files (`CLAUDE.md`, `product/BRIEF.md`, `product/ROADMAP.md`) change only in your pull requests | owned by no team, so blocked | `ownership` exempts a PR that changes only these and factory files; `risk-gate` makes them R2 (your label) |
 | Sessions do not message each other | `crossSessionInbound: "refuse"`, `ListAgents` denied | (not applicable) |
+| R2 needs your approval of the pull request as it is now | `human-approved` in any command is blocked | `risk-gate` runs `check-approval.sh`: the label was last added by `FACTORY_HUMAN`, after the newest push to the branch (timed by GitHub) |
+| Agents work as the bot, never as you | credential commands blocked (`gh auth`, `GH_TOKEN`, `security`, `git credential`, `~/.config/gh`, `~/.ssh`); settings deny reading `~/.config/gh` and `~/.ssh` | the bot's label never counts; its token cannot push workflow changes |
+| Issues and labels change only through `ticket.sh` and `item.sh` | raw `gh issue` / `gh label` writes, label edits on PRs and `gh api` writes are blocked | (not applicable) |
 
 `/work` starts a new subagent for every delegation. A fix round goes to a new builder with the
 spec and the exact failure, never back to the builder that wrote the code.
@@ -72,6 +92,59 @@ for `$HOME`, `$TMPDIR` and `$CLAUDE_PROJECT_DIR`; any other one is blocked, so w
 The guard and its rules run from each worktree's own checkout. `/work` starts every item from
 `origin/main`, so a guard change reaches a team when its next item starts.
 
+## Approvals
+
+`risk-gate` passes an R2 pull request only when `check-approval.sh` finds that the last time
+`human-approved` was added, your account (`FACTORY_HUMAN`) added it, and that this was after the
+newest push to the branch, as GitHub's activity log times it (a commit's own date can be
+anything). So a label the bot adds keeps the gate red, and any push after your approval needs a
+new one: remove the label and add it again once you have read what changed. A pull request from
+a fork, or a branch GitHub has no push record for, fails closed. The same check will gate the
+planning brief (`brief-approved`) in phase 3.
+
+## Tickets
+
+A team asks another for something with a ticket, a GitHub issue that only `factory/scripts/ticket.sh`
+writes:
+
+```
+ticket.sh create --to backend --type request --needs "..." --why "..." --blocks "#41" --done "..."
+ticket.sh accept <n> | decline <n> --reason "..." | done <n> --pr <pr>      (the receiving team)
+ticket.sh verify <n> | dispute <n> --reason "..." | withdraw <n> --reason "..."  (the asking team)
+```
+
+- Types: `request`, `bug`, `contract-change`, `decision-change`. Needs, why, done and reasons are at
+  least 30 characters. The sending team is the session's, never an argument.
+- At most 5 tickets per team per day and 2 open from one team to another
+  (`limits.tickets_per_day`, `limits.open_tickets_per_pair` in the roster).
+- States: open → accepted or declined; accepted → done; done → verified (closes) or disputed;
+  declined → disputed; disputed → accepted or declined; anything before done → withdrawn
+  (closes). A ticket can be disputed once; after that it goes to the orchestrator.
+- Text is posted with `@mentions` and HTML neutralised. Each action comments with a
+  machine-readable line, sets the `state:` label and writes a `ticket` event.
+- An accepted ticket is a work item for the receiving team: you run `/work <n>` in its tab.
+
+`item.sh create --title "..." [--proposed] [--feature <id>]` (body on stdin) is how `/work` and
+`/groom` create issues; in team mode it labels the issue `team:<team>`.
+
+## Build slots
+
+`/work` in a team session first runs `slot.sh acquire`. At most `max_active_build_teams`
+(default 2) teams hold a slot; the next one is queued and its `/work` stops at once. `/work`
+releases the slot when it opens its pull request or stops. `slot.sh status` shows who holds
+one. A session that died keeps its slot; the sweep reports it, and deleting
+`.factory/slots.json` frees every slot.
+
+## The sweep
+
+A script in its own tab (`sweep.sh --loop`, every 15 minutes), not a model, so it costs nothing
+while all is well. It escalates tickets unanswered for 8 hours, a declined ticket that is disputed
+or declined twice, tickets that block each other in a cycle, a team over its ticket budget, a
+session stuck on a dialog for 10 minutes, a session working with no event for 30 minutes, and a
+slot held for 4 hours (all in `limits`). Each new finding is an `escalation` event, once while it
+lasts. Then the orchestrator's tab gets one fixed sentence, only when it is idle: read the
+escalations and tell the human. The findings never travel in that sentence.
+
 ## Known weaknesses
 
 - The guard reads shell commands for the files they write. It is a guardrail against drift and
@@ -80,6 +153,15 @@ The guard and its rules run from each worktree's own checkout. `/work` starts ev
   The same goes for Herdr: a session runs inside a Herdr terminal, so a program that opens the
   core's socket itself could type into another session. The guard blocks the commands that do
   it by name; Claude Code's `crossSessionInbound: "refuse"` stops its own messages.
-- Every session runs on your machine as your user. Until phase 2 gives agent sessions a separate
-  bot token, an agent that ignores its rules can use your GitHub credentials. Branch protection
-  with `enforce_admins` still stops merges that skip the checks.
+- **Your credentials are on the same machine.** Agent sessions work under the bot's token, but
+  every session runs as your macOS user, so your `gh` login, git credentials, keychain and SSH
+  keys are readable by any program it runs. The guard blocks the obvious ways (`gh auth`,
+  `GH_TOKEN`, `security`, `git credential`, `~/.config/gh`, `~/.ssh`), which is drift prevention,
+  not a wall. Only running the agents as another OS user or in a container, with none of your
+  credentials, closes it. What holds regardless: branch protection with `enforce_admins`, and
+  `risk-gate`, which an agent acting as you could pass only by adding the label as you.
+- **Team identity on GitHub is declarative.** Every team shares the one bot account. CI proves a
+  pull request stays inside one team's paths, not which session wrote it, and a ticket's sender
+  is the session that ran `ticket.sh`, not something GitHub checks.
+- **The approval check trusts GitHub's activity log** for push times. If GitHub has no record of
+  a branch's pushes (an old branch), the gate stays closed until something is pushed.

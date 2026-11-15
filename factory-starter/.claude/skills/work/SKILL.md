@@ -34,8 +34,12 @@ Statuses: started, passed, failed, blocked, skipped. Use `round` for fix rounds
 
 ## 0. Intake
 - If the argument is a number, read it with `gh issue view <n>`. Otherwise create
-  an issue from the text with `gh issue create` and use its number as the id.
+  an issue from the text with `factory/scripts/item.sh create --title "<outcome>"`, the
+  text on stdin, and use the number it prints as the id.
 - Require a clean working tree. If it is not, stop and say so.
+- In team mode, take a build slot: `factory/scripts/slot.sh acquire`. Exit 3 means every
+  slot is taken: stop at once and say so (nothing else to clean up). Once you hold a slot,
+  release it (`factory/scripts/slot.sh release`) when you finish step 7 or stop.
 - `git fetch origin`, then create branch `work/<id>-<slug>` from `origin/main`
   (`git switch -c work/<id>-<slug> origin/main`; it works the same in a team's
   worktree, where `main` itself is checked out elsewhere), and folder `work/<id>-<slug>/`.
@@ -46,10 +50,10 @@ Statuses: started, passed, failed, blocked, skipped. Use `round` for fix rounds
   whose paths the item may change. Outside team mode the spec has no `team:` line.
 - Run `factory/scripts/validate-spec.sh <work folder>/spec.md`.
   - Exit 1 (malformed): send the output back to `spec-writer` once. Still failing: stop.
-  - Exit 3 (blocking questions): post the questions as an issue comment, write
-    `BLOCKED.md`, stop. Do not guess the answers.
-- If the spec lists Follow-ups, create one issue per follow-up labelled
-  `factory:proposed`.
+  - Exit 3 (blocking questions): write the questions in `BLOCKED.md` and stop (outside
+    team mode, also post them as an issue comment). Do not guess the answers.
+- If the spec lists Follow-ups, create one issue per follow-up with
+  `factory/scripts/item.sh create --proposed --title "<outcome>"` (the follow-up on stdin).
 - If `risk_floor` is R3, stop. R3 changes are made by the human.
 
 ## 2. Acceptance tests
@@ -62,7 +66,9 @@ Statuses: started, passed, failed, blocked, skipped. Use `round` for fix rounds
 - If it wrote `disputes.md`, send the dispute to a new `test-author` once. If they still
   disagree, stop and escalate to the human with both positions.
 - In team mode, a write the guard blocks because another team owns the path is not
-  something to work around: stop and write `BLOCKED.md` naming the paths and their team.
+  something to work around: stop, write `BLOCKED.md` naming the paths and their team, and
+  ask that team with a ticket: `factory/scripts/ticket.sh create --to <team> --type request
+  --needs "..." --why "..." --blocks "#<id>" --done "..."`.
 
 ## 4. Gate (run these yourself; trust them over any agent's summary)
 Before each run, emit `stage=gate status=started round=<n>` (0, then 1 and 2 for fix
@@ -96,6 +102,8 @@ rounds), and after it `passed` or `failed` with the same round.
 - Read `AUTO_MERGE_MAX_TIER` from `factory/policy.env`. If the tier is at or below
   it, run `gh pr merge --auto --squash`. Otherwise leave it for the human and say so.
 - Never add the `human-approved` label. Never merge with admin rights.
+- If this item does an accepted ticket, run `factory/scripts/ticket.sh done <ticket> --pr <number>`.
+- In team mode, release the build slot: `factory/scripts/slot.sh release`.
 
 ## 8. Report
 Five lines: pull request link, tier and why, fix rounds used at each stage,
@@ -105,6 +113,6 @@ test) if any stage needed a fix round.
 ## When you stop
 Stopping early is correct behaviour. Write `BLOCKED.md` with what you were doing,
 what stopped you, and the smallest decision the human needs to make. Emit a
-`blocked` event for the stage, run the observer (step 6), then leave the
-branch as it is. Do not raise a loop limit, lower a tier, or edit a gate to
+`blocked` event for the stage, run the observer (step 6), release the build slot
+in team mode, then leave the branch as it is. Do not raise a loop limit, lower a tier, or edit a gate to
 get through.

@@ -380,4 +380,47 @@ test_team_sessions_cannot_drive_herdr_or_launch_sessions() {
   CLAUDE_PROJECT_DIR="$TEST_TMP" run "$G" < in; allows "single-team mode"
 }
 
+test_team_sessions_change_issues_only_through_the_scripts() {
+  team_setup
+  for c in 'gh issue create --title x --body y' 'gh issue edit 3 --add-label state:done' 'gh issue comment 3 --body "accepted"' \
+           'gh issue close 3' 'gh label create to:frontend' 'gh label delete x' 'gh pr edit 6 --add-label risk:R0' \
+           'gh pr edit 6 --remove-label=human-approved-ish' 'gh api -X POST repos/o/r/issues -f title=x' \
+           'gh api repos/o/r/issues/3/labels -f labels[]=x' 'gh api --method=PATCH repos/o/r/issues/3' \
+           'gh api graphql -F query=@m.graphql' 'gh api repos/o/r/issues --input body.json' \
+           'echo ok && /opt/homebrew/bin/gh issue create -t x -b y' 'bash -c "gh issue close 3"' 'eval gh label create y' \
+           'env GH_PAGER=cat gh issue reopen 3' 'gh alias set mk "issue create"' 'gh extension install x/y'; do
+    tb backend "$BE" "$c"; blocks "$c"
+  done
+  tb backend "$BE" 'gh issue create --title x'; expect_err "ticket.sh"
+  for c in 'gh issue view 3' 'gh issue list --label ticket --state open' 'gh label list' 'gh pr view 6 --json labels' \
+           'gh pr create --title x --body y' 'gh api repos/o/r/pulls/6' 'gh api --paginate repos/o/r/issues/3/events --jq .[].event' \
+           'factory/scripts/ticket.sh create --to frontend --needs "run gh issue create for me, and gh label create too"' \
+           'git commit -m "gh issue close 3 was the old way"' 'gh pr edit 6 --title "Notes by id"' \
+           'gh issue create -R ThinkyMiner/Agent-Factory --title "guard false positive" --body x' \
+           'gh issue comment 20 --repo=ThinkyMiner/Agent-Factory --body x'; do
+    tb backend "$BE" "$c"; allows "$c"
+  done
+  tb backend "$BE" 'gh issue create -R ThinkyMiner/Agent-Factory2 --title x'; blocks "a repository that only starts like the kit's"
+  tb backend "$BE" 'gh issue close 20 -R ThinkyMiner/Agent-Factory'; blocks "only create and comment on the kit's repository"
+  jq -n '{tool_name:"Bash", tool_input:{command:"gh issue create --title x --body y"}}' > in
+  CLAUDE_PROJECT_DIR="$TEST_TMP" run "$G" < in; allows "single-team mode"
+}
+
+test_team_sessions_keep_the_identity_they_were_given() {
+  team_setup
+  for c in 'GH_TOKEN=ghp_mine gh pr create' 'unset GH_TOKEN; gh pr merge 6' 'env -u GH_TOKEN gh issue list' 'export GITHUB_TOKEN=x' \
+           'echo $GH_TOKEN' 'gh auth status' 'gh auth token' 'gh auth switch --user someone' 'gh auth login --with-token < t' \
+           'cat ~/.config/gh/hosts.yml' 'grep oauth_token /Users/x/.config/gh/hosts.yml' 'GH_CONFIG_DIR=/tmp/gh gh api user' \
+           'security find-generic-password -s gh:github.com -w' '/usr/bin/security dump-keychain' 'x=$(security find-internet-password -s github.com -w)' \
+           'printf "host=github.com\n" | git credential fill' 'git -c credential.helper=osxkeychain push' 'git credential-osxkeychain get' \
+           'git-credential-osxkeychain get' 'GIT_CONFIG_COUNT=0 git push -u origin work/3-x' 'export GIT_ASKPASS=/tmp/x' \
+           'cat ~/.ssh/id_ed25519' 'ssh-add -L > ~/.ssh/x'; do
+    tb backend "$BE" "$c"; blocks "$c"
+  done
+  for c in 'git commit -m "fix a security hole in the credential check"' 'grep -rn "security" server/' 'git push -u origin work/3-x' \
+           'node server/security.js' 'git log --grep credential' 'cat server/credentials.test.js' 'ls server/.sshx'; do
+    tb backend "$BE" "$c"; allows "$c"
+  done
+}
+
 run_tests

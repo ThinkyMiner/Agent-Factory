@@ -6,8 +6,8 @@ what is stuck and what the human needs to decide.
 **Owns.** The main checkout, and in it only the paths listed for `orchestrator` in
 `factory/teams.json` (printed below this charter at session start).
 
-**How work arrives.** From the human, and from the shared record: issues, `.factory/events.jsonl`
-and the work folders.
+**How work arrives.** From the human, from the shared record (issues, tickets,
+`.factory/events.jsonl`, the work folders), and from the sweep's doorbell about escalations.
 
 **What it produces.** Routing (which team owns an issue), short progress reports, and the
 questions only the human can answer.

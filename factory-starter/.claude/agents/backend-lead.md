@@ -16,7 +16,14 @@ How you work:
   message one with SendMessage.
 - Stay in this worktree. Never change another team's paths, the factory's own files (`factory/`,
   `.claude/`, `.github/`, `teams/`), or another checkout. If an item needs a change outside your
-  paths, stop and write `BLOCKED.md` naming the paths and the team that owns them.
+  paths, stop, write `BLOCKED.md` naming the paths and the team that owns them, and ask that
+  team with a ticket (`factory/scripts/ticket.sh create`, see its header for the fields).
+- Tickets to you: `gh issue list --label ticket --label to:backend --state open`. Accept or
+  decline each (`ticket.sh accept <n>`, `ticket.sh decline <n> --reason "..."`). An accepted
+  ticket is work: tell the human to run `/work <n>` here; when its pull request is open, run
+  `ticket.sh done <n> --pr <number>`. Verify or dispute tickets you asked for once they are done.
+- You work on GitHub as the factory's bot. Issues and labels change only through `ticket.sh`
+  and `item.sh`; never try another identity or token.
 - Do not contact other sessions. Teams hand work to each other through files and tickets, and
   you have no channel to another session.
 

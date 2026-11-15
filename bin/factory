@@ -70,9 +70,14 @@ github)
   if [ "${2:-}" = --public ]; then vis=--public; fi
   git remote get-url origin >/dev/null 2>&1 || gh repo create "$(basename "$PWD")" "$vis" --source . --remote origin
   git push -u origin main
-  for l in factory:proposed factory:ready factory:improvement human-approved risk:R0 risk:R1 risk:R2 escaped-defect; do
+  for l in factory:proposed factory:ready factory:improvement human-approved brief-approved risk:R0 risk:R1 risk:R2 escaped-defect \
+           ticket state:open state:accepted state:declined state:done state:verified state:disputed state:withdrawn \
+           type:request type:bug type:contract-change type:decision-change; do
     gh label create "$l" --force >/dev/null
   done
+  # risk-gate counts a human-approved label only when this account added it (factory/scripts/check-approval.sh).
+  me=$(gh api user --jq .login) && gh variable set FACTORY_HUMAN --body "$me" >/dev/null ||
+    die "could not set the repository variable FACTORY_HUMAN to your login; R2 pull requests cannot pass until it is set"
   ok=1
   gh repo edit --enable-auto-merge --delete-branch-on-merge >/dev/null || ok=0
   gh api -X PUT 'repos/{owner}/{repo}/branches/main/protection' --input - >/dev/null <<'JSON' || ok=0
@@ -81,6 +86,7 @@ github)
 JSON
   if [ "$ok" = 1 ]; then
     echo "Gates on: main needs check, secrets, factory-tests, ownership and risk-gate to pass, and takes no direct pushes."
+    echo "R2 changes need the human-approved label added by $me, after the last push."
   else
     echo "factory: GitHub refused to protect main or allow auto-merge (see above). On GitHub Free a"
     echo "  private repo cannot have either, so CI runs but does not block merging. Make it public with"
