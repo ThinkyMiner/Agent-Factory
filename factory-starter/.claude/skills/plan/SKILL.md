@@ -1,8 +1,7 @@
 ---
 name: plan
-description: Chair a planning cycle in a team-mode factory, from the brief to DECISIONS.md the human approves. Orchestrator only. Invoke manually, and again whenever the sweep or a team says a round can close.
+description: Chair a planning cycle in a team-mode factory, from the brief to DECISIONS.md the human approves. Orchestrator only. Invoke when the human asks for a planning cycle, and again whenever the sweep or a team says a round can close ("Run /plan").
 argument-hint: "[open <slug>]"
-disable-model-invocation: true
 ---
 
 # /plan: chair the planning meeting

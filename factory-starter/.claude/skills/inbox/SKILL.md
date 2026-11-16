@@ -1,7 +1,6 @@
 ---
 name: inbox
 description: A team lead's inbox in a team-mode factory - what planning needs from this team, items dispatched to it, and tickets sent to it. Invoke when rung ("run /inbox") or at the start of a session.
-disable-model-invocation: true
 ---
 
 # /inbox: what this team owes

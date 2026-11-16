@@ -13,7 +13,9 @@ existing tests in `tests/acceptance/` are structured so yours match.
 
 Do this:
 1. Write tests in `tests/acceptance/`, in a file named after the work item id and
-   slug. One test per acceptance criterion at minimum, with the criterion id
+   slug. If the spec has a `team: <team>` line and `factory/teams.json` gives that team
+   `tests/acceptance/<team>/*`, write them in `tests/acceptance/<team>/` instead: the
+   guard lets a team write only its own paths. One test per acceptance criterion at minimum, with the criterion id
    (AC-1, AC-2) in the test name.
 2. Test through the outermost interface that exists (HTTP route, CLI, public
    function). Do not reach into internals, because the builder is free to choose

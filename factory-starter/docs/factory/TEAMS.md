@@ -186,7 +186,9 @@ escalations and tell the human. The findings never travel in that sentence.
 ## Planning
 
 A feature that needs more than one team, or one team's work that is worth a decision record, starts
-with a planning cycle. The orchestrator chairs it with `/plan`; leads take part with `/inbox`. The
+with a planning cycle. The orchestrator chairs it with `/plan`; leads take part with `/inbox`. Those two answer the doorbell, so the model may start
+them; `/work`, `/research-work`, `/dispatch` and `/integrate` start only when you type them
+(`test-doorbell.sh` holds both halves). The
 record is `planning/c<NNN>-<slug>/` on the branch `planning/c<NNN>-<slug>` in the main checkout, and
 its pull request is how you approve it. Version 1 runs one cycle at a time: `round.sh open` refuses
 while one is open (a marker in `.factory/planning/active`).
