@@ -210,11 +210,11 @@ test_each_team_with_items_is_rung() {
   jq -n '{spaces: [{name: "app", tabs: [{name: "orchestrator", terminals: [{terminal: "t1"}]}, {name: "backend", terminals: [{terminal: "t2"}]},
                                         {name: "frontend", terminals: [{terminal: "t3"}]}]}]}' > "$TEST_TMP/hd/layout"
   printf '#!/usr/bin/env bash\n[ "$1" = ls ] && cat "$TEST_TMP/hd/layout"\n' > "$TEST_TMP/hd/herdr-app"
-  printf '#!/usr/bin/env bash\nprintf "%%s|%%s|%%s\\n" "$2" "$3" "$4 $5" >> "$TEST_TMP/hd/hc.log"\n' > "$TEST_TMP/hd/hc"
+  fake_hc "$TEST_TMP/hd" "$TEST_TMP/hd/hc.log"
   chmod +x "$TEST_TMP/hd/herdr-app" "$TEST_TMP/hd/hc"; PATH="$TEST_TMP/hd:$PATH"
   by orchestrator "$DIS" "$C"; expect_rc 0
   expect_out "rang backend"; expect_out "rang frontend"; expect_out "could not ring research"
-  expect_eq "$(sort "$TEST_TMP/hd/hc.log" | tr '\n' ' ')" "t2|New items for you: run /inbox.|--if idle t3|New items for you: run /inbox.|--if idle "
+  expect_eq "$(sort "$TEST_TMP/hd/hc.log" | tr '\n' ' ')" "t2|New items for you: run /inbox. t3|New items for you: run /inbox. "
 }
 
 run_tests

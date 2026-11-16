@@ -36,4 +36,51 @@ test_flag_check_sees_a_flag_only_in_frontmatter() {  # hostile: the line in the 
   expect_eq "$(KIT=$TEST_TMP/fake skill_flag x)" 1
 }
 
+# ring <status> [layout]: ring backend (terminal t2) in the factory "app" whose session has <status>
+# in hc; RC is ring_team's exit, hc.log what hc typed.
+ring() {
+  mkdir -p hd; printf '%s' "$1" > hc-status; rm -f hd/hc.log
+  local here='{"spaces":[{"name":"app","tabs":[{"name":"backend","terminals":[{"terminal":"t2"}]}]}]}'
+  printf '%s' "${2:-$here}" > hd/layout
+  printf '#!/usr/bin/env bash\n[ "$1" = ls ] && cat "$TEST_TMP/hd/layout"\n' > hd/herdr-app; chmod +x hd/herdr-app
+  fake_hc "$TEST_TMP/hd" "$TEST_TMP/hd/hc.log"
+  RC=0; ( PATH="$TEST_TMP/hd:$PATH"; . "$SCRIPTS/lib.sh"; ring_team "$TEST_TMP/app" backend "Planning needs you: run /inbox." ) || RC=$?
+}
+rang() { cat hd/hc.log 2>/dev/null; }
+
+test_a_session_waiting_for_input_is_rung_after_its_first_turn_too() {
+  # hc says idle before a session's first turn and done after it; --if idle missed every lead
+  # that had already worked (found in the dry run: backend was done, the ring never came)
+  ring idle; expect_rc 0; expect_eq "$(rang)" "t2|Planning needs you: run /inbox."
+  ring done; expect_rc 0; expect_eq "$(rang)" "t2|Planning needs you: run /inbox."
+}
+
+test_a_busy_or_unknown_session_is_not_rung() {
+  local st
+  for st in working blocked "" "idle done" "IDLE" "done; rm -rf x"; do
+    ring "$st"; expect_rc 1; expect_eq "$(rang)" "" "status [$st]"
+  done
+}
+
+test_a_ring_never_forces_past_a_dialog() {  # only the terminal and the text; no --force, no --if
+  ring done; expect_eq "$(rang | grep -c '|.*|' || true)" 0 "hc got extra arguments: $(rang)"
+}
+
+test_the_status_read_is_the_rung_terminal_s_own() {  # hostile: every other terminal says the opposite
+  echo working > hc-status-t2; ring idle; expect_rc 1; expect_eq "$(rang)" ""
+  echo done > hc-status-t2; ring working; expect_rc 0; expect_eq "$(rang)" "t2|Planning needs you: run /inbox."
+  rm hc-status-t2
+}
+
+test_no_ring_without_a_readable_hc_list() {  # hc ls failing or printing junk
+  ring done; printf '#!/usr/bin/env bash\n[ "$1" = ls ] && { echo "not json"; exit 0; }\necho sent >> "$TEST_TMP/hd/hc.log"\n' > hd/hc
+  rm -f hd/hc.log; RC=0; ( PATH="$TEST_TMP/hd:$PATH"; . "$SCRIPTS/lib.sh"; ring_team "$TEST_TMP/app" backend "x" ) || RC=$?
+  expect_rc 1; expect_eq "$(rang)" ""
+}
+
+test_no_ring_when_the_tab_is_not_in_this_factory_s_space() {
+  ring done '{"spaces":[{"name":"other","tabs":[{"name":"backend","terminals":[{"terminal":"t2"}]}]}]}'
+  expect_rc 1; expect_eq "$(rang)" ""
+}
+
 run_tests

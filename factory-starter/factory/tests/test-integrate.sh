@@ -277,7 +277,7 @@ test_the_first_save_rings_the_feature_teams() {
   mkdir -p "$TEST_TMP/hd"
   jq -n '{spaces: [{name: "app", tabs: [{name: "backend", terminals: [{terminal: "t2"}]}, {name: "frontend", terminals: [{terminal: "t3"}]}]}]}' > "$TEST_TMP/hd/layout"
   printf '#!/usr/bin/env bash\n[ "$1" = ls ] && cat "$TEST_TMP/hd/layout"\n' > "$TEST_TMP/hd/herdr-app"
-  printf '#!/usr/bin/env bash\nprintf "%%s|%%s\\n" "$2" "$3" >> "$TEST_TMP/hd/hc.log"\n' > "$TEST_TMP/hd/hc"
+  fake_hc "$TEST_TMP/hd" "$TEST_TMP/hd/hc.log"
   chmod +x "$TEST_TMP/hd/herdr-app" "$TEST_TMP/hd/hc"; PATH="$TEST_TMP/hd:$PATH"
   saved_tests; expect_out "rang backend"; expect_out "rang frontend"
   expect_eq "$(sort "$TEST_TMP/hd/hc.log" | tr '\n' ' ')" "t2|The e2e tests for $F are written; its build items may start: run /inbox. t3|The e2e tests for $F are written; its build items may start: run /inbox. "

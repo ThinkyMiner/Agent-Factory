@@ -8,12 +8,7 @@ setup() {
   team_setup; fake_gh; cd "$MAIN"
   mkdir -p "$TEST_TMP/herdr"
   printf '#!/usr/bin/env bash\n[ "$1" = ls ] && cat "$TEST_TMP/layout"\n' > "$TEST_TMP/herdr/herdr-app"
-  cat > "$TEST_TMP/herdr/hc" <<'SH'
-#!/usr/bin/env bash
-[ "$1" = send ] || exit 3
-[ -f "$TEST_TMP/hc-busy" ] && exit 10
-printf '%s|%s|%s\n' "$2" "$3" "${*:4}" >> "$TEST_TMP/hc.log"
-SH
+  fake_hc "$TEST_TMP/herdr" "$TEST_TMP/hc.log"
   chmod +x "$TEST_TMP/herdr/herdr-app" "$TEST_TMP/herdr/hc"; export PATH="$TEST_TMP/herdr:$PATH"
   sessions orchestrator:idle backend:idle frontend:idle
 }
@@ -42,16 +37,16 @@ test_an_unanswered_ticket_is_escalated_once_and_rings_once() {
   ticket 1 open 32400; ticket 2 open 7200; ticket 3 accepted 72000
   run "$W"; expect_rc 0; expect_out "new ticket #1 has waited 9h for an answer"; expect_out "1 open finding(s), 1 new"
   expect_eq "$(escalations)" "unanswered #1"
-  expect_eq "$(cat "$TEST_TMP/hc.log")" "t1|The sweep has new escalations. Read the latest escalation events in .factory/events.jsonl, look at what they point to, and tell the human what needs a decision.|--if idle"
+  expect_eq "$(cat "$TEST_TMP/hc.log")" "t1|The sweep has new escalations. Read the latest escalation events in .factory/events.jsonl, look at what they point to, and tell the human what needs a decision."
   run "$W"; expect_rc 0; expect_out "1 open finding(s), 0 new"
   expect_eq "$(escalations | wc -l | tr -d ' ')" 1; expect_eq "$(rings)" 1
 }
 
 test_a_busy_orchestrator_is_rung_later() {
-  setup; echo '[]' > "$FAKE_GH/issues.json"; ticket 1 open 32400; touch "$TEST_TMP/hc-busy"
+  setup; echo '[]' > "$FAKE_GH/issues.json"; ticket 1 open 32400; echo working > "$TEST_TMP/hc-status"
   run "$W"; expect_out "The orchestrator has not been told yet"; expect_eq "$(rings)" 0
   run "$W"; expect_eq "$(rings)" 0
-  rm "$TEST_TMP/hc-busy"; run "$W"; expect_eq "$(rings)" 1
+  echo done > "$TEST_TMP/hc-status"; run "$W"; expect_eq "$(rings)" 1
   run "$W"; expect_eq "$(rings)" 1; expect_eq "$(escalations | wc -l | tr -d ' ')" 1
 }
 

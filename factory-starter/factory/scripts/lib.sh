@@ -198,15 +198,27 @@ transcript_append() {
 }
 
 # ring_team <home> <team> <text>: the doorbell. Types a fixed line into the team's tab in this
-# factory's Herdr space, only if that session is idle. Never carries content: the line says where
-# to look. Returns 1 when it could not ring (no Herdr, no such tab, or the session is busy).
+# factory's Herdr space, only if that session is waiting for input. Never carries content: the
+# line says where to look. Returns 1 when it could not ring (no Herdr, no such tab, or the session
+# is busy).
 ring_team() {
   local term
   command -v herdr-app >/dev/null 2>&1 && command -v hc >/dev/null 2>&1 || return 1
   term=$(herdr-app ls 2>/dev/null | jq -r --arg l "$(basename "$1")" --arg t "$2" \
     '[.spaces[]? | select(.name == $l)][0].tabs[]? | select(.name == $t) | .terminals[0].terminal // empty' 2>/dev/null | head -1)
   [ -n "$term" ] || return 1
-  hc send "$term" "$3" --if idle >/dev/null 2>&1
+  hc_ring "$term" "$3"
+}
+
+# hc_ring <terminal> <text>: type text into a terminal that is waiting for input. hc calls such a
+# session idle before its first turn and done after one, and `hc send --if` knows only idle, so
+# `--if idle` never rang a session that had already worked. A plain send still refuses a blocked
+# terminal (one showing a dialog), so a ring never answers a dialog: never add --force here.
+# ponytail: checked, then sent; a session that starts a turn in between gets the line queued.
+hc_ring() {
+  local st
+  st=$(hc ls --json 2>/dev/null | jq -r --arg t "$1" 'first(.terminals[]? | select(.address == $t) | .status) // empty' 2>/dev/null)
+  case "$st" in idle|done) hc send "$1" "$2" >/dev/null 2>&1 ;; *) return 1 ;; esac
 }
 
 # ---- contracts ----

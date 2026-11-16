@@ -8,7 +8,7 @@ fake_herdr() {  # the factory's Herdr space with every team idle; hc records wha
   jq -n '{spaces: [{name: "app", tabs: [{name: "orchestrator", terminals: [{terminal: "t1"}]}, {name: "backend", terminals: [{terminal: "t2"}]},
                                         {name: "frontend", terminals: [{terminal: "t3"}]}, {name: "research", terminals: [{terminal: "t4"}]}]}]}' > "$TEST_TMP/hd/layout"
   printf '#!/usr/bin/env bash\n[ "$1" = ls ] && cat "$TEST_TMP/hd/layout"\n' > "$TEST_TMP/hd/herdr-app"
-  printf '#!/usr/bin/env bash\nprintf "%%s|%%s\\n" "$2" "$3" >> "$TEST_TMP/hd/hc.log"\n' > "$TEST_TMP/hd/hc"
+  fake_hc "$TEST_TMP/hd" "$TEST_TMP/hd/hc.log"
   chmod +x "$TEST_TMP/hd/herdr-app" "$TEST_TMP/hd/hc"; export PATH="$TEST_TMP/hd:$PATH"
 }
 

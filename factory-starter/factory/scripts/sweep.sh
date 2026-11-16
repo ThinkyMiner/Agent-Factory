@@ -13,7 +13,7 @@
 #   - a build slot held for slot_hours [4]
 #   - a planning round (positions, discussion, review, decisions) open for round_minutes [60]
 # Each new finding becomes an escalation event in .factory/events.jsonl, and the orchestrator's
-# Herdr tab gets one fixed doorbell when it is idle, never the findings themselves. A finding is
+# Herdr tab gets one fixed doorbell when it waits for input, never the findings themselves. A finding is
 # escalated once while it lasts; a doorbell that could not ring is retried next pass.
 # State: .factory/sweep.json. Only reads GitHub.
 set -uo pipefail
@@ -137,7 +137,7 @@ seen=$(printf '%s' "$found" | jq -sc --argjson seen "$seen" --argjson now "$now"
   + (if $gh == 1 then {} else ($seen | with_entries(select(.key | test("^(unanswered|disputed|declined-twice|cycle|budget):")))) end)')
 ring=$(jq -r 'if .ring == true then "true" else "false" end' <<<"$state"); [ -z "$new" ] || ring=true
 if [ "$ring" = true ] && [ -n "$orch" ] && command -v hc >/dev/null 2>&1; then
-  hc send "$orch" "$DOORBELL" --if idle >/dev/null 2>&1 && ring=false
+  hc_ring "$orch" "$DOORBELL" && ring=false
 fi
 jq -n --argjson seen "$seen" --argjson b "$blocked" --argjson r "$ring" '{seen: $seen, blocked: $b, ring: $r}' > "$sf.new" && mv "$sf.new" "$sf"
 

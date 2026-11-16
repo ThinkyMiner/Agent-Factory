@@ -60,6 +60,25 @@ JSON
   git -C app worktree add -q ../app.teams/frontend -b team/frontend
   BE="$TEST_TMP/app.teams/backend"; FE="$TEST_TMP/app.teams/frontend"; MAIN="$TEST_TMP/app"
 }
+# fake_hc <dir> <log>: an hc in <dir> (put <dir> on PATH) that records each send in <log> as
+# "<terminal>|<text>", plus "|<more args>" if it was given any. `hc ls --json` lists terminals t1 to
+# t99, each with the status in $TEST_TMP/hc-status-<terminal>, else $TEST_TMP/hc-status, else done
+# (hc's word for a session that has finished a turn and waits for input).
+fake_hc() {
+  mkdir -p "$1"
+  { echo '#!/usr/bin/env bash'; printf 'log=%q\n' "$2"; cat <<'SH'
+case "$1" in
+  ls) for i in $(seq 1 99); do
+        s=$(cat "$TEST_TMP/hc-status-t$i" 2>/dev/null || cat "$TEST_TMP/hc-status" 2>/dev/null || echo done)
+        jq -cn --arg a "t$i" --arg s "$s" '{address: $a, status: $s}'
+      done | jq -s '{terminals: .}' ;;
+  send) printf '%s|%s%s\n' "$2" "$3" "${4:+|${*:4}}" >> "$log" ;;
+  *) exit 3 ;;
+esac
+SH
+  } > "$1/hc"
+  chmod +x "$1/hc"
+}
 # fake_gh: the fake gh (factory/tests/fake-gh) first on PATH, its repository in $FAKE_GH.
 fake_gh() {
   export FAKE_GH="$TEST_TMP/gh" FAKE_GH_USER=human
