@@ -67,6 +67,35 @@ fake_gh() {
   ln -sf "$KIT/factory/tests/fake-gh" "$FAKE_GH/bin/gh"
   export PATH="$FAKE_GH/bin:$PATH"
 }
+# fake_branches: after fake_gh, gh api also answers GET and PUT repos/{owner}/{repo}/branches/<b>/protection
+# from $FAKE_GH/protection/<b>.json (a PUT stores its --input as given; no file: 404 "Branch not
+# protected", as GitHub says). <b>.rc, if there, is the GET's exit code: like gh on an HTTP error, the
+# body still goes to stdout and its message to stderr. Logged, and failed by $FAKE_GH/fail, like
+# every fake gh call.
+fake_branches() {
+  mkdir -p "$FAKE_GH/protection"; rm -f "$FAKE_GH/bin/gh"
+  printf '#!/usr/bin/env bash\nreal=%q\n' "$KIT/factory/tests/fake-gh" > "$FAKE_GH/bin/gh"
+  cat >> "$FAKE_GH/bin/gh" <<'SH'
+case "$*" in "api "*branches/*/protection*) ;; *) exec "$real" "$@" ;; esac
+S=$FAKE_GH; printf '%s\n' "$*" >> "$S/log"
+if [ -f "$S/fail" ]; then
+  while IFS= read -r p; do [ -n "$p" ] && [[ "$*" == *$p* ]] && { echo "HTTP 502: fake failure" >&2; exit 1; }; done < "$S/fail"
+fi
+m=GET in=- b=""
+while [ $# -gt 0 ]; do
+  case "$1" in -X|--method) m=$2; shift ;; --input) in=$2; shift ;; repos/*) b=${1#repos/\{owner\}/\{repo\}/branches/}; b=${b%/protection} ;; esac; shift
+done
+f="$S/protection/$b.json"
+case "$m" in
+  GET) body=$(cat "$f" 2>/dev/null) && rc=$(cat "$f.rc" 2>/dev/null || echo 0) || { body='{"message":"Branch not protected","status":"404"}'; rc=1; }
+       printf '%s\n' "$body"
+       [ "$rc" = 0 ] || { echo "gh: $(printf '%s' "$body" | jq -r '"\(.message) (HTTP \(.status))"' 2>/dev/null)" >&2; exit "$rc"; } ;;
+  PUT) mkdir -p "$(dirname "$f")"; if [ "$in" = - ]; then cat > "$f"; else cat "$in" > "$f"; fi; cat "$f" ;;
+  *) echo "fake gh: no $m for branch protection" >&2; exit 1 ;;
+esac
+SH
+  chmod +x "$FAKE_GH/bin/gh"
+}
 # fake_keychain [token]: a fake macOS `security` on PATH holding the bot's token (none if omitted).
 fake_keychain() {
   mkdir -p "$TEST_TMP/kc"

@@ -291,6 +291,90 @@ test_planning_pr_never_changes_an_approved_contract() {
   run "$O" main; expect_rc 1; expect_out "contracts/old.yaml  (NOT OK: an approved contract"
 }
 
+# ---- integration ----
+
+# integ <f>: origin/feature/<f> (a ref, as a clone has it) with a backend item and research's
+# acceptance.md; then branch integrate/<f> from it with every kind of integration record.
+integ() {
+  git switch -q main && git switch -q -c "feature/$1"
+  item 12-share "team: backend"; echo works > server/a.js; mkdir -p "features/$1"; echo crit > "features/$1/acceptance.md"; commit
+  git update-ref "refs/remotes/origin/feature/$1" HEAD
+  git switch -q -c "integrate/$1"; git branch -q -D "feature/$1"
+  mkdir -p "tests/e2e/$1/ui"; echo t > "tests/e2e/$1/ac1.sh"; echo t > "tests/e2e/$1/ui/ac2.spec.ts"
+  for r in e2e-report.md attribution.md FEATURE.md tickets.jsonl; do echo x > "features/$1/$r"; done; commit
+}
+
+test_integration_pr_brings_the_feature_branch_and_its_records() {
+  setup; integ f001-share
+  HEAD_REF=integrate/f001-share run "$O" main; expect_rc 0; expect_out "integration pull request for f001-share"
+  expect_out "server/a.js  (as feature/f001-share brings it)"; expect_out "work/12-share/spec.md  (as feature/f001-share brings it)"
+  expect_out "features/f001-share/acceptance.md  (as feature/f001-share brings it)"
+  expect_out "tests/e2e/f001-share/ui/ac2.spec.ts  (this feature's integration record)"
+  local r; for r in e2e-report.md attribution.md FEATURE.md tickets.jsonl; do expect_out "features/f001-share/$r  (this feature's integration record)"; done
+  run "$O" main; expect_rc 0; expect_out "integration pull request"                    # the branch name from git
+  git rm -q "features/f001-share/attribution.md"; commit
+  HEAD_REF=integrate/f001-share run "$O" main; expect_rc 0                              # a record may go
+}
+
+test_integration_pr_changes_nothing_the_feature_branch_does_not() {
+  local c
+  for c in 'echo sneaky > server/a.js' 'echo x > web/new.js' 'echo x >> work/12-share/spec.md' "echo '#' >> factory/teams.json" \
+           'mkdir -p .github && echo x > .github/ci.yml' 'echo changed > features/f001-share/acceptance.md' \
+           'echo accept > features/f001-share/acceptance-review.md' 'chmod +x server/a.js' 'echo x > README.md' \
+           'mkdir -p tests/e2e/f002-other && echo t > tests/e2e/f002-other/x.sh' 'mkdir -p features/f002-other && echo x > features/f002-other/e2e-report.md' \
+           'mkdir -p tests/e2e && echo t > tests/e2e/helpers.sh' 'mkdir -p features/f001-share/x && echo x > features/f001-share/x/FEATURE.md' \
+           'echo x > features/f001-share/notes.md' 'mkdir -p tests/e2e/f001-sharex && echo t > tests/e2e/f001-sharex/a.sh' \
+           'mkdir -p work/13-x && echo x > work/13-x/spec.md' 'git rm -q product/INBOX.md'; do
+    setup; integ f001-share; eval "$c"; commit
+    HEAD_REF=integrate/f001-share run "$O" main; [ "$RC" = 1 ] || fail "[$c] passed: $(cat "$OUT")"
+    expect_out "(NOT OK: not as on feature/f001-share; changes reach main through feature/f001-share's pull requests)"
+  done
+}
+
+test_integration_pr_takes_main_moving_on_but_not_reverting_it() {
+  setup; git switch -q main; printf '%s\n' 1 2 3 4 5 6 7 8 9 > server/c.js; commit
+  git switch -q -c feature/f001-share; item 12-share "team: backend"; perl -pi -e 's/^1$/one/' server/c.js; echo works > server/a.js; commit
+  git update-ref refs/remotes/origin/feature/f001-share HEAD
+  git switch -q main; perl -pi -e 's/^9$/nine/' server/c.js; echo hotfix > server/d.js; commit     # main moves on, in the same file too
+  git switch -q -c integrate/f001-share refs/remotes/origin/feature/f001-share; git merge -q --no-edit main >/dev/null
+  mkdir -p tests/e2e/f001-share; echo t > tests/e2e/f001-share/ac1.sh; commit
+  HEAD_REF=integrate/f001-share run "$O" main; expect_rc 0; expect_out "server/c.js  (as feature/f001-share brings it)"
+  perl -pi -e 's/^nine$/9/' server/c.js; commit                                                  # undoing main's change
+  HEAD_REF=integrate/f001-share run "$O" main; expect_rc 1; expect_out "server/c.js  (NOT OK"
+  git reset -q --hard HEAD~1; echo base > server/d.js; commit                                    # or a file only main changed
+  HEAD_REF=integrate/f001-share run "$O" main; expect_rc 1; expect_out "server/d.js  (NOT OK"
+}
+
+test_integration_branch_names_and_base() {
+  setup; integ f001-share
+  local b
+  for b in 'integrate/../x' 'integrate/f1-x' 'integrate/F001-share' 'integrate/f001-share/x' 'integrate/$(touch pwned)' 'integrate/' \
+           $'integrate/f001-share\n' 'integrate/f001-share '; do
+    HEAD_REF=$b run "$O" main; [ "$RC" = 1 ] || fail "[$b] gave exit $RC"; expect_err "is not a feature's integration branch"
+  done
+  [ ! -e pwned ] || fail "a branch name was run"
+  HEAD_REF=integrate/f002-other run "$O" main; expect_rc 1; expect_err "origin/feature/f002-other does not exist"
+  git branch -q other main
+  HEAD_REF=integrate/f001-share run "$O" other; expect_rc 1; expect_err "goes to main only, not other"
+  HEAD_REF=integrate/f001-share run "$O" origin/feature/f001-share; expect_rc 1; expect_err "goes to main only"
+  HEAD_REF=Integrate/f001-share run "$O" main; expect_rc 1; expect_out "pull request for work/12-share, team backend"   # no look-alike gets the case
+}
+
+test_team_pr_cannot_carry_integration_records() {
+  local p
+  for p in tests/e2e/f001-share/x.test features/f001-share/e2e-report.md features/f001-share/attribution.md features/f001-share/FEATURE.md \
+           features/f001-share/tickets.jsonl tests/e2e/helpers.ts tests/e2e TESTS/E2E/f001/x.test Features/f001-share/E2E-Report.md; do
+    setup; item 12-share "team: backend"; echo x >> server/a.js; mkdir -p "$(dirname "$p")"; echo x > "$p"; commit
+    jq '.teams.backend.owns += ["tests/*", "features/*", "TESTS/*", "Features/*"]' factory/teams.json > "$TEST_TMP/wide.json"
+    TEAMS_FILE="$TEST_TMP/wide.json" run "$O" main; [ "$RC" = 1 ] || fail "$p passed in a team's pull request"
+    expect_out "$p  (NOT OK: an integration record; it reaches main only through integrate/<feature>)"
+  done
+  setup; item 12-share "team: backend"; mkdir -p features/f001-share tests/unit; echo x > features/f001-share/acceptance.md; echo x > tests/unit/a.test; commit
+  jq '.teams.backend.owns += ["tests/*", "features/*"]' factory/teams.json > "$TEST_TMP/wide.json"
+  TEAMS_FILE="$TEST_TMP/wide.json" run "$O" main; expect_rc 0; expect_out "features/f001-share/acceptance.md  (owned by backend)"   # not a record
+  expect_out "tests/unit/a.test  (owned by backend)"
+}
+
 test_unreadable_roster_fails() {
   setup; item 12-share "team: backend"; commit
   echo '{bad' > /tmp/factory-bad-roster.$$

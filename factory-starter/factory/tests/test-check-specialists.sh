@@ -255,6 +255,21 @@ test_usage_and_environment_errors_exit_2() {
   run env PATH="$(path_without jq)" bash "$S" main R1; expect_rc 2; expect_err "jq"
 }
 
+test_integration_branch_is_exempt() {
+  setup; item 12-share "team: backend"; item 13-more "team: frontend"; echo x >> server/a.js; commit   # two items, no reports
+  HEAD_REF=integrate/f001-share-links run "$S" main R2; expect_rc 0
+  expect_out "integrate/f001-share-links: exempt. Each work folder passed this check when it merged into feature/f001-share-links"
+  run "$S" main R2; expect_rc 1; expect_err "exactly one work folder"                       # without HEAD_REF, as before
+  HEAD_REF=work/12-share run "$S" main R2; expect_rc 1
+  HEAD_REF=Integrate/f001-share-links run "$S" main R2; expect_rc 1; expect_err "exactly one work folder"   # no look-alike
+  HEAD_REF=integrate/f001-share-links run "$S" --needs main R2; expect_rc 1                 # --needs ignores it
+  local b
+  for b in 'integrate/../x' 'integrate/f1-x' $'integrate/f001-x\n' 'integrate/f001-x/y' 'integrate/$(touch pwned)' 'integrate/' 'integrate/F001-x'; do
+    HEAD_REF=$b run "$S" main R1; [ "$RC" = 1 ] || fail "[$b] gave exit $RC"; expect_err "not a feature's integration branch"
+  done
+  [ ! -e pwned ] || fail "a branch name was run"
+}
+
 test_runs_from_a_ci_copy() {
   setup; item 12-share "team: backend"; says 12-share review.md pass; echo x >> server/a.js; commit
   mkdir "$TEST_TMP/ci"; for f in check-specialists.sh lib.sh; do cat "$SCRIPTS/$f" > "$TEST_TMP/ci/$f"; done

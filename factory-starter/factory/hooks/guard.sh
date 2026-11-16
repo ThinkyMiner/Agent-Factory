@@ -16,6 +16,10 @@
 # Team mode (factory/teams.json exists): a session may write only inside its own worktree, and
 # there only its team's paths, its own work folders and the append-only locations (by appending);
 # contracts/ only while a grant in <factory home>/.factory/grants/ names its team (ticket.sh).
+# Integration records: features/*/e2e-report.md, FEATURE.md and tickets.jsonl only through the
+# scripts; tests/e2e/ and features/*/attribution.md only by the orchestrator's session (integration-qa),
+# even if the roster gives another team a covering glob, and there only if the roster gives them to it.
+# Only the orchestrator's session pushes an integrate/<feature> branch or opens a pull request into one.
 # Its team is FACTORY_TEAM, which must also match the worktree it runs in (see lib.sh).
 # It works on GitHub as the factory's bot: no credential commands, issues and labels only through
 # ticket.sh and item.sh, gh api read-only.
@@ -174,6 +178,12 @@ check_write() {
     contracts/*) has_contract_grant "$fhome" "$team" && return 0
       block "$rel is owned by no team: a contract changes only under a contract-change ticket your team accepted (ticket.sh accept). Stop and report, so the team that needs the change asks for one (ticket.sh create --type contract-change)." ;;
   esac
+  case "$rel" in   # integration records, even if a roster glob covers them
+    features/*/e2e-report.md|features/*/FEATURE.md|features/*/tickets.jsonl)
+      block "$rel is written only by the integration scripts (integrate.sh writes the e2e report, feature.sh render the rest)." ;;
+    tests/e2e|tests/e2e/*|features/*/attribution.md)
+      [ "$team" = orchestrator ] || block "$rel is an integration record: integration-qa writes it in the orchestrator's checkout, so nobody tests their own work. Stop and report; a test you think is wrong is disputed on its bug ticket (ticket.sh decline with evidence)." ;;
+  esac
   team_owns "$teams" "$team" "$rel" && return 0
   case "$rel" in
     work/*/*)
@@ -222,11 +232,18 @@ case "$tool" in
     push_re='git([[:space:]]+(-[Cc][[:space:]]+[^[:space:]]+|--[a-z-]+(=[^[:space:]]+)?|-[a-zA-Z]+))*[[:space:]]+push([[:space:]]|$)'
     force_re='(^|[[:space:]])(--force|--force-with-lease|--force-if-includes|--mirror)([[:space:]=]|$)|(^|[[:space:]])-[a-zA-Z]*f[a-zA-Z]*([[:space:]]|$)|(^|[[:space:]])\+[^[:space:]]'
     main_re='(^|[[:space:]:+/])(refs/heads/)?(main|master)([[:space:]]|$)'
+    # Team mode: integrate/<f> is unprotected (integrate.sh merges main into it), so only the
+    # orchestrator's session pushes it or opens pull requests into it.
+    integ_re='(^|[[:space:]:+/])(refs/heads/)?integrate/'
+    integ_why="integrate/<feature> is the orchestrator's integration branch: only integrate.sh pushes to it. Push your work branch and open its pull request into feature/<feature>."
     while IFS= read -r seg; do
       [[ "$seg" =~ $push_re ]] || continue
       args=${seg#*"${BASH_REMATCH[0]}"}
       [[ " $args" =~ $force_re ]] && block "force push is not allowed. Merge main into the branch instead of rewriting it."
       [[ " $args" =~ $main_re ]] && block "pushing to the default branch is not allowed. Open a pull request."
+      if [ -n "$teams" ] && [ "$team" != orchestrator ]; then
+        if [[ " $args" =~ $integ_re ]] || [[ "$(git -C "$root" rev-parse --abbrev-ref HEAD 2>/dev/null || true)" == integrate/* ]]; then block "$integ_why"; fi
+      fi
     done < <(printf '%s\n' "$cmd" | tr ';&|' '\n\n\n')
 
     if grep -Eq -- '--no-verify' <<<"$cmd"; then
@@ -275,6 +292,13 @@ case "$tool" in
               esac
             done ;;
           gh)
+            if [ "$team" != orchestrator ] && [ "${w[1]:-}" = pr ]; then
+              prev=""
+              for a in "${w[@]:2}"; do
+                if [[ "$prev" =~ ^(-B|--base)$ && "$a" == integrate/* ]] || [[ "$a" == --base=integrate/* ]]; then block "$integ_why"; fi
+                prev=$a
+              done
+            fi
             gh_why="issues and labels change only through factory/scripts/ticket.sh (requests to other teams) and item.sh (your team's work items)."
             # Factory feedback goes to the kit's repository (CLAUDE.md, "Rules for every agent").
             kit=0; prev=""

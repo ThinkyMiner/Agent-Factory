@@ -4,6 +4,8 @@
 #   issues.json   [{number, title, body, state, labels:[{name}], comments:[{author:{login}, body, createdAt}], createdAt, author}]
 #   labels.json   ["name", ...]
 #   pulls/<n>.json, events/<n>.json, activity.json   raw API answers for gh api
+#   branches/<branch>[/protection].json              answers for GET repos/{owner}/{repo}/branches/...
+#   (a pull request is merged when its pulls/<n>.json has "merged": true)
 # FAKE_GH_USER is the logged-in account (GH_TOKEN=<login> overrides it, as a token would);
 # FAKE_GH_NOW the clock. A line in $FAKE_GH/fail is a pattern: a call matching it fails.
 set -uo pipefail
@@ -38,6 +40,8 @@ case "${1:-} ${2:-}" in
       issues/*/events) f="$S/events/$(echo "$path" | cut -d/ -f2).json"; [ -f "$f" ] || echo '[]' > "$f"; out "$@" < "$f" ;;
       activity\?*) ref=$(printf '%s' "${path#*ref=}" | sed 's/&.*//' | perl -pe 's/%([0-9A-Fa-f]{2})/chr hex $1/ge')
                    jq --arg r "$ref" '[.[] | select(.ref == $r)] | sort_by(.timestamp) | reverse' "$S/activity.json" | out "$@" ;;
+      branches/*) m=$(opt -X "$@") || m=$(opt --method "$@") || m=GET   # GET from branches/<path>.json; other methods succeed (logged)
+                  if [ "$m" = GET ]; then f="$S/branches/${path#branches/}.json"; [ -f "$f" ] || { echo "HTTP 404: Not Found" >&2; exit 1; }; out "$@" < "$f"; fi ;;
       *) echo "fake gh: no api $path" >&2; exit 1 ;;
     esac ;;
   "issue create")
@@ -83,11 +87,27 @@ case "${1:-} ${2:-}" in
     shift 2; t=$(opt --title "$@") || { echo "--title required" >&2; exit 1; }; b=$(body "$@")
     head=$(opt --head "$@") || head=$(git rev-parse --abbrev-ref HEAD); base=$(opt --base "$@") || base=main
     draft=false; for x in "$@"; do [ "$x" = --draft ] && draft=true; done
+    ls=$(opts --label "$@" | tr ',' '\n'); while IFS= read -r l; do [ -z "$l" ] || label_ok "$l"; done <<<"$ls"
     n=$(( $(jq 'map(.number) | max // 0' "$I") + 1 ))
     save --argjson n "$n" --arg t "$t" '. + [{number: $n, title: $t, pr: true, state: "OPEN", labels: [], comments: []}]'
-    jq -n --argjson n "$n" --arg t "$t" --arg b "$b" --arg h "$head" --arg base "$base" --argjson d "$draft" \
-      '{number: $n, title: $t, body: $b, draft: $d, state: "open", head: {ref: $h, repo: {full_name: "o/r"}}, base: {ref: $base, repo: {full_name: "o/r"}}}' > "$S/pulls/$n.json"
+    jq -n --argjson n "$n" --arg t "$t" --arg b "$b" --arg h "$head" --arg base "$base" --argjson d "$draft" --arg ls "$ls" \
+      '{number: $n, title: $t, body: $b, draft: $d, state: "open", head: {ref: $h, repo: {full_name: "o/r"}}, base: {ref: $base, repo: {full_name: "o/r"}},
+        labels: ($ls | split("\n") | map(select(length > 0)) | unique | map({name: .}))}' > "$S/pulls/$n.json"
     echo "https://github.com/o/r/pull/$n" ;;
+  "pr list")   # merged: a pulls/<n>.json with "merged": true
+    shift 2; st=$(opt --state "$@") || st=open; f=$(opt --json "$@") || f=number,title; h=$(opt --head "$@") || h=""; b=$(opt --base "$@") || b=""
+    { cat "$S"/pulls/*.json 2>/dev/null || true; } | jq -s --arg st "$st" --arg h "$h" --arg b "$b" --arg f "$f" '
+      map({number, title, headRefName: .head.ref, baseRefName: .base.ref, labels: (.labels // []), autoMergeRequest: (.auto_merge // null),
+           state: (if .merged == true then "MERGED" elif .state == "open" then "OPEN" else "CLOSED" end)}
+          | select(($st == "all" or (.state | ascii_downcase) == $st) and ($h == "" or .headRefName == $h) and ($b == "" or .baseRefName == $b)))
+      | sort_by(-.number) | map(with_entries(select(.key as $k | $f | split(",") | index($k))))' | out "$@" ;;
+  "pr edit")
+    f="$S/pulls/$3.json"; [ -f "$f" ] || { echo "no pull request $3" >&2; exit 1; }; shift 3
+    add=$(opts --add-label "$@" | tr ',' '\n'); while IFS= read -r l; do [ -z "$l" ] || label_ok "$l"; done <<<"$add"
+    jq --arg a "$add" '.labels = ((.labels // []) + ($a | split("\n") | map(select(length > 0)) | map({name: .})) | unique_by(.name))' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+  "pr merge")
+    f="$S/pulls/$3.json"; [ -f "$f" ] || { echo "no pull request $3" >&2; exit 1; }
+    jq '.auto_merge = {merge_method: "squash"}' "$f" > "$f.new" && mv "$f.new" "$f" ;;
   "pr ready")
     f="$S/pulls/$3.json"; [ -f "$f" ] || { echo "no pull request $3" >&2; exit 1; }
     jq '.draft = false' "$f" > "$f.new" && mv "$f.new" "$f" ;;

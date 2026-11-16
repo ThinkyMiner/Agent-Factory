@@ -5,7 +5,7 @@
 R="$SCRIPTS/round.sh"; SAY="$SCRIPTS/say.sh"; POS="$SCRIPTS/position.sh"; DIS="$SCRIPTS/dispatch.sh"
 
 test_three_lead_meeting_reaches_approved_decisions_and_dispatch() {
-  planning_setup
+  planning_setup; fake_branches
   by orchestrator "$R" open share-links; expect_rc 0; expect_out "opened c001-share-links"
   C=c001-share-links; P="$MAIN/planning/$C"; status_is brief
   by orchestrator "$R" brief; expect_rc 1; expect_err "template lines"
@@ -63,12 +63,12 @@ test_three_lead_meeting_reaches_approved_decisions_and_dispatch() {
   # Round 5: you approve by merging; then dispatch hands out the work breakdown.
   by orchestrator "$DIS" "$C"; expect_rc 1; expect_err "is not on origin/main"
   git -C "$MAIN" push -q origin "planning/$C:main"                       # the human merges the planning PR
-  by orchestrator "$DIS" "$C"; expect_rc 0; expect_out "c001-share-links is feature/f001-share-links, 3 item(s)"
+  by orchestrator "$DIS" "$C"; expect_rc 0; expect_out "c001-share-links is feature/f001-share-links, 4 item(s)"; expect_out "main has no branch protection"
   expect_eq "$(git -C "$MAIN" rev-parse --abbrev-ref HEAD)" main
   d=$(git -C "$TEST_TMP/origin.git" show "feature/f001-share-links:planning/$C/dispatch.jsonl")
-  expect_eq "$(jq -r '"\(.team):\(.item):\(.after | join(","))"' <<<"$d" | tr '\n' ' ')" "backend:share-api: frontend:share-button:share-api research:share-research: "
+  expect_eq "$(jq -r '"\(.team):\(.item):\(.after | join(","))"' <<<"$d" | tr '\n' ' ')" "backend:share-api: frontend:share-button:share-api research:share-research: research:acceptance: "
   expect_eq "$(git -C "$TEST_TMP/origin.git" show "feature/f001-share-links:planning/$C/state.json" | jq -r .status)" dispatched
-  expect_eq "$(grep -c '"type":"dispatch"' "$MAIN/.factory/events.jsonl")" 3
+  expect_eq "$(grep -c '"type":"dispatch"' "$MAIN/.factory/events.jsonl")" 4
   [ ! -e "$MAIN/.factory/planning/active" ] || fail "the cycle is still marked open after dispatch"
 
   # The whole record is files in the repository: brief, positions, transcript, decisions, dispatch.

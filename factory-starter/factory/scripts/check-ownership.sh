@@ -12,9 +12,17 @@
 # earlier cycles' DECISIONS.md), and add contracts/ files that are not on the base branch, each
 # listed in planning/<cycle>/contracts.jsonl and named by a contract: line in its DECISIONS.md
 # (contracts.sh promote). It never changes or deletes a contract that is on the base branch.
+# An integrate/<f> branch's pull request (the orchestrator's, integrate.sh pr) goes to main only. Each
+# path it changes is either this feature's integration record (tests/e2e/<f>/..., features/<f>/
+# e2e-report.md, attribution.md, FEATURE.md, tickets.jsonl) or exactly what merging origin/feature/<f>
+# into the base gives (absent from both counts as the same): changes reach main through
+# feature/<f>'s pull requests, which met every check on the way in.
 # A team's pull request changes contracts/ only when its work folder's id is a GitHub issue
 # labelled ticket, type:contract-change, to:<its team> and state:accepted or state:done (read with
 # gh, so GH_TOKEN and GH_REPO in CI); a gh failure is a violation, never a pass.
+# Integration records (tests/e2e/..., features/*/e2e-report.md, attribution.md, FEATURE.md,
+# tickets.jsonl) are never a team's path, even if a roster glob covers them: they arrive only
+# through integrate/<f>.
 # The roster is read from the base branch (or $TEAMS_FILE), never from the pull request, so a
 # pull request cannot widen its own ownership. No roster on the base branch: single-team mode, ok.
 # Exit 0 ok, 1 a violation, 2 usage or environment.
@@ -43,6 +51,12 @@ is_factory_path() {
 is_human_path() {
   case "$1" in CLAUDE.md|product/BRIEF.md|product/ROADMAP.md|research/feedback/SOURCES.md) return 0 ;; esac
   return 1
+}
+# is_integration_record <path>: written on integrate/<f> by integrate.sh, feature.sh and integration-qa.
+is_integration_record() {
+  local rc=1; shopt -s nocasematch
+  case "$1" in tests/e2e|tests/e2e/*|features/*/e2e-report.md|features/*/attribution.md|features/*/FEATURE.md|features/*/tickets.jsonl) rc=0 ;; esac
+  shopt -u nocasematch; return $rc
 }
 
 n=0; nonfactory=0; folders=""
@@ -91,6 +105,32 @@ case "$head_ref" in
       printf '  %s  (%s)\n' "$f" "$verdict"
     done < "$tmp/files"
     [ "$bad" = 0 ] || { echo "ownership: this planning pull request changes paths it may not (above)" >&2; exit 1; }
+    echo "ownership: ok"; exit 0 ;;
+  integrate/*)
+    feat=${head_ref#integrate/}
+    if ! [[ "$feat" =~ ^f[0-9]{3}-[a-z0-9][a-z0-9-]{0,40}$ ]]; then
+      echo "ownership: $head_ref is not a feature's integration branch (integrate/f001-slug)" >&2; exit 1
+    fi
+    case "$base" in main|origin/main) ;; *) echo "ownership: integrate/$feat goes to main only, not $base" >&2; exit 1 ;; esac
+    fb="refs/remotes/origin/feature/$feat"
+    git rev-parse -q --verify "$fb^{commit}" >/dev/null || { echo "ownership: origin/feature/$feat does not exist, so integrate/$feat has nothing to bring" >&2; exit 1; }
+    # What merging the feature branch into the base gives (conflicted files hold markers, so differ).
+    mt=$(git merge-tree --write-tree --no-messages "$base" "$fb" 2>/dev/null); rc=$?
+    mt=${mt%%$'\n'*}
+    if [ "$rc" -gt 1 ] || ! git cat-file -e "$mt^{tree}" 2>/dev/null; then echo "ownership: cannot merge origin/feature/$feat into $base to compare" >&2; exit 2; fi
+    echo "ownership: integration pull request for $feat"
+    bad=0
+    while IFS= read -r -d '' f; do
+      case "$f" in
+        "tests/e2e/$feat/"*|"features/$feat/e2e-report.md"|"features/$feat/attribution.md"|"features/$feat/FEATURE.md"|"features/$feat/tickets.jsonl")
+          verdict="this feature's integration record" ;;
+        *) if git diff --quiet --no-ext-diff --no-textconv "$mt" HEAD -- ":(literal)$f" 2>/dev/null; then verdict="as feature/$feat brings it"
+           else verdict="NOT OK: not as on feature/$feat; changes reach main through feature/$feat's pull requests"; fi ;;
+      esac
+      case "$verdict" in NOT\ OK*) bad=1 ;; esac
+      printf '  %s  (%s)\n' "$f" "$verdict"
+    done < "$tmp/files"
+    [ "$bad" = 0 ] || { echo "ownership: this integration pull request changes paths it may not (above)" >&2; exit 1; }
     echo "ownership: ok"; exit 0 ;;
 esac
 if [ "$nonfactory" -eq 0 ]; then
@@ -141,6 +181,9 @@ while IFS= read -r -d '' f; do
   fi
   if [ -z "$verdict" ] && is_human_path "$f"; then             # even if a roster glob covers it
     bad=1; verdict="NOT OK: owned by no team, not $team"
+  fi
+  if [ -z "$verdict" ] && is_integration_record "$f"; then     # even if a roster glob covers it
+    bad=1; verdict="NOT OK: an integration record; it reaches main only through integrate/<feature>"
   fi
   if [ -z "$verdict" ]; then
     case "$f" in contracts/*)                                    # even if a roster glob covers it

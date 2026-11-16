@@ -4,16 +4,19 @@ A factory runs as one team until `factory/teams.json` exists. With it, the facto
 teams, each with its own Claude Code session, its own git worktree and its own paths. Nothing
 else changes: `/work`, the gates and the risk tiers are the same.
 
-This page describes what is built so far (phases 1 to 5 of `plans/2026-11-14-teams.md` in the
-kit's repository): the orchestrator plus two building teams, `backend` and `frontend`, and the
+This page describes what is built (phases 1 to 6 of `plans/2026-11-14-teams.md` in the kit's
+repository): the orchestrator plus two building teams, `backend` and `frontend`, and the
 `research` team; an optional bot account for agents on GitHub; tickets, work items, build slots
-and the sweep; planning meetings; the security, database and UI reviewers; contracts. Feature
-integration comes in phase 6.
+and the sweep; planning meetings; the security, database and UI reviewers; contracts; and feature
+integration, with e2e tests and an acceptance review between a feature and `main`.
 
 ## Before you turn it on (once)
 
 `factory github` sets the repository variable `FACTORY_HUMAN` to your login (for a factory made
-before phase 2: `gh variable set FACTORY_HUMAN --body <your login>`). That is all that is required.
+before phase 2: `gh variable set FACTORY_HUMAN --body <your login>`), and protects `main` with
+the five CI checks. That is all that is required. `dispatch.sh` copies `main`'s protection onto
+each feature branch it makes, which needs admin rights on the repository: run it as an account
+that has them (yours, or the orchestrator's if it runs as you).
 
 **Optional, stronger: a bot account for the agents.** Without one, agents work on GitHub as you,
 which costs two things (see Known weaknesses): risk-gate cannot tell your `human-approved` label
@@ -49,10 +52,12 @@ entry to the roster (see below) in a pull request; `team-up` then gives it a tab
 
 ```json
 { "version": 1, "default_team": "backend",
-  "teams": { "orchestrator": { "owns": ["planning/*"] },
+  "teams": { "orchestrator": { "owns": ["planning/*", "tests/e2e/*", "features/*/FEATURE.md", "features/*/e2e-report.md",
+                                         "features/*/attribution.md", "features/*/tickets.jsonl"] },
              "backend":      { "owns": ["server/*", "db/*", "tests/acceptance/backend/*", "Makefile"] },
              "frontend":     { "owns": ["web/*", "tests/acceptance/frontend/*"], "ui_review": true },
-             "research":     { "owns": ["research/*", "features/*/acceptance.md"], "evidence_review": true } },
+             "research":     { "owns": ["research/*", "features/*/acceptance.md", "features/*/acceptance-review.md"],
+                               "evidence_review": true } },
   "db_paths": ["db/*", "*migrations/*", "*schema*"],
   "append_only": ["memory/observations/*", "product/INBOX.md"] }
 ```
@@ -108,6 +113,10 @@ At start, resume and compaction the `session-start.sh` hook prints the team's ch
 | Every research finding is sourced | (not applicable; `/research-work` runs it as its gate) | the `check` job runs `check-brief.sh --changed`: every finding cites a source, every source has a URL, a date and a quote, unsourced ideas are labelled assumptions or hypotheses |
 | You decide which feedback research reads | `research/feedback/SOURCES.md` is blocked for every session | `ownership`: your file, even inside `research/`; R2 |
 | The UI reviewer runs only the browser tooling | a session whose `agent_type` is `ui-reviewer` may run exactly `make ui-shots URL=<url> OUT=<dir>`, nothing else | (not applicable) |
+| A feature reaches `main` only from `integrate/<f>`, once its e2e tests pass and research accepts the round | (not applicable) | the `check` job's "Feature gate" (`check-feature.sh`, the base branch's copy): `feature/*` into `main` always fails; `integrate/<f>` into `main` needs an e2e report saying pass, an acceptance review saying `VERDICT: accept` for that report's commit, nothing but records changed since that commit, `feature/<f>` protected with `main`'s checks, and `make e2e` passing in CI |
+| A feature's items go to its feature branch, and a feature branch takes only them | (not applicable; `/work` and `/research-work` branch from it) | Feature gate: a work folder whose spec says `feature: <f>` merges only into `feature/<f>`, and a pull request into `feature/<f>` carries exactly one such folder |
+| Integration records are written only by the integration scripts and integration-qa | `features/*/e2e-report.md`, `FEATURE.md` and `tickets.jsonl` are blocked for every session (scripts only); `tests/e2e/` and `features/*/attribution.md` only for the orchestrator's session; only the orchestrator pushes `integrate/<f>` or opens a pull request into it | `ownership`: never a team's path; an `integrate/<f>` pull request changes only this feature's records and what merging `feature/<f>` into `main` gives |
+| E2E tests do not change to make the product pass | `integrate.sh save` refuses to change or delete a saved test unless the team declined its bug ticket (`--dispute`); `integrate.sh run` refuses tests that differ from the last save | Feature gate: nothing outside the records changed since the tested commit, and CI runs `make e2e` itself |
 
 `/work` starts a new subagent for every delegation. A fix round goes to a new builder with the
 spec and the exact failure, never back to the builder that wrote the code.
@@ -191,9 +200,11 @@ while one is open (a marker in `.factory/planning/active`).
 | decisions | the orchestrator drafts `DECISIONS.md`; security-engineer reads each draft (its `RAISE` lines are appended to `threat-model.md`); each lead answers each draft once | `round.sh draft`, then `say.sh accept` or `say.sh objection --refs <record>`; after the last draft, `contracts.sh promote` for each contract a record names | every team answered (or the time is up) and `decisions.sh validate` passes; the pull request is marked ready |
 | approval | you | settle each `needs-human` record (edit it, or tell the orchestrator), add `human-approved`, merge | `dispatch.sh` refuses unless `DECISIONS.md` is on `main` with no needs-human record left |
 
-Then `/dispatch` makes the feature branch `feature/f<NNN>-<slug>`, writes `dispatch.jsonl` (one
-line per work-breakdown row) and rings the teams, whose `/inbox` turns their rows into issues for
-you to run `/work` on. Version 1 dispatches one feature at a time.
+Then `/dispatch` makes the feature branch `feature/f<NNN>-<slug>`, protects it like `main`, writes
+`dispatch.jsonl` (one line per work-breakdown row, plus research's `acceptance` item when the
+breakdown has none) and rings the teams, whose `/inbox` turns their rows into issues for you to
+run `/work` on. Version 1 dispatches one feature at a time, and refuses without an active research
+team, which writes the acceptance criteria. What happens next is under Integration.
 
 **The rules, all checked by the scripts, not by the chair.** A team says at most
 `messages_per_round` [4] things per round; the orchestrator asks one team at most
@@ -292,6 +303,49 @@ agreement between teams. No team owns it.
   With contracts, the kit's default targets fail until the Makefile defines them for the stack.
 - Every `contracts/*` file is R2: you approve each change.
 
+## Integration
+
+A dispatched feature is built on `feature/<f>` (protected like `main`; teams' pull requests go
+there with the same checks) and reaches `main` through `integrate/<f>`, the orchestrator's branch:
+the feature branch, `main` merged in, the e2e tests and the integration records. Its pull request
+to `main` is the only way in. The orchestrator runs `/integrate <f>`; `factory/scripts/integrate.sh`
+decides what passes.
+
+1. **Criteria first.** Research's `acceptance` item writes `features/<f>/acceptance.md` into the
+   feature branch: `## AC<n>: <title>`, a `- decisions:` line naming records, and a `- check:` a
+   black-box test can run (`feature.sh check-acceptance`). A spec-writer writes it; a new
+   evidence-reviewer checks each criterion traces to its decisions.
+2. **Tests before anyone builds.** `integrate.sh tests <f>`, then a new `integration-qa` writes
+   `tests/e2e/<f>/` from the criteria (each test named `AC<n>: ...`, through the product's public
+   surface only), then `integrate.sh save`. Saved tests are locked. Build items wait for them:
+   `/work` runs `integrate.sh ready <f>` first, and `save` rings the teams.
+3. **A round.** When the feature's items are merged, `integrate.sh run <f>` merges `feature/<f>` and
+   `main` into `integrate/<f>`, runs `make e2e` and commits `features/<f>/e2e-report.md` (verdict,
+   round, the tested commit, the last 200 lines of output) and `FEATURE.md`, a generated summary
+   with a `tickets.jsonl` snapshot. A merge conflict is ticketed to the teams owning the paths.
+4. **A failed round.** A new integration-qa writes `features/<f>/attribution.md`: per failing test,
+   the criterion, the decision record, the contract and the team whose code does not do what they
+   say, with evidence. `integrate.sh tickets <f>` checks every line (all or nothing) and files one
+   `bug` ticket per team. The teams fix through their own pipelines, then round 2 runs.
+5. **Two failed rounds** stop the feature: `run` writes an `escalation` event and refuses a third
+   round. You decide: more time, a changed criterion, or dropping the feature.
+6. **A passed round** files a ticket to research, which reviews it: a new evidence-reviewer, given
+   the criteria, the report and the tests, writes `features/<f>/acceptance-review.md`
+   (`VERDICT: accept | reject`, `e2e-commit: <the tested commit>`, a line per criterion), checked by
+   a second one. With `accept` on the feature branch, `integrate.sh pr <f>` opens `integrate/<f>` →
+   `main`, labelled with its tier (the highest of its contents; R2 needs your label, as always).
+7. **Merged:** `integrate.sh close <f>` deletes both branches, and the next cycle may be dispatched.
+
+**Disputes.** A team that thinks an e2e test is wrong declines the bug ticket with its evidence. A
+new integration-qa re-checks once against the criterion: it fixes the test to match the criterion
+(`integrate.sh save --dispute <n>`, then the ticket is withdrawn), or keeps it with reasons
+(`ticket.sh dispute`). A second decline is escalated by the sweep, with both positions. A
+disagreement about the criterion itself is a ticket to research. A disputed test never counts as
+passing: CI runs `make e2e`.
+
+Version 1: integration and planning share the main checkout, so `integrate.sh` refuses while a
+planning cycle is open.
+
 ## Known weaknesses
 
 - **Without a bot account, agents work on GitHub as you.** Then:
@@ -346,5 +400,22 @@ agreement between teams. No team owns it.
   followed instruction from reaching anything.
 - **Contract grants are local files** in the main checkout. A ticket closed on GitHub without
   `ticket.sh` keeps its grant until `ticket.sh` next acts on it. CI's ticket check holds anyway.
+- **`integrate/<f>` is not protected**, because `integrate.sh` pushes merges of `main` into it.
+  Every agent can reach GitHub as the same account, so a session could push to it. The guard
+  blocks team sessions from pushing it or opening pull requests into it, and `integrate.sh run`
+  refuses e2e tests that differ from the last `save` (its commits carry a trailer, which a
+  determined author could forge). What holds after a round: CI fails the pull request to `main` if
+  anything but records changed since the tested commit, and runs `make e2e` itself.
+- **The feature branch's protection is checked when the feature merges**, not continuously. An
+  account with admin rights could lift it, push, and restore it before the gate reads it.
+- **A spec's `feature:` is the team's own text.** A team that leaves it out sends a feature change
+  to `main` as an ordinary item, through the ordinary gates, without the e2e gate.
+- **Merge conflicts on `integrate/<f>` are ticketed to the owning team**, but a pull request into
+  the feature branch cannot bring in `main`'s changes to other teams' files, so some conflicts need
+  you.
+- **The round count lives in the e2e report on `integrate/<f>`.** Removing the report resets it;
+  the ownership check and the guard are what stop that.
+- **The e2e report keeps the last 200 lines** of output, so the acceptance reviewer also gets the
+  tests' code; a criterion it cannot see evidence for is judged not met.
 - **The approval check trusts GitHub's activity log** for push times. If GitHub has no record of
   a branch's pushes (an old branch), the gate stays closed until something is pushed.

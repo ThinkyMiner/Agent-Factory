@@ -27,3 +27,11 @@ contract-gen:
 contract-check:
 	@if [ -n "$$(find contracts -type f ! -name '.*' 2>/dev/null | head -1)" ]; then \
 	  echo "Define 'make contract-check' (check the code against contracts/) for your stack." && exit 1; fi
+
+# End-to-end tests (tests/e2e/<feature>/), written by integration-qa from a feature's acceptance
+# criteria and run by factory/scripts/integrate.sh and CI's feature gate. The default passes while
+# tests/e2e/ has no files, so a factory with no feature in integration stays green.
+.PHONY: e2e
+e2e:
+	@if [ -n "$$(find tests/e2e -type f ! -name '.*' 2>/dev/null | head -1)" ]; then \
+	  echo "Define 'make e2e' (run tests/e2e/ against the running product) for your stack." && exit 1; fi

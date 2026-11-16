@@ -1,5 +1,7 @@
 # The deterministic gates. Make all five jobs required status checks on main
-# (Settings > Branches or Rulesets) so nothing merges red, including auto-merge.
+# (Settings > Branches or Rulesets) so nothing merges red, including auto-merge. In team mode
+# dispatch.sh copies main's classic branch protection onto each feature/<f>, and the feature gate
+# (check job) refuses to merge a feature whose branch lacks it.
 name: ci
 on:
   pull_request:
@@ -51,6 +53,27 @@ jobs:
       - name: Acceptance tests unchanged since the tests commit
         if: github.event_name == 'pull_request'
         run: factory/scripts/check-acceptance-lock.sh "origin/${{ github.base_ref }}"
+      - name: Feature gate
+        # Team mode: a feature reaches main only from integrate/<f>, once its e2e report and research's
+        # acceptance review pass, feature/<f> is protected like main and `make e2e` passes here; a
+        # feature branch takes only its own feature's items. A step in this job, not a job of its own:
+        # a skipped required job counts as passing, so the gate always runs and decides inside.
+        # The base branch's copy, like the contracts step; the pull request's only before it exists.
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: origin/${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}     # reads branch protection of main and feature/<f>
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir -p /tmp/feat
+          if git cat-file -e "$BASE:factory/scripts/check-feature.sh" 2>/dev/null; then
+            git show "$BASE:factory/scripts/check-feature.sh" > /tmp/feat/check-feature.sh
+          else
+            cp factory/scripts/check-feature.sh /tmp/feat/check-feature.sh
+          fi
+          bash /tmp/feat/check-feature.sh "$BASE"
 
   secrets:
     runs-on: ubuntu-latest
@@ -147,6 +170,7 @@ jobs:
         env:
           TIER: ${{ steps.risk.outputs.tier }}
           BASE: origin/${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}    # integrate/<f>: exempt, its items passed on feature/<f>
         run: |
           # Team mode: the work item carries a passing report from each specialist its tier,
           # team and paths call for (review, ui-review, security, db-review). main's copy of the

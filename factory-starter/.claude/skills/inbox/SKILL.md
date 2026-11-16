@@ -39,10 +39,27 @@ When a cycle is dispatched, the feature branch `origin/feature/f<NNN>-<slug>` ho
 yours, unless `gh issue list --label feature:<feature> --label team:<your team>` already has it:
 `factory/scripts/item.sh create --feature <feature> --title "<what it delivers>"`, with the item,
 its decisions, contract and what it waits for on stdin. Then tell the human which items are ready,
-in an order that respects the `after` column, so they can run `/work <number>` here.
+in an order that respects the `after` column, so they can run `/work <number>` here (research:
+`/research-work <number>`). Research's `acceptance` item comes first: the e2e tests are written
+from it, and a build item cannot start until they are in (`/work` checks with `integrate.sh ready`;
+`integrate.sh` rings you when they are).
 
 ## 3. Tickets to you
 `gh issue list --label ticket --label to:<your team> --state open`: accept or decline each
 (`factory/scripts/ticket.sh accept|decline`), as your agent prompt says.
+
+A `type:bug` ticket from the orchestrator about a feature is an integration failure. Read your
+team's lines in `git show origin/integrate/<feature>:features/<feature>/attribution.md`, the
+report beside it (`e2e-report.md`) and the failing tests under `tests/e2e/<feature>/` there.
+- Your code does not do what the criterion says: accept. It is work like any item, built on the
+  feature branch.
+- The test checks something the criterion does not say: decline with the evidence, quoting the
+  criterion's words and the test's line that differ (`ticket.sh decline <n> --reason "..."`). An
+  integration-qa re-checks the test once. Never edit `tests/e2e/`: it is not yours.
+- The criterion itself is wrong (it contradicts a decision record or a contract): ask research,
+  which owns `acceptance.md`, with a ticket (`ticket.sh create --to research --type request
+  --feature <feature> --decision <record> ...`), and decline the bug ticket naming that ticket.
+A bug ticket that names conflicting paths instead is a merge conflict between the feature and
+main, not a test failure: its text says what is needed.
 
 Finish with a few lines: what you sent, what you are waiting for, what the human should run.

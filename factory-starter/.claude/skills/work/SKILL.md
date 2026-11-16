@@ -34,15 +34,22 @@ Statuses: started, passed, failed, blocked, skipped. Use `round` for fix rounds
 (0 for the first attempt). On the pr stage add `tier=<R0..R3>` and `pr=<number>`.
 
 ## 0. Intake
-- If the argument is a number, read it with `gh issue view <n>`. Otherwise create
-  an issue from the text with `factory/scripts/item.sh create --title "<outcome>"`, the
-  text on stdin, and use the number it prints as the id.
+- If the argument is a number, read it with `gh issue view <n> --json number,title,body,labels`.
+  Otherwise create an issue from the text with `factory/scripts/item.sh create --title
+  "<outcome>"`, the text on stdin, and use the number it prints as the id.
+- The base. An issue labelled `feature:<f>` (an item dispatched from planning, or a ticket about
+  that feature) is built on the feature branch: its base is `origin/feature/<f>`, and `<f>` must
+  look like `f001-share-links` (anything else: stop). Every other item's base is `origin/main`.
+  `<base>` below means that ref, everywhere.
+- A feature item waits for its e2e tests, written from the acceptance criteria before anyone
+  builds: `factory/scripts/integrate.sh ready <f>` must exit 0. Otherwise stop and say so (no slot
+  is taken yet); `integrate.sh` rings this team when the tests are in.
 - Require a clean working tree. If it is not, stop and say so.
 - In team mode, take a build slot: `factory/scripts/slot.sh acquire`. Exit 3 means every
   slot is taken: stop at once and say so (nothing else to clean up). Once you hold a slot,
   release it (`factory/scripts/slot.sh release`) when you finish step 7 or stop.
-- `git fetch origin`, then create branch `work/<id>-<slug>` from `origin/main`
-  (`git switch -c work/<id>-<slug> origin/main`; it works the same in a team's
+- `git fetch origin`, then create branch `work/<id>-<slug>` from `<base>`
+  (`git switch -c work/<id>-<slug> <base>`; it works the same in a team's
   worktree, where `main` itself is checked out elsewhere), and folder `work/<id>-<slug>/`.
 
 ## 1. Spec
@@ -50,7 +57,13 @@ Statuses: started, passed, failed, blocked, skipped. Use `round` for fix rounds
   mode (`$FACTORY_TEAM` is set) also give it the team: the spec's `team:` line decides
   whose paths the item may change. Outside team mode the spec has no `team:` line.
   An item dispatched from a planning cycle names its feature and decision records in
-  the issue: the spec carries them as `feature:` and `decisions:` lines.
+  the issue: the spec carries them as `feature:` and `decisions:` lines. Any issue labelled
+  `feature:<f>`, tickets included, gets `feature: <f>`: CI sends a feature's item only to its
+  feature branch, and refuses one into a feature branch without it.
+  A bug ticket from integration (labels `ticket`, `from:orchestrator`, `type:bug`) names the e2e
+  tests that failed: also give spec-writer, as text, your team's lines of
+  `git show origin/integrate/<f>:features/<f>/attribution.md` and those tests' code from
+  `origin/integrate/<f>:tests/e2e/<f>/`. Its criteria say what those tests check, as a caller sees it.
 - Run `factory/scripts/validate-spec.sh <work folder>/spec.md`.
   - Exit 1 (malformed): send the output back to `spec-writer` once. Still failing: stop.
   - Exit 3 (blocking questions): write the questions in `BLOCKED.md` and stop (outside
@@ -83,22 +96,22 @@ rounds), and after it `passed` or `failed` with the same round.
 
     make check
     make accept
-    factory/scripts/check-acceptance-lock.sh
+    factory/scripts/check-acceptance-lock.sh <base>
 - Any failure: start a new `builder` with the spec path and the exact output, then run
   the gate again. At most 2 fix rounds, then stop.
-- The tier is what `factory/scripts/risk-tier.sh origin/main` prints: the highest of the
+- The tier is what `factory/scripts/risk-tier.sh <base>` prints: the highest of the
   path rules, the spec's `risk_floor`, the floors of its decision records and the RISK of
   every report in the work folder. Reports can raise it, never lower it. If the script
   fails, stop.
 
 ## 5. Review
-Every reviewer is a new subagent given the spec path and base ref `origin/main`, and
+Every reviewer is a new subagent given the spec path and base ref `<base>`, and
 its reply is saved verbatim in the work folder and committed at once:
 `risk-tier.sh` reads committed files only. A report passes only when its VERDICT line
 is exactly `VERDICT: pass`.
 - Delegate to `reviewer`. Save its reply as `<work folder>/review.md`.
-- Run `factory/scripts/risk-tier.sh origin/main` again for the tier, then
-  `factory/scripts/check-specialists.sh --needs origin/main <tier>`. For each report it
+- Run `factory/scripts/risk-tier.sh <base>` again for the tier, then
+  `factory/scripts/check-specialists.sh --needs <base> <tier>`. For each report it
   names besides `review`, run that stage and save the reply:
   - `ui-review`: `ui-reviewer`, saved as `ui-review.md`;
   - `security`: `security-engineer`, saved as `security.md`;
@@ -121,11 +134,12 @@ is exactly `VERDICT: pass`.
 
 ## 7. Pull request
 - Commit the work folder and the observation file.
-- Run `factory/scripts/risk-tier.sh origin/main` once more for the tier, then
-  `factory/scripts/check-specialists.sh origin/main <tier>` yourself. If it fails, a
+- Run `factory/scripts/risk-tier.sh <base>` once more for the tier, then
+  `factory/scripts/check-specialists.sh <base> <tier>` yourself. If it fails, a
   required report is missing or not passing: stop. CI runs the same check.
-- Push the branch and open a pull request using `factory/templates/pr-body.md`. Add
-  the label `risk:<tier>`.
+- Push the branch and open a pull request using `factory/templates/pr-body.md`, into the
+  base's branch: `--base feature/<f>` for a feature item (CI refuses a feature item aimed at
+  main), `main` otherwise. Add the label `risk:<tier>`.
 - Read `AUTO_MERGE_MAX_TIER` from `factory/policy.env`. If the tier is at or below
   it, run `gh pr merge --auto --squash`. Otherwise leave it for the human and say so.
 - Never add the `human-approved` label. Never merge with admin rights.

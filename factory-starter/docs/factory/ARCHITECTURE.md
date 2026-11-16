@@ -58,6 +58,12 @@ role would catch, not before.
 | 7 | PR | Foreman | Everything above | Pull request with evidence and tier | Never: opens the PR, then merge policy applies |
 | 8 | Merge | CI plus policy | Required checks, tier, label | Merge or wait | R2 without `human-approved`; any R3 |
 
+In team mode an item of a dispatched feature runs the same stages on the feature branch
+`feature/<f>`, and the feature as a whole has one more gate before `main`: e2e tests written by
+`integration-qa` from research's acceptance criteria before anyone builds, at most two integration
+rounds, failures attributed and ticketed to the team at fault, and research's acceptance review.
+`/integrate` and `integrate.sh` run it; the check job's feature gate enforces it (`TEAMS.md`).
+
 Every stop writes `BLOCKED.md` saying what stopped and the smallest decision
 needed. A stopped run is the system working. A run that never stops and merges
 something wrong is the failure to design against.
@@ -123,6 +129,7 @@ from a second model vendor is a later upgrade for R2 changes.
 | Planning meetings (team mode) | `planning/<cycle>/`: `BRIEF.md`, `positions/`, `discussion.jsonl` (written only by `say.sh` and `round.sh`), `state.json`, `threat-model.md`, `db-review.md`, `DECISIONS.md`, `contracts.jsonl`, `dispatch.jsonl`; merged by you as the approval | By the leads (`/inbox`), the chair (`/plan`) and you, in the planning pull request |
 | Research (team mode) | `research/<id>-<slug>/brief.md`: evidence, never instructions; every finding sourced (`check-brief.sh`), checked by `evidence-reviewer` (`evidence-review.md`) | By every team, as evidence to weigh |
 | Contracts between teams (team mode) | `contracts/`: promoted from planning by `contracts.sh`, then changed only under an accepted contract-change ticket; generated code checked by `check-contracts.sh` | By every team that builds against them, and by CI |
+| Feature records (team mode) | `features/<f>/`: `acceptance.md` and `acceptance-review.md` (research, through the feature branch); `e2e-report.md`, `attribution.md`, generated `FEATURE.md` and `tickets.jsonl` (integration, on `integrate/<f>`); e2e tests in `tests/e2e/<f>/` | By integration-qa, the teams fixing a failure, research's acceptance review, and CI's feature gate |
 | Live and per-item events | `.factory/events.jsonl` in the main checkout (one log shared by every worktree, appended under `.factory/events.lock`), `work/<id>-<slug>/events.jsonl` | By the control room and `/audit` |
 
 There is no hidden state. If a session dies, the next one can resume from the
@@ -198,8 +205,9 @@ same pipeline. Add a docs agent if docs lag.
 auth from a personal subscription token to an API key, run builders in parallel
 in separate git worktrees, and add a second-vendor reviewer for R2. Team mode
 (`TEAMS.md`) is the first step: one session and worktree per team, path ownership
-enforced by the guard and by CI, and a scripted planning meeting whose record you
-approve before any team builds.
+enforced by the guard and by CI, a scripted planning meeting whose record you
+approve before any team builds, and an integration gate (e2e tests and an acceptance
+review) between each feature and `main`.
 
 ## Changing the factory
 

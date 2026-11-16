@@ -124,12 +124,15 @@ teams)
   [ ! -e factory/teams.json ] || die "factory/teams.json already exists"
   # Every top-level product entry goes to backend; the factory's own files, product/ (yours),
   # memory/, work/ (by each spec's team), planning/, research/ and features/ (their own teams),
-  # contracts/ (no team) and CLAUDE.md stay out of backend's reach.
+  # contracts/ (no team) and CLAUDE.md stay out of backend's reach. The orchestrator owns planning
+  # and the integration records: e2e tests and the files integrate.sh and feature.sh write.
   owns=$(git ls-tree HEAD | awk -F'\t' '
     $2 ~ /^(\.claude|\.github|factory|teams|memory|product|work|planning|research|features|contracts|CLAUDE\.md)$/ {next}
     {split($1, a, " "); print (a[2] == "tree" ? $2 "/*" : $2)}' | jq -R . | jq -sc .)
   jq -n --argjson owns "$owns" '{version: 1, default_team: "backend",
-    teams: {orchestrator: {owns: ["planning/*"]}, backend: {owns: $owns}},
+    teams: {orchestrator: {owns: ["planning/*", "tests/e2e/*", "features/*/FEATURE.md", "features/*/e2e-report.md",
+                           "features/*/attribution.md", "features/*/tickets.jsonl"]},
+           backend: {owns: $owns}},
     append_only: ["memory/observations/*", "product/INBOX.md"]}' > factory/teams.json
   jq . factory/teams.json
   echo "Wrote factory/teams.json. Check 'owns', then commit it through a pull request (R2: you"
