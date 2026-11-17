@@ -164,6 +164,9 @@ validate|items)
 check-append-only)
   base=${1:-}; [ -n "$base" ] || die "usage: decisions.sh check-append-only <base-ref>"
   git rev-parse -q --verify "$base^{commit}" >/dev/null || die "unknown base ref $base"
+  # Compare with where this branch left $base: a record approved on $base after that is not in
+  # this branch, and merging the branch does not delete it.
+  mb=$(git merge-base "$base" HEAD) || die "HEAD shares no history with $base"
   bad=0
   while IFS= read -r f; do
     [ -n "$f" ] || continue
@@ -184,8 +187,8 @@ check-append-only)
           or do { print STDERR "decisions: $f: approved record $id may only become status: superseded, with superseded_by\n"; $bad = 1 };
       }
       exit $bad;
-    ' "$f" "$(git show "$base:$f")" "$(git show "HEAD:$f")" || bad=1
-  done < <(git ls-tree -r --name-only "$base" -- planning/ | grep -E '^planning/[^/]+/DECISIONS\.md$' || true)
+    ' "$f" "$(git show "$mb:$f")" "$(git show "HEAD:$f")" || bad=1
+  done < <(git ls-tree -r --name-only "$mb" -- planning/ | grep -E '^planning/[^/]+/DECISIONS\.md$' || true)
   [ "$bad" = 0 ] && echo "decisions: approved records unchanged"
   exit "$bad"
   ;;

@@ -116,6 +116,16 @@ team_owns() {
   return $rc
 }
 
+# team_owns_under <teams.json> <team> <dir/>: the team owns a file that could sit in <dir>: some
+# owned glob matches <dir> plus that glob's last part (features/f002/ + acceptance.md). For mkdir.
+team_owns_under() {
+  local pat
+  while IFS= read -r pat; do
+    [ -n "$pat" ] && team_owns "$1" "$2" "$3${pat##*/}" && return 0
+  done < <(jq -r --arg t "$2" '.teams[$t].owns[]?' "$1" 2>/dev/null)
+  return 1
+}
+
 # path_owner <teams.json> <relpath>: the first active team owning the path, or nothing.
 path_owner() {
   local t

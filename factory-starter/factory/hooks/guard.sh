@@ -185,6 +185,7 @@ check_write() {
       [ "$team" = orchestrator ] || block "$rel is an integration record: integration-qa writes it in the orchestrator's checkout, so nobody tests their own work. Stop and report; a test you think is wrong is disputed on its bug ticket (ticket.sh decline with evidence)." ;;
   esac
   team_owns "$teams" "$team" "$rel" && return 0
+  [ "${3:-0}" = 1 ] && team_owns_under "$teams" "$team" "$rel" && return 0
   case "$rel" in
     work/*/*)
       item=${rel#work/}; item=${item%%/*}

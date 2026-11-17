@@ -254,6 +254,17 @@ test_team_mkdir_where_the_team_could_add_a_file() {
   tb backend "$BE" "rmdir server"; blocks "rmdir is not a mkdir"
 }
 
+test_team_mkdir_for_a_file_glob_it_owns() {  # dry run: research owns features/*/acceptance.md
+  team_setup
+  jq '.teams.backend.owns += ["features/*/notes.md"]' "$BE/factory/teams.json" > t && mv t "$BE/factory/teams.json"
+  tb backend "$BE" "mkdir -p features/f002-keep-links"; allows "a folder its owned file goes in"
+  tw backend "$BE" Write features/f002-keep-links/notes.md; allows "the file itself"
+  tw backend "$BE" Write features/f002-keep-links/other.md; blocks "another file in that folder"
+  tb backend "$BE" "mkdir -p features"; blocks "the folder above it: notes.md cannot sit there"
+  tb backend "$BE" "mkdir -p web/f002"; blocks "another team's paths"
+  tb backend "$BE" "mkdir -p tests/e2e/f002"; blocks "an integration record folder"
+}
+
 test_team_heredoc_bodies_are_data() {
   team_setup
   tb backend "$BE" $'cat > server/a.test.js <<\'EOF\'\nimport { test } from \'node:test\';\nconst load = () => import(\'../server/a.js\');\ntest(\'x\', () => {\n});\nEOF'

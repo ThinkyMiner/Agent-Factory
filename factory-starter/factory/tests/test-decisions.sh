@@ -159,4 +159,19 @@ test_approved_records_only_gain_superseded() {
   run "$D" check-append-only no-such-ref; expect_rc 1; expect_err "unknown base ref"
 }
 
+test_a_branch_behind_base_does_not_delete_records_approved_after_it() {
+  # found in the dry run: a pull request made before a planning merge failed "was approved and is
+  # now deleted" for the record the planning merge brought in
+  mkrepo r && cd r && mkdir -p planning/c001-share-links && decisions_ok c001 > planning/c001-share-links/DECISIONS.md
+  git add -A && git commit -qm c001 && git switch -q -c stale
+  echo x > other.txt && git add other.txt && git commit -qm "unrelated work"
+  git switch -q main && mkdir -p planning/c002-more && decisions_ok c002 > planning/c002-more/DECISIONS.md
+  git add -A && git commit -qm c002 && git switch -q stale
+  run "$D" check-append-only main; expect_rc 0; expect_out "unchanged"
+  git rm -q planning/c001-share-links/DECISIONS.md && git commit -qm gone   # hostile: still caught
+  run "$D" check-append-only main; expect_rc 1; expect_err "c001-share-links/DECISIONS.md was approved and is now deleted"
+  git switch -q --orphan lone && git rm -rq --cached . && echo y > y.txt && git add y.txt && git commit -qm lone
+  run "$D" check-append-only main; expect_rc 1; expect_err "shares no history"
+}
+
 run_tests
