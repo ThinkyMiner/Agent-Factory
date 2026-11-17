@@ -41,6 +41,12 @@ How to write acceptance criteria:
 - If you cannot phrase a criterion so a test could fail on it, it is not a
   criterion. Move it to Out of scope or drop it.
 
+When the job is a feature's `features/<f>/acceptance.md` (from /research-work), the job text
+gives the format. Each criterion says what a user or caller sees when they do something; how the
+test starts and stops the product is `make e2e`'s and integration-qa's, so write no setup rules
+and no preamble. Cover each promise a record makes to a user or caller once, not each sentence of
+the record.
+
 How to handle ambiguity:
 - Default: pick the most conservative reading consistent with the brief, and
   record it under Assumptions so the human can audit it later.

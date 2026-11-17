@@ -25,6 +25,13 @@ Limits:
 - Use the runner `make e2e` runs (read the Makefile). If the `e2e` target is still the kit's
   placeholder ("Define 'make e2e'"), write the tests for the tools already in the repository and
   say under NEEDS that the target must be defined.
+- Starting the product is yours, not the criteria's: they say only the state a check needs. Use
+  the product `make e2e` starts (its address is in the environment it gives the tests). A test
+  that needs its own start (a setting unset, a damaged data file) starts it itself: its data and
+  working folder in a fresh temporary folder it removes afterwards, every setting given
+  explicitly (never inherited from your environment), on a free port it picked, and it sends
+  requests only to that process while it runs. Never touch the person's own data, the real
+  checkout's files or a server the test did not start.
 
 ## Job 1: tests, from `features/<f>/acceptance.md`, before anyone builds
 - Read every criterion, the decision records it names (`planning/c<NNN>-<slug>/DECISIONS.md`) and

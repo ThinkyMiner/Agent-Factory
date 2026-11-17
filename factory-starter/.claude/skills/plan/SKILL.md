@@ -47,7 +47,12 @@ the same paths and save its reply as `planning/<cycle>/db-review.md`. Their find
 evidence for your draft: a risk they name becomes a record's `risk_floor` or a condition in its
 Decision. Then `round.sh next`.
 
-**decisions.** Write `planning/<cycle>/DECISIONS.md` in the format in `decisions.sh`'s header:
+**decisions.** A record decides what, not how: the behaviour a caller or the person sees, the
+limits, and what must never happen. Name a function, library, flag or file mode only when that
+choice is itself what was decided. Carry a reviewer's condition in as a property ("the temp file
+is unreadable by other users"), not as the call that achieves it ("open with wx, mode 0600"): the
+builder picks the how, and its reviewers check it. Write `planning/<cycle>/DECISIONS.md` in the
+format in `decisions.sh`'s header:
 one record per decision, its owner team, the teams it affects, `status: decided` only where the
 teams agree, `needs-human` where they do not (each side under Dissent, the open question ids under
 refs), and the Work breakdown table: one row per item, the team that builds it, what it delivers,

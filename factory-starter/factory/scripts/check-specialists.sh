@@ -9,7 +9,10 @@
 #   review.md      always (reviewer), except when the spec's team has "evidence_review": true in
 #                  the roster (research): evidence-review.md instead (evidence-reviewer)
 #   ui-review.md   when the spec's team has "ui_review": true in the roster (ui-reviewer)
-#   security.md    when <tier> is R2 or R3 (security-engineer)
+#   security.md    when <tier> is R2 or R3 (security-engineer), unless the change holds nothing but
+#                  acceptance criteria or an acceptance review (features/<f>/acceptance.md,
+#                  acceptance-review.md), its work folder and observations: those documents judge a
+#                  build, and the build's own review at its tier checks security against the same records
 #   db-review.md   when a changed path matches the roster's "db_paths" (db-engineer); globs as in
 #                  risk-rules.txt (* also matches /), default ["db/*", "*migrations/*", "*schema*"]
 # A report passes only when its first line starting with VERDICT: is exactly "VERDICT: pass" (spaces
@@ -93,7 +96,18 @@ else
 fi
 jq -e --arg t "$team" '.teams[$t].ui_review | . != null and . != false' "$teams" >/dev/null 2>&1 &&
   req ui-review.md "team $team has ui_review"
-case "$tier" in R2|R3) req security.md "tier $tier" ;; esac
+docs_only=1
+while IFS= read -r -d '' f; do
+  case "$f" in
+    "work/$item"/*|memory/observations/*|features/*/acceptance.md|features/*/acceptance-review.md) ;;
+    *) docs_only=0; break ;;
+  esac
+done < "$tmp/files"
+case "$tier" in R2|R3)
+  if [ "$docs_only" = 0 ]; then req security.md "tier $tier"
+  elif [ "$needs" = 0 ]; then echo "specialists: only acceptance criteria or an acceptance review changed: no security report at $tier (the build's own review checks security)"
+  fi ;;
+esac
 # db_paths: an array of strings, or the default when it is absent or garbled.
 if ! jq -e '.db_paths | type == "array" and all(type == "string")' "$teams" >/dev/null 2>&1; then
   jq -e 'has("db_paths")' "$teams" >/dev/null 2>&1 && echo "specialists: db_paths in the roster is not a list of globs; using the default" >&2

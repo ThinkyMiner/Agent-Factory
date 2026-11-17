@@ -119,8 +119,8 @@ fix rounds), and after it `passed` or `failed` with the same round.
   exactly `VERDICT: pass`.
 - `changes-required`: start a new `researcher` with the spec, the research folder
   and the report's BLOCKING list only. Check the folder (step 2), run the gate (step 3),
-  commit the brief, then start a new `evidence-reviewer`, replacing the report. At most 2
-  such rounds, then stop.
+  commit the brief, then start a new `evidence-reviewer` for a re-review: the same inputs plus
+  the previous report's text, replacing the report. At most 2 such rounds, then stop.
 - `escalate`: stop.
 
 ## 2 to 4 for acceptance criteria
@@ -135,6 +135,13 @@ fix rounds), and after it `passed` or `failed` with the same round.
       - decisions: c001-D02, c001-D03
       - check: <what to do from outside the product, and the result a test can check>
 
+  A criterion says what a user or caller sees, never how to run the test. `make e2e` and the
+  integration-qa that writes the tests own starting and stopping the product (its throwaway data,
+  a free port, cleanup), so no criterion carries rules for that: no preamble, no setup steps. A
+  check that needs a particular start names only that state ("with `DATA_FILE` unset", "with
+  the data file damaged") and what is observed. One criterion per behaviour, a check of a few
+  lines; a record's internals (how a promise is kept) get no criterion of their own.
+
 - After every spec-writer run, `git status --porcelain --untracked-files=all -- research/ features/`
   must list nothing but `features/<f>/acceptance.md`. Anything more: stop and escalate, and leave
   that file uncommitted for the human to read.
@@ -145,8 +152,8 @@ fix rounds), and after it `passed` or `failed` with the same round.
 - Evidence review: a new `evidence-reviewer`, told the task is acceptance criteria, with the paths
   of acceptance.md and DECISIONS.md and the spec. Save and commit its reply as in step 4.
   `changes-required`: a new `spec-writer` with the spec, the paths and the BLOCKING list only;
-  check the folders, run the gate, commit, then a new `evidence-reviewer`. At most 2 such rounds.
-  `escalate`: stop.
+  check the folders, run the gate, commit, then a new `evidence-reviewer` for a re-review (the
+  previous report's text too). At most 2 such rounds. `escalate`: stop.
 
 ## 2 to 4 for an acceptance review
 - The texts: the e2e report (`git show origin/integrate/<f>:features/<f>/e2e-report.md`), each e2e
@@ -161,7 +168,8 @@ fix rounds), and after it `passed` or `failed` with the same round.
   the same texts, the spec and the path of acceptance-review.md. Save and commit its reply as
   `<work folder>/evidence-review.md`. `changes-required`: a new `evidence-reviewer` writes the
   review again from the same texts and that BLOCKING list, replacing acceptance-review.md;
-  commit, then a new check. At most 2 such rounds. `escalate`: stop.
+  commit, then a new check as a re-review (the previous report's text too). At most 2 such
+  rounds. `escalate`: stop.
 - A `reject` that the check passes is a finished item: it goes into feature/<f> like an accept,
   and the orchestrator takes it to the human.
 
@@ -170,10 +178,12 @@ fix rounds), and after it `passed` or `failed` with the same round.
   stop.
 - In team mode, run `factory/scripts/check-specialists.sh --needs <base> <tier>`. For
   the research team it names `evidence-review.md`, and `security.md` when the tier is R2 or
-  above: then delegate to a new `security-engineer` with the item's file (the brief,
-  acceptance.md or acceptance-review.md) and the spec text, save its reply verbatim as
-  `<work folder>/security.md` and commit it. `changes-required` from it goes to a new writer
-  of that file like an evidence review's, at most 2 rounds in total. Any other
+  above and the item is a brief (acceptance criteria and acceptance reviews judge a build, whose
+  own review checks security): then delegate to a new `security-engineer` with the brief and the
+  spec text, save its reply verbatim as `<work folder>/security.md` and commit it.
+  `changes-required` from it goes to a new writer of that file like an evidence review's, and
+  then to a new `security-engineer` for a re-review with the previous report's text, at most 2
+  rounds in total. Any other
   name (`review.md` means the roster's research entry lacks `"evidence_review": true`) is a
   report this pipeline cannot produce: stop, and say which report and why.
 
@@ -191,8 +201,10 @@ fix rounds), and after it `passed` or `failed` with the same round.
 - Push the branch and open a pull request using `factory/templates/pr-body.md`, into the
   base's branch (`--base feature/<f>` for a feature item, `main` otherwise): each
   criterion with what meets it; as evidence, the gate's result and the evidence review's
-  verdict and rounds (`work/<id>-<slug>/evidence-review.md`). Link the item's file; do not
-  copy its quotes into the pull request. Add the label `risk:<tier>`.
+  verdict and rounds (`work/<id>-<slug>/evidence-review.md`). Copy the NON-BLOCKING lines of the
+  last reports, as they are, under "Left open", so the human sees what the reviewers did not
+  block on. Link the item's file; do not copy its quotes into the pull request. Add the label
+  `risk:<tier>`.
 - Read `AUTO_MERGE_MAX_TIER` from `factory/policy.env`. If the tier is at or below
   it, run `gh pr merge --auto --squash`. Otherwise leave it for the human and say so.
 - Never add the `human-approved` label. Never merge with admin rights.

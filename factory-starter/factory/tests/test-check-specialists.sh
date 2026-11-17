@@ -122,6 +122,25 @@ test_evidence_review_comes_from_the_base_roster_and_only_true_counts() {
   done
 }
 
+test_acceptance_documents_need_no_security_report() {
+  # dry run: the R2 security review of criteria never converged; the build's own review checks it
+  research_team true; rm -rf research; mkdir -p features/f002-x memory/observations
+  echo criteria > features/f002-x/acceptance.md; echo obs > memory/observations/13-r.md
+  says 13-r evidence-review.md pass; commit
+  run "$S" main R2; expect_rc 0; expect_out "no security report at R2"; expect_out "specialists: ok"
+  run "$S" --needs main R2; expect_eq "$(cat "$OUT")" evidence-review.md
+  echo review > features/f002-x/acceptance-review.md; commit
+  run "$S" main R3; expect_rc 0
+  echo x >> server/a.js; commit   # hostile: anything else in the change brings it back
+  run "$S" main R2; expect_rc 1; expect_out "MISSING      security.md  (tier R2)"
+  git reset -q --hard HEAD~1; mkdir -p features/f002-x; echo x > features/f002-x/FEATURE.md; commit
+  run "$S" main R2; expect_rc 1; expect_out "MISSING      security.md"
+  git reset -q --hard HEAD~1; echo x > features/f002-x/acceptance.md.sh; commit
+  run "$S" main R2; expect_rc 1; expect_out "MISSING      security.md"
+  git reset -q --hard HEAD~1; mkdir -p research/r1; echo brief > research/r1/brief.md; commit
+  run "$S" main R2; expect_rc 1; expect_out "MISSING      security.md"   # a brief still gets one
+}
+
 test_db_path_change_needs_db_review() {
   local p
   for p in db/schema.sql server/migrations/001_add.sql server/user_schema.ts DB/Seed.SQL; do
