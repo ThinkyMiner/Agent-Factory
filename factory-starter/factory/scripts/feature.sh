@@ -7,6 +7,7 @@
 #         - check: <how to tell>          exactly one, with text on the line (it may go on below)
 #       Text before the first "## AC" is free; after it, every "## " heading is a criterion. With a
 #       DECISIONS.md, every id named must be a record there (## c001-D02: ...). CR is ignored.
+#       With RIGOR=mvp (main's factory/policy.env), at most 15 criteria: one per behaviour.
 #       Prints each problem as <file>:<line>: <problem>. Exit 0 ok, 1 otherwise.
 #   feature.sh render <f>
 #       In the current checkout, which must be on integrate/<f> (integrate.sh runs it): writes
@@ -23,7 +24,8 @@ die() { echo "feature: $*" >&2; exit 1; }
 case "${1:-}" in
 check-acceptance)
   [ $# -ge 2 ] && [ $# -le 3 ] || die "usage: feature.sh check-acceptance <acceptance.md> [<DECISIONS.md>]"
-  perl -e '
+  max=0; [ "$(rigor "$(pwd)")" = mvp ] && max=15
+  MAX_CRITERIA=$max perl -e '
     use strict;
     my ($file, $dec) = @ARGV;
     my (%rec, @err, %seen, $cur, $n);
@@ -70,6 +72,7 @@ check-acceptance)
     }
     $end->();
     push @err, "$file: no criteria: add at least one \"## AC1: <title>\"" if !$count;
+    push @err, "$file: $count criteria; RIGOR=mvp allows at most $ENV{MAX_CRITERIA}: one per behaviour, merge the rest" if $ENV{MAX_CRITERIA} && $count > $ENV{MAX_CRITERIA};
     if (@err) { print "$_\n" for @err; exit 1 }
     print "acceptance: $file: $count criteria\n";
   ' "$2" ${3+"$3"}

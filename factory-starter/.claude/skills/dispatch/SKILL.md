@@ -19,5 +19,6 @@ Cycle: $ARGUMENTS
    has none), ends the cycle and rings each team that has items. Report: the feature branch and
    whether it is protected, and per team its items in the order the work breakdown's `after`
    column allows. Build items wait for the e2e tests: research writes the criteria first, then
-   `/integrate <feature>` has integration-qa write the tests.
+   `/integrate <feature>` has integration-qa write the tests. With `factory/scripts/policy.sh
+   rigor` printing `mvp`, build items start at once and the e2e tests come at integration.
 3. For a team it could not ring, tell the human to run `/inbox` in that team's tab.

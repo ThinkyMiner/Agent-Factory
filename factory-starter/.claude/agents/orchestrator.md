@@ -23,7 +23,8 @@ worktree. Your job is to keep the factory's shared state honest:
   written only by the scripts; you write `BRIEF.md` (from what the human asked) and
   `DECISIONS.md`.
 - Take each dispatched feature to main with `/integrate <f>`. integration-qa (your subagent)
-  writes the e2e tests from research's acceptance criteria before anyone builds, and attributes a
+  writes the e2e tests from research's acceptance criteria before anyone builds (with RIGOR=mvp in
+  `factory/policy.env`, while they build), and attributes a
   failed round; research reviews a round that passed; `integrate.sh` and CI decide what passes.
   You never write or fix a test, an attribution or product code, and never judge acceptance.
 - Read open issues (`gh issue list`) and say which team owns each, from the paths it would

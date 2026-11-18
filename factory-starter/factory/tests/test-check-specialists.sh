@@ -310,4 +310,43 @@ test_sync_branch_is_exempt() {
   [ ! -e pwned ] || fail "a branch name was run"
 }
 
+
+acceptance_item() {  # research's acceptance item at R2: criteria and a sample file, evidence review passed
+  research_team true; rm -rf research; mkdir -p features/f002-x research/f002-x
+  echo criteria > features/f002-x/acceptance.md; echo 'BEGIN:VCALENDAR' > research/f002-x/sample.ics
+  says 13-r evidence-review.md pass; commit
+}
+rigor_on_main() {  # rigor_on_main <full|mvp>: main's policy, pushed to an origin the checks read
+  local b; b=$(git branch --show-current); git switch -q main
+  echo "RIGOR=$1" > factory/policy.env; git add -A && git commit -qm "rigor $1"
+  git remote get-url origin >/dev/null 2>&1 || { git clone -q --bare . ../o.git && git remote add origin ../o.git; }
+  git push -q origin main && git fetch -q origin; git switch -q "$b"
+}
+
+test_mvp_acceptance_item_needs_only_the_evidence_review() {
+  acceptance_item
+  run "$S" main R2; expect_rc 1; expect_out "MISSING      security.md  (tier R2)"     # full: the sample brings it
+  rigor_on_main mvp
+  run "$S" main R2; expect_rc 0; expect_out "RIGOR=mvp: an acceptance item carries the evidence review only"
+  run "$S" --needs main R2; expect_eq "$(cat "$OUT")" evidence-review.md
+  run "$S" main R3; expect_rc 0
+  rm work/13-r/evidence-review.md; commit
+  run "$S" main R2; expect_rc 1; expect_out "MISSING      evidence-review.md"          # the one review stays
+}
+
+test_mvp_keeps_security_for_briefs_builds_and_a_pull_request_that_lightens_itself() {
+  acceptance_item; rigor_on_main mvp
+  mkdir -p research/r1; echo brief > research/r1/brief.md; commit                    # a brief rides along
+  run "$S" main R2; expect_rc 1; expect_out "MISSING      security.md"
+  git switch -q -c work/14-b main; item 14-b "team: backend"; echo x >> server/a.js
+  says 14-b review.md pass; commit                                                     # a build
+  run "$S" main R2; expect_rc 1; expect_out "MISSING      security.md  (tier R2)"
+  rigor_on_main full; git switch -q work/13-r; git reset -q --hard HEAD~1
+  echo RIGOR=mvp > factory/policy.env; commit                                          # the PR says mvp
+  run "$S" main R2; expect_rc 1; expect_out "MISSING      security.md"
+  roster '.teams.research.evidence_review = false'; commit                            # no evidence team
+  git switch -q main; roster '.teams.research.evidence_review = false'; git commit -qam noev; git switch -q work/13-r
+  rigor_on_main mvp; run "$S" main R2; expect_rc 1; expect_out "MISSING      security.md"
+}
+
 run_tests

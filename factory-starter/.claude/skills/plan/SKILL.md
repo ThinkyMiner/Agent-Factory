@@ -39,7 +39,10 @@ same thing differently, or one needs what another does not plan to build) and th
 round only if a conflict is still open and the teams are moving. Questions still open at the end
 must become needs-human records.
 
-**review.** Delegate to `security-engineer` with the paths of `BRIEF.md`, `positions/`,
+**review.** With `factory/scripts/policy.sh rigor` printing `mvp` there is no review round:
+`round.sh next` goes from discussion to decisions, and the cycle has one discussion round and one
+draft, so settle what the first draft leaves open as needs-human records. Otherwise: delegate to
+`security-engineer` with the paths of `BRIEF.md`, `positions/`,
 `attachments/` and `discussion.jsonl`, and save its reply verbatim as
 `planning/<cycle>/threat-model.md`. When the brief or the positions touch the data model (what
 is stored, its keys, migrations, what is kept or deleted), also delegate to `db-engineer` with

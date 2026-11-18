@@ -31,7 +31,7 @@ changes to the feature: tell the human its number and the merge command it print
 sessions started before it merges keep their old agent prompts until restarted. Then go on below;
 the sync does not hold up integration. When it refuses, tell the human what it said.
 
-## 1. E2E tests, before anyone builds
+## 1. E2E tests, before anyone builds (with RIGOR=mvp, while they build)
 When `factory/scripts/integrate.sh ready <f>` exits 1 (no tests yet):
 - `factory/scripts/integrate.sh tests <f>`. It refuses until research's `features/<f>/acceptance.md`
   is on feature/<f> and valid: then the feature waits on research. Otherwise it switches the main

@@ -141,6 +141,23 @@ last push) adds protection against agents; the first half still stops anyone els
 a fork, or a branch GitHub has no push record for, fails closed. The same check gates the
 planning brief: `round.sh next` runs it for the label `brief-approved`.
 
+## Rigor: full or mvp
+
+`RIGOR` in `factory/policy.env` (yours, R2) sets how much ceremony a feature gets. Every check
+reads main's copy, so a pull request cannot lighten its own. `full` is the default; `mvp` is for a
+first version you will throw away or harden later:
+
+| | full | mvp |
+|---|---|---|
+| Planning | positions, up to 2 discussion rounds, a specialist review round (threat model, data review), up to 3 drafts | positions, 1 discussion round, no review round, 1 draft |
+| Acceptance criteria | any number; evidence review, plus security review at R2 when sample files come with them; a decision without a criterion blocks | at most 15; evidence review only; only a wrong, untestable or contradicting criterion blocks |
+| Build items | wait for the e2e tests written from the criteria | start at dispatch; e2e tests come at integration |
+
+Unchanged in both: secrets scan, ownership, CI, risk tiers, your label on R2, the security
+review of R2 builds and of research briefs, and the feature gate (`make e2e` passes before a
+feature reaches main). A roster `limits` entry still overrides the planning defaults.
+`factory/scripts/policy.sh rigor` prints the rigor in force.
+
 ## Tickets
 
 A team asks another for something with a ticket, a GitHub issue that only `factory/scripts/ticket.sh`

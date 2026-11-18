@@ -124,6 +124,9 @@ fix rounds), and after it `passed` or `failed` with the same round.
 - `escalate`: stop.
 
 ## 2 to 4 for acceptance criteria
+- Rigor: `factory/scripts/policy.sh rigor` prints `mvp` or `full`. Put `rigor: <it>` in the job
+  of every spec-writer and evidence-reviewer below: with `mvp` the gate takes at most 15
+  criteria and the review blocks only on a wrong, untestable or contradicting criterion.
 - Criteria: delegate to a new `spec-writer` with the spec path, `planning/<cycle>/DECISIONS.md`,
   and this job: write `features/<f>/acceptance.md`, one criterion per behaviour the decided
   records promise a user or caller, in exactly this format (the gate checks it; the check may run

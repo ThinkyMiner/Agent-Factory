@@ -43,7 +43,9 @@ Statuses: started, passed, failed, blocked, skipped. Use `round` for fix rounds
   `<base>` below means that ref, everywhere.
 - A feature item waits for its e2e tests, written from the acceptance criteria before anyone
   builds: `factory/scripts/integrate.sh ready <f>` must exit 0. Otherwise stop and say so (no slot
-  is taken yet); `integrate.sh` rings this team when the tests are in.
+  is taken yet); `integrate.sh` rings this team when the tests are in. Unless
+  `factory/scripts/policy.sh rigor` prints `mvp`: then it starts at once, and its e2e tests come
+  at integration.
 - Require a clean working tree. If it is not, stop and say so.
 - In team mode, take a build slot: `factory/scripts/slot.sh acquire`. Exit 3 means every
   slot is taken: stop at once and say so (nothing else to clean up). Once you hold a slot,

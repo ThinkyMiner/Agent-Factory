@@ -79,4 +79,35 @@ test_unknown_command_prints_usage() {
   planning_setup; by orchestrator "$R" frobnicate; expect_rc 1; expect_err "round.sh open <slug>"
 }
 
+
+mvp_main() {  # RIGOR=mvp on main, pushed, before the cycle opens
+  echo RIGOR=mvp > "$MAIN/factory/policy.env"
+  git -C "$MAIN" add -A && git -C "$MAIN" commit -qm mvp && git -C "$MAIN" push -q origin main
+}
+
+test_mvp_has_one_discussion_round_no_review_round_and_one_draft() {
+  planning_setup; mvp_main; meeting_to discussion-1
+  by orchestrator "$R" status; expect_out "rigor mvp"
+  by orchestrator "$R" next --again; expect_rc 1; expect_err "limit: 1 discussion rounds"
+  by orchestrator "$R" next; expect_rc 0; expect_out "RIGOR=mvp: no review round"; status_is decisions
+  decisions_ok c001 > "$P/DECISIONS.md"
+  by orchestrator "$R" draft; expect_rc 0
+  by orchestrator "$R" draft; expect_rc 1; expect_err "limit: 1 drafts"
+}
+
+test_mvp_planning_limits_yield_to_the_roster() {
+  planning_setup; mvp_main; limits '{"discussion_rounds": 2, "drafts": 2}'
+  git -C "$MAIN" commit -qam limits && git -C "$MAIN" push -q origin main
+  meeting_to discussion-1
+  by orchestrator "$R" next --again; expect_rc 0; status_is discussion-2
+  by orchestrator "$R" next; expect_rc 0; status_is decisions          # still no review round
+}
+
+test_full_rigor_keeps_the_review_round_whatever_a_checkout_says() {
+  planning_setup; meeting_to discussion-1
+  echo RIGOR=mvp > "$P/../../factory/policy.env"                       # the chair's checkout, not main
+  by orchestrator "$R" status; expect_out "rigor full"
+  by orchestrator "$R" next; expect_rc 0; status_is review
+}
+
 run_tests

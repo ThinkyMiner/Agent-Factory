@@ -53,4 +53,47 @@ test_append_jsonl_without_perl_still_appends() {
   expect_eq "$(cat out)" '{"a":1}'
 }
 
+
+test_rigor_is_mains_and_anything_but_mvp_is_full() {
+  mkrepo r && mkdir -p r/factory
+  expect_eq "$(rigor "$TEST_TMP/r")" full "no policy.env"
+  echo RIGOR=mvp > r/factory/policy.env
+  expect_eq "$(rigor "$TEST_TMP/r")" mvp "no origin/main: the checkout's copy"
+  printf 'RIGOR=mvp\r\n' > r/factory/policy.env; expect_eq "$(rigor "$TEST_TMP/r")" mvp "CRLF"
+  local v
+  for v in MVP 'mvp # light' '"mvp"' 'mvp; touch pwned' '$(touch pwned)' '`touch pwned`' '' full mvpx; do
+    printf 'RIGOR=%s\n' "$v" > r/factory/policy.env
+    expect_eq "$(rigor "$TEST_TMP/r")" full "RIGOR=$v"
+  done
+  printf ' RIGOR=mvp\n' > r/factory/policy.env; expect_eq "$(rigor "$TEST_TMP/r")" full "indented: not a setting"
+  printf 'RIGOR=mvp\nRIGOR=full\n' > r/factory/policy.env; expect_eq "$(rigor "$TEST_TMP/r")" full "the last line wins"
+  head -c 3000 /dev/urandom > r/factory/policy.env; expect_eq "$(rigor "$TEST_TMP/r")" full "binary junk"
+  [ ! -e pwned ] && [ ! -e r/pwned ] || fail "a value was executed"
+  # once there is an origin/main, only main's copy counts
+  echo RIGOR=full > r/factory/policy.env; git -C r add -A && git -C r commit -qm policy
+  git clone -q --bare r origin.git && git -C r remote add origin "$TEST_TMP/origin.git" && git -C r fetch -q origin
+  echo RIGOR=mvp > r/factory/policy.env
+  expect_eq "$(rigor "$TEST_TMP/r")" full "the checkout cannot lighten main"
+  git -C r commit -qam mvp; expect_eq "$(rigor "$TEST_TMP/r")" full "nor a local commit"
+  git -C r push -q origin main && git -C r fetch -q origin
+  expect_eq "$(rigor "$TEST_TMP/r")" mvp "main says mvp"
+  git -C r worktree add -q ../wt -b team/x origin/main 2>/dev/null
+  expect_eq "$(rigor "$TEST_TMP/wt")" mvp "a team's worktree reads main too"
+  git -C r rm -q factory/policy.env && git -C r commit -qm gone && git -C r push -q origin main && git -C r fetch -q origin
+  mkdir -p r/factory && echo RIGOR=mvp > r/factory/policy.env
+  expect_eq "$(rigor "$TEST_TMP/r")" full "main without a policy: full, whatever the checkout says"
+}
+
+test_policy_sh_prints_the_rigor_and_refuses_anything_else() {
+  mkrepo r && mkdir -p r/factory && echo RIGOR=mvp > r/factory/policy.env && cd r
+  run "$SCRIPTS/policy.sh" rigor; expect_rc 0; expect_eq "$(cat "$OUT")" mvp
+  mkdir -p deep/er && cd deep/er; run "$SCRIPTS/policy.sh" rigor; expect_eq "$(cat "$OUT")" mvp "from a subfolder"
+  local a
+  for a in "" RIGOR "rigor extra" --help '$(touch pwned)' AUTO_MERGE_MAX_TIER; do
+    run "$SCRIPTS/policy.sh" $a; expect_rc 2; expect_err "usage: policy.sh rigor"
+  done
+  [ ! -e pwned ] || fail "an argument was executed"
+  mkdir "$TEST_TMP/plain" && cd "$TEST_TMP/plain"; run "$SCRIPTS/policy.sh" rigor; expect_rc 0; expect_eq "$(cat "$OUT")" full "outside a repository"
+}
+
 run_tests

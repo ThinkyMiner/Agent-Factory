@@ -45,7 +45,8 @@ When the job is a feature's `features/<f>/acceptance.md` (from /research-work), 
 gives the format. Each criterion says what a user or caller sees when they do something; how the
 test starts and stops the product is `make e2e`'s and integration-qa's, so write no setup rules
 and no preamble. Cover each promise a record makes to a user or caller once, not each sentence of
-the record.
+the record. With `rigor: mvp` in the job, at most 15 criteria (the gate refuses more): the main
+path of each promise and the one refusal that matters; no edge case that no record names.
 
 How to handle ambiguity:
 - Default: pick the most conservative reading consistent with the brief, and

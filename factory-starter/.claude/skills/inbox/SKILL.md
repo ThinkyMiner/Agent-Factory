@@ -41,7 +41,8 @@ its decisions, contract and what it waits for on stdin. Then tell the human whic
 in an order that respects the `after` column, so they can run `/work <number>` here (research:
 `/research-work <number>`). Research's `acceptance` item comes first: the e2e tests are written
 from it, and a build item cannot start until they are in (`/work` checks with `integrate.sh ready`;
-`integrate.sh` rings you when they are).
+`integrate.sh` rings you when they are). With `factory/scripts/policy.sh rigor` printing `mvp`,
+build items are ready at once, whatever the `after` column says about `acceptance`.
 
 ## 3. Tickets to you
 `gh issue list --label ticket --label to:<your team> --state open`: accept or decline each

@@ -12,13 +12,14 @@
 #     positions -> discussion-1      every team has submitted, or the round's time is up; then all
 #                                    positions are published at once
 #     discussion-N -> review         every question answered, or the time is up; questions still
-#                                    open must become needs-human decision records
-#     discussion-N -> N+1 (--again)  the same, at most limits.discussion_rounds [2] rounds
+#                                    open must become needs-human decision records. With RIGOR=mvp
+#                                    (factory/policy.env) straight to decisions: no review round
+#     discussion-N -> N+1 (--again)  the same, at most limits.discussion_rounds [2; mvp 1] rounds
 #     review -> decisions
 #     decisions -> approval          a draft every team answered (or the time is up) and a valid
 #                                    DECISIONS.md; the pull request is marked ready for you
 #   round.sh draft                   DECISIONS.md is ready for the leads: check it, commit, push, ring
-#                                    them; at most limits.drafts [3]
+#                                    them; at most limits.drafts [3; mvp 1]
 #   round.sh abandon --reason <text> end the cycle without decisions
 #   round.sh status                  where the cycle is, and what the calling team owes
 #   round.sh ready                   exit 0 if this round's rule is met now
@@ -34,7 +35,9 @@ home=$(factory_home "$top")
 teams=$(teams_file "$home") || die "planning is for team mode, and this factory has no factory/teams.json"
 lock="$home/.factory/planning.lock"; mkdir -p "$home/.factory/planning"
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
-lim() { planning_limit "$teams" "$1" "$2"; }
+rig=$(rigor "$home")
+# lim <key> <full default> [<mvp default>]: the roster's limit, else this rigor's default
+lim() { if [ "$rig" = mvp ] && [ -n "${3:-}" ]; then planning_limit "$teams" "$1" "$3"; else planning_limit "$teams" "$1" "$2"; fi; }
 event() { "$here/emit-event.sh" "$@" >/dev/null 2>&1 || true; }
 cmd=${1:-}; [ $# -gt 0 ] && shift
 
@@ -44,7 +47,7 @@ case "$cmd" in
   open|brief|next|draft|abandon)
     me=$(session_team "$top") || die "this session has no team (FACTORY_TEAM=${FACTORY_TEAM:-unset} in $top)"
     [ "$me" = orchestrator ] || die "only the orchestrator chairs a cycle; $me takes part with position.sh and say.sh" ;;
-  *) sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1 ;;
+  *) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1 ;;
 esac
 
 # ---- open: before any cycle exists ----
@@ -127,7 +130,7 @@ ready() {
 
 if [ "$cmd" = ready ]; then ready; exit; fi
 if [ "$cmd" = status ]; then
-  echo "cycle $cyc: $status (teams: $(echo $cteams); round open $((age / 60)) of $(lim round_minutes 60) minutes; draft $draft; pull request #$(jq -r '.pr // "none"' <<<"$S"))"
+  echo "cycle $cyc: $status (teams: $(echo $cteams); round open $((age / 60)) of $(lim round_minutes 60) minutes; draft $draft; pull request #$(jq -r '.pr // "none"' <<<"$S"); rigor $rig)"
   echo "record: $dir"
   r=$(ready) && echo "$r" || echo "$r"
   if [ -n "$me" ] && grep -qxF -- "$me" <<<"$cteams"; then
@@ -227,14 +230,16 @@ next)
       move discussion-1; push "positions published"; ring_all ;;
     discussion-*)
       n=${status#discussion-}; m=$(unanswered)
-      [ "$again" = 0 ] || [ "$n" -lt "$(lim discussion_rounds 2)" ] || die "limit: $n discussion rounds (limits.discussion_rounds); go on with round.sh next"
+      [ "$again" = 0 ] || [ "$n" -lt "$(lim discussion_rounds 2 1)" ] || die "limit: $n discussion rounds (limits.discussion_rounds); go on with round.sh next"
       if [ -n "$m" ]; then
         [ "$timed_out" = 1 ] || die "$(ready)"
         save "$(jq -c --arg ids "$(awk '{print $1}' <<<"$m" | sort -u | tr '\n' ' ')" '.unanswered = (.unanswered + ($ids | split(" ") | map(select(length > 0))) | unique)' <<<"$S")"
         strike $(awk '$2 != "orchestrator" {print $2}' <<<"$m" | sort -u)
         echo "round: still open, so each must become a needs-human decision record: $(awk '{print $1}' <<<"$m" | sort -u | tr '\n' ' ')"
       fi
-      if [ "$again" = 1 ]; then move "discussion-$((n + 1))"; else move review; fi
+      if [ "$again" = 1 ]; then move "discussion-$((n + 1))"
+      elif [ "$rig" = mvp ]; then move decisions; echo "round: RIGOR=mvp: no review round"
+      else move review; fi
       push "$status" ;;
     review) move decisions; push "$status" ;;
     decisions)
@@ -255,7 +260,7 @@ next)
 
 draft)
   [ "$status" = decisions ] || die "drafts belong to the decisions round (the cycle is $status)"
-  [ "$draft" -lt "$(lim drafts 3)" ] || die "limit: $draft drafts (limits.drafts); settle what is left as needs-human records and run round.sh next"
+  [ "$draft" -lt "$(lim drafts 3 1)" ] || die "limit: $draft drafts (limits.drafts); settle what is left as needs-human records and run round.sh next"
   bash "$here/decisions.sh" validate --new-draft || die "DECISIONS.md is not ready to show the teams (above)"
   save "$(jq -c '.draft += 1' <<<"$S")"; draft=$((draft + 1))
   say_as orchestrator all decision "draft $draft: planning/$cyc/DECISIONS.md"

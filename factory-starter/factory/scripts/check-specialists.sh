@@ -12,7 +12,9 @@
 #   security.md    when <tier> is R2 or R3 (security-engineer), unless the change holds nothing but
 #                  acceptance criteria or an acceptance review (features/<f>/acceptance.md,
 #                  acceptance-review.md), its work folder and observations: those documents judge a
-#                  build, and the build's own review at its tier checks security against the same records
+#                  build, and the build's own review at its tier checks security against the same records.
+#                  With RIGOR=mvp (main's factory/policy.env) none either for research's acceptance item,
+#                  its sample files included, unless it also holds a research brief
 #   db-review.md   when a changed path matches the roster's "db_paths" (db-engineer); globs as in
 #                  risk-rules.txt (* also matches /), default ["db/*", "*migrations/*", "*schema*"]
 # A report passes only when its first line starting with VERDICT: is exactly "VERDICT: pass" (spaces
@@ -97,8 +99,9 @@ fi
 # The requirements: "<report> TAB <why>".
 req() { printf '%s\t%s\n' "$1" "$2" >> "$tmp/req"; }
 # evidence_review swaps the reviewer, so only the value true does: anything else keeps review.md.
+evid=0
 if jq -e --arg t "$team" '.teams[$t].evidence_review == true' "$teams" >/dev/null 2>&1; then
-  req evidence-review.md "team $team has evidence_review"
+  evid=1; req evidence-review.md "team $team has evidence_review"
 else
   req review.md "every item"
 fi
@@ -111,8 +114,16 @@ while IFS= read -r -d '' f; do
     *) docs_only=0; break ;;
   esac
 done < "$tmp/files"
+# RIGOR=mvp: research's acceptance item (criteria and their sample files, no brief) carries the
+# evidence review only; a brief from the open web is still security-reviewed.
+acc=0
+while IFS= read -r -d '' f; do
+  case "$f" in features/*/acceptance.md) acc=1 ;; research/*brief.md) acc=0; break ;; esac
+done < "$tmp/files"
 case "$tier" in R2|R3)
-  if [ "$docs_only" = 0 ]; then req security.md "tier $tier"
+  if [ "$docs_only" = 0 ] && [ "$evid$acc" = 11 ] && [ "$(rigor "$(pwd)")" = mvp ]; then
+    [ "$needs" = 1 ] || echo "specialists: RIGOR=mvp: an acceptance item carries the evidence review only, no security report at $tier"
+  elif [ "$docs_only" = 0 ]; then req security.md "tier $tier"
   elif [ "$needs" = 0 ]; then echo "specialists: only acceptance criteria or an acceptance review changed: no security report at $tier (the build's own review checks security)"
   fi ;;
 esac

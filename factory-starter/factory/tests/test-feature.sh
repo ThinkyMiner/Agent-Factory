@@ -155,4 +155,19 @@ test_render_without_reports_says_so() {
   grep -qF "acceptance-review.md): unreadable" "features/$F/FEATURE.md" || fail "a copied verdict template was not called unreadable"
 }
 
+
+test_mvp_takes_at_most_15_criteria() {
+  decisions_ok c001 > D.md; mkrepo r && mkdir -p r/factory && cd r
+  gen() { local i; for i in $(seq 1 "$1"); do printf '## AC%d: c%d\n- decisions: c001-D01\n- check: x\n\n' "$i" "$i"; done; }
+  gen 16 > a.md; run "$FS" check-acceptance a.md ../D.md; expect_rc 0; expect_out "16 criteria"   # full: no cap
+  echo RIGOR=mvp > factory/policy.env
+  run "$FS" check-acceptance a.md ../D.md; expect_rc 1; expect_out "a.md: 16 criteria; RIGOR=mvp allows at most 15"
+  gen 15 > a.md; run "$FS" check-acceptance a.md ../D.md; expect_rc 0; expect_out "15 criteria"
+  gen 400 > a.md; run "$FS" check-acceptance a.md ../D.md; expect_rc 1; expect_out "400 criteria"
+  # main is the authority: a checkout that says full does not lift main's cap, and the reverse
+  git add -A && git commit -qm mvp && git clone -q --bare . ../o.git && git remote add origin ../o.git && git fetch -q origin
+  echo RIGOR=full > factory/policy.env
+  run "$FS" check-acceptance a.md ../D.md; expect_rc 1; expect_out "allows at most 15"
+}
+
 run_tests

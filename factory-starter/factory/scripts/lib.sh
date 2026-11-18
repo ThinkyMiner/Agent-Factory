@@ -283,3 +283,18 @@ sync_verdict() {
   elif ! git diff --quiet --no-ext-diff --no-textconv "$sync_mb" "$1" -- ":(literal)$3" 2>/dev/null; then echo both
   else echo ok; fi
 }
+
+# rigor [<dir>]: "mvp" when main's factory/policy.env says RIGOR=mvp, else "full". Main's copy
+# (refs/remotes/origin/main), never the checkout's, so a pull request cannot lighten its own
+# checks; the checkout's copy only where there is no origin/main at all (a repository not pushed
+# yet). Any other value, a missing line or an unreadable file is "full", the stricter one.
+rigor() {
+  local d=${1:-.} v
+  if git -C "$d" rev-parse -q --verify refs/remotes/origin/main >/dev/null 2>&1; then
+    v=$(git -C "$d" show refs/remotes/origin/main:factory/policy.env 2>/dev/null || true)
+  else
+    v=$(cat "$(git -C "$d" rev-parse --show-toplevel 2>/dev/null || echo "$d")/factory/policy.env" 2>/dev/null || true)
+  fi
+  v=$(printf '%s\n' "$v" | sed -n 's/^RIGOR=//p' | tail -1 | tr -d '[:space:]')
+  if [ "$v" = mvp ]; then echo mvp; else echo full; fi
+}
