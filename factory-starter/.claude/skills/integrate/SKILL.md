@@ -90,6 +90,12 @@ When the pull request to main is merged: `factory/scripts/integrate.sh close <f>
 feature/<f>'s protection and deletes feature/<f> and integrate/<f>. The next cycle may be
 dispatched.
 
+## Stopped
+Only when the human tells you to stop (drop) the feature, at any point:
+`factory/scripts/integrate.sh drop <f> --reason "<the human's words>"`. It keeps the branches as
+tags `stopped/...`, closes the feature's open pull requests and issues with the reason, and
+deletes the branches. The next cycle may be dispatched. Never drop a feature on your own judgment.
+
 ## Disputes
 A team that thinks an e2e test is wrong declines your bug ticket with its evidence
 (`gh issue list --label ticket --label from:orchestrator --label state:declined --label feature:<f>`).

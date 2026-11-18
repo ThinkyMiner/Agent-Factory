@@ -337,7 +337,11 @@ like any factory change.
    say, with evidence. `integrate.sh tickets <f>` checks every line (all or nothing) and files one
    `bug` ticket per team. The teams fix through their own pipelines, then round 2 runs.
 5. **Two failed rounds** stop the feature: `run` writes an `escalation` event and refuses a third
-   round. You decide: more time, a changed criterion, or dropping the feature.
+   round. You decide: more time, a changed criterion, or dropping the feature. To drop it, tell
+   the orchestrator: `integrate.sh drop <f> --reason <why>` keeps its branches as tags
+   `stopped/feature/<f>` and `stopped/integrate/<f>`, closes its open pull requests and issues
+   saying why, and deletes the branches, so the next cycle may be dispatched. You can drop a
+   feature at any point, not only here.
 6. **A passed round** files a ticket to research, which reviews it: a new evidence-reviewer, given
    the criteria, the report and the tests, writes `features/<f>/acceptance-review.md`
    (`VERDICT: accept | reject`, `e2e-commit: <the tested commit>`, a line per criterion), checked by

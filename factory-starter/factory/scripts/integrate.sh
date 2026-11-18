@@ -25,6 +25,12 @@
 #                                           and research's acceptance-review.md accepts that round
 #   integrate.sh close <f>                  after that pull request merged: delete feature/<f> and
 #                                           integrate/<f>; the next cycle may be dispatched
+#   integrate.sh drop <f> --reason <text>   the human stopped the feature: keep feature/<f> and
+#                                           integrate/<f> as tags stopped/feature/<f> and
+#                                           stopped/integrate/<f>, close the pull requests into
+#                                           feature/<f> and from integrate/<f> and the open issues
+#                                           labelled feature:<f> (saying why), delete the branches
+#                                           (and sync/<f>); the next cycle may be dispatched
 #   integrate.sh ready <f>                  exit 0 when origin/integrate/<f> holds tests/e2e/<f>/
 #   integrate.sh sync <f>                   when main has moved on (a factory change merged after
 #                                           dispatch): push sync/<f>, origin/main merged into
@@ -49,7 +55,7 @@ die() { echo "integrate: $*" >&2; exit 1; }
 say() { echo "integrate: $*"; }
 
 cmd=${1:-}; f=${2:-}
-case "$cmd" in tests|save|run|tickets|pr|close|ready|sync) ;; *) sed -n '2,43p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1 ;; esac
+case "$cmd" in tests|save|run|tickets|pr|close|drop|ready|sync) ;; *) sed -n '2,49p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1 ;; esac
 [[ "$f" =~ ^f[0-9]{3}-[a-z0-9][a-z0-9-]{0,40}$ ]] || die "usage: integrate.sh $cmd <feature> (like f001-share-links)"
 shift 2
 top=$(git rev-parse --show-toplevel 2>/dev/null) || die "run this inside the factory's repository"
@@ -454,5 +460,34 @@ close)
   done
   event integration feature="$f" step=closed status=done
   say "feature $f is closed: feature/$f and $I are deleted. dispatch.sh may run the next cycle."
+  ;;
+drop)
+  [ $# -eq 2 ] && [ "$1" = --reason ] || die "usage: integrate.sh drop $f --reason <why the human stopped it>"
+  why=$(clean_text "$2" | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//' | cut -c1-300)
+  [ -n "$why" ] || die "drop needs --reason <why the human stopped it>, for the record"
+  # Kept first: nothing is deleted unless every branch is safe as a tag.
+  kept=""
+  for b in "feature/$f" "$I"; do
+    git rev-parse -q --verify "refs/remotes/origin/$b" >/dev/null || continue
+    git push -q origin "refs/remotes/origin/$b:refs/tags/stopped/$b" 2>/dev/null ||
+      die "could not keep $b as the tag stopped/$b (is there one already, at another commit?); nothing was deleted"
+    kept+=" stopped/$b"
+  done
+  note="Feature $f was stopped by the human: $why. Its branches are kept as the tags${kept:- (none)}."
+  prs=$( { gh pr list --base "feature/$f" --state open --json number --jq '.[].number' &&
+           gh pr list --head "$I" --base main --state open --json number --jq '.[].number'; } </dev/null) || die "cannot list pull requests on GitHub"
+  for n in $prs; do gh pr close "$n" --comment "$note" >/dev/null </dev/null || die "could not close pull request #$n"; done
+  iss=$(gh issue list --label "feature:$f" --state open --limit 200 --json number --jq '.[].number' </dev/null) || die "cannot list issues on GitHub"
+  for n in $iss; do gh issue close "$n" --comment "$note" >/dev/null </dev/null || die "could not close issue #$n"; done
+  gh api -X DELETE "repos/{owner}/{repo}/branches/feature/$f/protection" >/dev/null 2>&1 ||
+    say "could not remove feature/$f's branch protection (it may have none); deleting the branch anyway"
+  git switch -q main
+  for b in "feature/$f" "$I" "sync/$f"; do
+    if git rev-parse -q --verify "refs/remotes/origin/$b" >/dev/null; then git push -q origin --delete "$b" 2>/dev/null || die "could not delete $b on origin"; fi
+    if git rev-parse -q --verify "refs/heads/$b" >/dev/null; then git branch -q -D "$b"; fi
+  done
+  event integration feature="$f" step=dropped status=done detail="$why"
+  say "feature $f is stopped: kept as${kept:- nothing}; closed pull requests: $(echo ${prs:-none}); closed issues: $(echo ${iss:-none})."
+  say "dispatch.sh may run the next cycle."
   ;;
 esac

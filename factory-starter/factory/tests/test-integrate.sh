@@ -152,7 +152,7 @@ test_scenario_two_failed_rounds_then_a_third_escalates() {
 
 test_only_the_orchestrator_integrates() {
   integ_setup
-  for c in tests save run tickets pr close sync; do
+  for c in tests save run tickets pr close drop sync; do
     by backend "$I" "$c" "$F"; expect_rc 1; expect_err "only the orchestrator integrates"
     cd "$BE"; FACTORY_TEAM=orchestrator run "$I" "$c" "$F"; expect_rc 1; expect_err "this session has no team (FACTORY_TEAM=orchestrator"
     cd "$MAIN"; FACTORY_TEAM=backend run "$I" "$c" "$F"; expect_rc 1; expect_err "this session has no team"
@@ -179,7 +179,7 @@ test_refuses_while_planning_is_open_or_the_checkout_is_dirty() {
   orch tests "$F"; expect_rc 1; expect_err "planning cycle c002-next is open"
   rm "$MAIN/.factory/planning/active"
   echo dirt > "$MAIN/server/dirt.txt"
-  for c in tests run tickets pr close; do orch "$c" "$F"; expect_rc 1; expect_err "uncommitted changes"; done
+  for c in tests run tickets pr close drop; do orch "$c" "$F"; expect_rc 1; expect_err "uncommitted changes"; done
   rm "$MAIN/server/dirt.txt"
   orch tests f002-other; expect_rc 1; expect_err "feature/f002-other is not on origin"
   on_main
@@ -579,6 +579,44 @@ test_sync_refuses_when_main_and_the_feature_both_changed_a_file() {
   orch sync "$F"; expect_rc 1; expect_err "main and feature/$F conflict"
   origin_has "sync/$F" && fail "a refused sync was pushed"
   [ -z "$(ls "$FAKE_GH/pulls")" ] || fail "a refused sync opened a pull request"
+  on_main
+}
+
+# ---- drop: the human stopped the feature ----
+test_drop_keeps_the_branches_as_tags_and_closes_what_was_open() {
+  integ_setup; saved_tests
+  local o=$TEST_TMP/origin.git fsha isha
+  fsha=$(git -C "$o" rev-parse "feature/$F"); isha=$(git -C "$o" rev-parse "integrate/$F")
+  ticket_in_gh 5 ticket "feature:$F" to:backend; ticket_in_gh 6 "feature:$F" team:research; ticket_in_gh 7 ticket feature:f009-other
+  (cd "$MAIN" && gh pr create --title "an item" --head work/6-acceptance --base "feature/$F" >/dev/null)
+  (cd "$MAIN" && gh pr create --title "elsewhere" --head work/8-x --base main >/dev/null)
+  orch drop "$F"; expect_rc 1; expect_err "usage: integrate.sh drop $F --reason"
+  orch drop "$F" --reason "   "; expect_rc 1; expect_err "drop needs --reason"
+  orch drop "$F" --reason x --extra y; expect_rc 1
+  [ -z "$(gh_log | grep 'close')" ] || fail "a refused drop closed something: $(gh_log)"
+  orch drop "$F" --reason '@someone said <b>stop</b> $(touch pwned)'; expect_rc 0; on_main
+  expect_out "feature $F is stopped: kept as stopped/feature/$F stopped/integrate/$F"; expect_out "dispatch.sh may run the next cycle"
+  expect_eq "$(git -C "$o" rev-parse "stopped/feature/$F") $(git -C "$o" rev-parse "stopped/integrate/$F")" "$fsha $isha" "the kept tags"
+  origin_has "feature/$F" && fail "feature/$F is still on origin"
+  origin_has "integrate/$F" && fail "integrate/$F is still on origin"
+  expect_eq "$(jq -r 'map("\(.number)=\(.state)") | join(" ")' "$FAKE_GH/issues.json" | tr ' ' '\n' | grep -E '^[567]=' | sort | tr '\n' ' ')" "5=CLOSED 6=CLOSED 7=OPEN " "issues"
+  expect_eq "$(jq -r '"\(.base.ref) \(.state)"' "$FAKE_GH"/pulls/*.json | sort | tr '\n' ' ')" "feature/$F closed main open " "pull requests"
+  gh_log | grep -F "issue close 5 --comment Feature $F was stopped by the human: @${ZWSP}someone said &lt;b&gt;stop&lt;/b&gt; \$(touch pwned)." >/dev/null ||
+    fail "the reason was not neutralised: $(gh_log | grep 'issue close' | head -1)"
+  gh_log | grep -qxF "api -X DELETE repos/{owner}/{repo}/branches/feature/$F/protection" || fail "the protection was not removed"
+  [ ! -e "$MAIN/pwned" ] && [ ! -e pwned ] || fail "the reason was run"
+  expect_eq "$(events integration | tail -1 | jq -r '[.step, .status] | join(" ")')" "dropped done"
+}
+
+test_drop_deletes_nothing_unless_every_branch_is_kept() {
+  integ_setup; saved_tests
+  local o=$TEST_TMP/origin.git
+  ticket_in_gh 5 ticket "feature:$F"
+  git -C "$o" tag "stopped/integrate/$F" main                                                  # a tag already there, elsewhere
+  orch drop "$F" --reason "the human stopped it"; expect_rc 1; expect_err "could not keep integrate/$F as the tag stopped/integrate/$F"
+  expect_err "nothing was deleted"
+  origin_has "feature/$F" && origin_has "integrate/$F" || fail "a branch was deleted"
+  [ -z "$(gh_log | grep 'close\|DELETE')" ] || fail "a refused drop changed GitHub: $(gh_log | grep 'close\|DELETE')"
   on_main
 }
 
