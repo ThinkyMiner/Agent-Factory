@@ -74,4 +74,18 @@ test_forged_trailer_is_a_documented_limit() {
   run "$L" main; expect_rc 0
 }
 
+
+test_a_sync_branch_is_exempt() {
+  setup; tests_commit a; echo weakened > tests/acceptance/a.test; git commit -qam "after the lock"
+  HEAD_REF=sync/f001-share run "$L" main; expect_rc 0; expect_out "sync/f001-share brings main's files unchanged"
+  run "$L" main; expect_rc 1                                                        # without it, as before
+  HEAD_REF=work/7-thing run "$L" main; expect_rc 1
+  HEAD_REF=Sync/f001-share run "$L" main; expect_rc 1; expect_err "a.test"          # no look-alike
+  local b
+  for b in 'sync/f1-x' 'sync/../x' 'sync/$(touch pwned)' 'sync/' $'sync/f001-x\n' 'sync/f001-x/y'; do
+    HEAD_REF=$b run "$L" main; [ "$RC" = 1 ] || fail "[$b] gave exit $RC"; expect_err "not a feature's sync branch"
+  done
+  [ ! -e pwned ] || fail "a branch name was run"
+}
+
 run_tests

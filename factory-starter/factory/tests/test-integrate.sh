@@ -152,7 +152,7 @@ test_scenario_two_failed_rounds_then_a_third_escalates() {
 
 test_only_the_orchestrator_integrates() {
   integ_setup
-  for c in tests save run tickets pr close; do
+  for c in tests save run tickets pr close sync; do
     by backend "$I" "$c" "$F"; expect_rc 1; expect_err "only the orchestrator integrates"
     cd "$BE"; FACTORY_TEAM=orchestrator run "$I" "$c" "$F"; expect_rc 1; expect_err "this session has no team (FACTORY_TEAM=orchestrator"
     cd "$MAIN"; FACTORY_TEAM=backend run "$I" "$c" "$F"; expect_rc 1; expect_err "this session has no team"
@@ -167,7 +167,7 @@ test_feature_ids_are_validated_before_use() {
   integ_setup
   for x in '' F001-share 'f01-x' '../f001-x' 'f001-x/../../etc' 'f001-x;touch pwned' 'f001-$(touch pwned)' \
            'f001-`touch pwned`' "$(printf 'f001-x\nf002-y')" '-f001-x' 'f001-' "f001-$(head -c 60 /dev/zero | tr '\0' a)"; do
-    for c in tests run ready; do orch "$c" "$x"; expect_rc 1; expect_err "usage: integrate.sh $c <feature>"; done
+    for c in tests run ready sync; do orch "$c" "$x"; expect_rc 1; expect_err "usage: integrate.sh $c <feature>"; done
   done
   orch frobnicate "$F"; expect_rc 1
   [ ! -e "$MAIN/pwned" ] && [ ! -e pwned ] || fail "a feature id was executed"
@@ -531,6 +531,55 @@ test_one_integrate_at_a_time() {
   expect_rc 1; expect_err "another integrate.sh is running"
   origin_has "integrate/$F:features/$F/e2e-report.md" && fail "a round ran while another held the lock"
   true
+}
+
+
+# ---- sync: main merged into feature/<f> ----
+test_sync_merges_main_into_the_feature_branch_without_touching_the_checkout() {
+  integ_setup
+  orch sync "$F"; expect_rc 0; expect_out "feature/$F already holds everything on main: nothing to sync"
+  push_to human main .claude/agents/new.md "a newer prompt"; push_to human main factory/notes.txt "a kit fix"
+  mkdir -p "$MAIN/.factory/planning" && echo c002-next > "$MAIN/.factory/planning/active"   # runs during planning
+  echo dirt > "$MAIN/server/dirt.txt"                                                        # and in a dirty checkout
+  local before; before=$(git -C "$MAIN" rev-parse HEAD)
+  orch sync "$F"; expect_rc 0; expect_out "sync/$F -> feature/$F: pull request #1 (opened)"; expect_out "gh pr merge 1 --merge"
+  expect_eq "$(git -C "$MAIN" rev-parse HEAD)" "$before" "the main checkout's commit"; on_main
+  [ "$(cat "$MAIN/server/dirt.txt")" = dirt ] || fail "the checkout's own file changed"
+  local o=$TEST_TMP/origin.git
+  expect_eq "$(git -C "$o" show "sync/$F:factory/notes.txt")" "a kit fix"
+  git -C "$o" cat-file -e "sync/$F:features/$F/acceptance.md" || fail "the feature's own files are not on sync/$F"
+  expect_eq "$(git -C "$o" rev-parse "sync/$F^1") $(git -C "$o" rev-parse "sync/$F^2")" \
+            "$(git -C "$o" rev-parse "feature/$F") $(git -C "$o" rev-parse main)" "sync/$F's parents"
+  p=$(ls "$FAKE_GH/pulls" | head -1); p=${p%.json}
+  expect_eq "$(jq -r '[.title, .head.ref, .base.ref] | join(" ")' "$FAKE_GH/pulls/$p.json")" "Sync main into feature/$F sync/$F feature/$F"
+  # CI's ownership check, in a clone of its own, accepts what sync pushed
+  git clone -q "$o" "$TEST_TMP/ci" && git -C "$TEST_TMP/ci" switch -q "sync/$F"
+  (cd "$TEST_TMP/ci" && HEAD_REF="sync/$F" bash "$SCRIPTS/check-ownership.sh" "origin/feature/$F") > "$TEST_TMP/own.out" 2>&1 ||
+    fail "the ownership check refused the sync: $(cat "$TEST_TMP/own.out")"
+  grep -qF "factory/notes.txt  (as on main)" "$TEST_TMP/own.out" || fail "$(cat "$TEST_TMP/own.out")"
+  # again, main unchanged: nothing pushed, so a label on the pull request stays valid
+  local first; first=$(git -C "$o" rev-parse "sync/$F")
+  orch sync "$F"; expect_rc 0; expect_out "pull request #$p"; expect_eq "$(git -C "$o" rev-parse "sync/$F")" "$first" "sync/$F after a second run"
+  ! grep -q "(updated)\|(opened)" "$OUT" || fail "a second run pushed again: $(cat "$OUT")"
+  # main moves on: the same pull request, updated
+  push_to human main factory/notes.txt "a second kit fix"
+  orch sync "$F"; expect_rc 0; expect_out "pull request #$p (updated)"
+  expect_eq "$(ls "$FAKE_GH/pulls" | wc -l | tr -d ' ')" 1 "pull requests"
+  expect_eq "$(git -C "$o" show "sync/$F:factory/notes.txt")" "a second kit fix"
+  git -C "$o" update-ref "refs/heads/feature/$F" "sync/$F"                                  # merged with a merge commit
+  orch sync "$F"; expect_rc 0; expect_out "nothing to sync"
+}
+
+test_sync_refuses_when_main_and_the_feature_both_changed_a_file() {
+  integ_setup
+  push_to backend "feature/$F" e2e.sh "$(sed '1s/$/ # the feature/' "$MAIN/e2e.sh")"
+  push_to human main e2e.sh "$(sed '$s/$/ # main/' "$MAIN/e2e.sh")"                         # merges cleanly, but both changed it
+  orch sync "$F"; expect_rc 1; expect_err "main and feature/$F both changed: e2e.sh"
+  push_to human main server/share.txt "links expire after 1 day"; fix_lands                # both changed one line: a conflict
+  orch sync "$F"; expect_rc 1; expect_err "main and feature/$F conflict"
+  origin_has "sync/$F" && fail "a refused sync was pushed"
+  [ -z "$(ls "$FAKE_GH/pulls")" ] || fail "a refused sync opened a pull request"
+  on_main
 }
 
 run_tests

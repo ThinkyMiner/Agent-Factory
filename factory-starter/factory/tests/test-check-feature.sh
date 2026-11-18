@@ -368,4 +368,28 @@ test_runs_from_a_ci_copy_and_a_subfolder() {
   cd server && run bash "$TEST_TMP/ci/check-feature.sh" origin/main; expect_rc 0
 }
 
+
+test_a_sync_branch_goes_to_its_own_feature_branch_only() {
+  world; git switch -q -c "sync/$F" "origin/feature/$F"; git merge -q --no-edit origin/main >/dev/null
+  mkdir -p docs; echo x > docs/notes.md; commit; head_is "sync/$F"                 # no work folder: not an item
+  gate "origin/feature/$F"; expect_rc 0; expect_out "feature: sync/$F -> feature/$F: main merged into the feature branch"
+  gate origin/main; expect_rc 1; expect_err "sync/$F goes to feature/$F only, not main"
+  git update-ref refs/remotes/origin/feature/f002-other HEAD
+  gate origin/feature/f002-other; expect_rc 1; expect_err "goes to feature/$F only, not feature/f002-other"
+  local r
+  for r in 'sync/../x' 'sync/f1-x' "Sync/$F" "SYNC/$F" 'sync/$(touch pwned)' 'sync/' "sync/$F/x" "sync/$F;id"; do
+    HEAD_REF=$r gate "origin/feature/$F"; [ "$RC" = 1 ] || fail "head ref [$r] gave exit $RC"; expect_err "cannot parse the branch"
+  done
+  [ ! -e pwned ] && [ ! -e "$TEST_TMP/pwned" ] || fail "a head ref was run"
+  [ ! -f "$TEST_TMP/gh/log" ] || fail "asked GitHub about a sync: $(cat "$TEST_TMP/gh/log")"
+}
+
+test_ci_takes_every_check_from_main() {
+  local y=$KIT/.github/workflows/ci.yml
+  grep -qx '  RULES: origin/main' "$y" || fail "ci.yml does not set RULES: origin/main"
+  ! grep -n '"\$BASE:factory/' "$y" || fail "ci.yml reads a check from the base branch, which a feature branch freezes at dispatch"
+  [ "$(grep -c 'git show "\$RULES:factory/' "$y")" -ge 10 ] || fail "ci.yml copies fewer checks from main than expected"
+  grep -q 'bash /tmp/check-acceptance-lock.sh "\$BASE"' "$y" || fail "the acceptance lock does not run main's copy"
+}
+
 run_tests

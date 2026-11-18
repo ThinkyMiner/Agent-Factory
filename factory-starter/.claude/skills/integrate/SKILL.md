@@ -24,6 +24,13 @@ opens. Each step says when it applies: do the next one. When the feature waits o
 it waits for and stop. When `integrate.sh` refuses, tell the human what it said and stop; never
 work around it.
 
+## 0. Main moved on
+Every time, first: `factory/scripts/integrate.sh sync <f>`. "nothing to sync" means feature/<f>
+already holds main. Otherwise it opens, or keeps, a sync pull request that brings main's factory
+changes to the feature: tell the human its number and the merge command it printed, and that
+sessions started before it merges keep their old agent prompts until restarted. Then go on below;
+the sync does not hold up integration. When it refuses, tell the human what it said.
+
 ## 1. E2E tests, before anyone builds
 When `factory/scripts/integrate.sh ready <f>` exits 1 (no tests yet):
 - `factory/scripts/integrate.sh tests <f>`. It refuses until research's `features/<f>/acceptance.md`

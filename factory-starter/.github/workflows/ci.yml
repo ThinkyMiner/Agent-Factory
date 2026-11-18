@@ -9,6 +9,13 @@ on:
   push:
     branches: [main]
 
+# Every check script and rule file comes from main (RULES), never from the pull request, so a pull
+# request cannot relax its own gate. Main, not the base branch: a feature branch keeps the factory
+# from the day it was dispatched, and its pull requests are held to today's checks all the same.
+# The base branch is still what each check compares the pull request with.
+env:
+  RULES: origin/main
+
 permissions:
   contents: read
   pull-requests: read
@@ -28,10 +35,10 @@ jobs:
         env:
           BASE: origin/${{ github.base_ref }}
         run: |
-          # The base branch's copy of the check, so a pull request cannot relax it; the pull
+          # Main's copy of the check (RULES), so a pull request cannot relax it; the pull
           # request's copy only before it exists there (and on pushes to main).
-          if [ -n "${GITHUB_BASE_REF:-}" ] && git cat-file -e "$BASE:factory/scripts/check-contracts.sh" 2>/dev/null; then
-            git show "$BASE:factory/scripts/check-contracts.sh" > /tmp/check-contracts.sh
+          if [ -n "${GITHUB_BASE_REF:-}" ] && git cat-file -e "$RULES:factory/scripts/check-contracts.sh" 2>/dev/null; then
+            git show "$RULES:factory/scripts/check-contracts.sh" > /tmp/check-contracts.sh
           else
             cp factory/scripts/check-contracts.sh /tmp/check-contracts.sh
           fi
@@ -44,21 +51,30 @@ jobs:
           # Every research/**/brief.md the pull request adds or changes: each finding cites a source
           # that quotes it, anything unsourced is a labelled assumption or hypothesis. The base
           # branch's copy of the check, like the contracts step; the pull request's only before.
-          if git cat-file -e "$BASE:factory/scripts/check-brief.sh" 2>/dev/null; then
-            git show "$BASE:factory/scripts/check-brief.sh" > /tmp/check-brief.sh
+          if git cat-file -e "$RULES:factory/scripts/check-brief.sh" 2>/dev/null; then
+            git show "$RULES:factory/scripts/check-brief.sh" > /tmp/check-brief.sh
           else
             cp factory/scripts/check-brief.sh /tmp/check-brief.sh
           fi
           bash /tmp/check-brief.sh --changed "$BASE"
       - name: Acceptance tests unchanged since the tests commit
         if: github.event_name == 'pull_request'
-        run: factory/scripts/check-acceptance-lock.sh "origin/${{ github.base_ref }}"
+        env:
+          BASE: origin/${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}    # sync/<f>: exempt, it brings main's files unchanged
+        run: |
+          if git cat-file -e "$RULES:factory/scripts/check-acceptance-lock.sh" 2>/dev/null; then
+            git show "$RULES:factory/scripts/check-acceptance-lock.sh" > /tmp/check-acceptance-lock.sh
+          else
+            cp factory/scripts/check-acceptance-lock.sh /tmp/check-acceptance-lock.sh
+          fi
+          bash /tmp/check-acceptance-lock.sh "$BASE"
       - name: Feature gate
         # Team mode: a feature reaches main only from integrate/<f>, once its e2e report and research's
         # acceptance review pass, feature/<f> is protected like main and `make e2e` passes here; a
         # feature branch takes only its own feature's items. A step in this job, not a job of its own:
         # a skipped required job counts as passing, so the gate always runs and decides inside.
-        # The base branch's copy, like the contracts step; the pull request's only before it exists.
+        # Main's copy, like the contracts step; the pull request's only before it exists.
         if: github.event_name == 'pull_request'
         env:
           BASE: origin/${{ github.base_ref }}
@@ -68,8 +84,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           mkdir -p /tmp/feat
-          if git cat-file -e "$BASE:factory/scripts/check-feature.sh" 2>/dev/null; then
-            git show "$BASE:factory/scripts/check-feature.sh" > /tmp/feat/check-feature.sh
+          if git cat-file -e "$RULES:factory/scripts/check-feature.sh" 2>/dev/null; then
+            git show "$RULES:factory/scripts/check-feature.sh" > /tmp/feat/check-feature.sh
           else
             cp factory/scripts/check-feature.sh /tmp/feat/check-feature.sh
           fi
@@ -96,8 +112,8 @@ jobs:
 
   ownership:
     # Team mode (factory/teams.json): a pull request changes only its own team's paths. The check
-    # and the roster both come from the base branch, so a pull request cannot widen its own
-    # ownership. A base branch without them is a single-team factory: nothing to check.
+    # comes from main and the roster from the base branch, never from the pull request, so it cannot
+    # widen its own ownership. A base branch without a roster is a single-team factory: nothing to check.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -112,25 +128,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          if git cat-file -e "$BASE:factory/scripts/check-ownership.sh" 2>/dev/null; then
+          if git cat-file -e "$RULES:factory/scripts/check-ownership.sh" 2>/dev/null; then
             mkdir -p /tmp/own
-            git show "$BASE:factory/scripts/check-ownership.sh" > /tmp/own/check-ownership.sh
-            git show "$BASE:factory/scripts/lib.sh" > /tmp/own/lib.sh
+            git show "$RULES:factory/scripts/check-ownership.sh" > /tmp/own/check-ownership.sh
+            git show "$RULES:factory/scripts/lib.sh" > /tmp/own/lib.sh
             bash /tmp/own/check-ownership.sh "$BASE"
           else
-            echo "No ownership check on $BASE: a single-team factory."
+            echo "No ownership check on $RULES: a single-team factory."
           fi
       - name: Approved decisions only gain status superseded
         env:
           BASE: origin/${{ github.base_ref }}
         run: |
-          if git cat-file -e "$BASE:factory/scripts/decisions.sh" 2>/dev/null; then
+          if git cat-file -e "$RULES:factory/scripts/decisions.sh" 2>/dev/null; then
             mkdir -p /tmp/dec
-            git show "$BASE:factory/scripts/decisions.sh" > /tmp/dec/decisions.sh
-            git show "$BASE:factory/scripts/lib.sh" > /tmp/dec/lib.sh
+            git show "$RULES:factory/scripts/decisions.sh" > /tmp/dec/decisions.sh
+            git show "$RULES:factory/scripts/lib.sh" > /tmp/dec/lib.sh
             bash /tmp/dec/decisions.sh check-append-only "$BASE"
           else
-            echo "No decisions check on $BASE yet."
+            echo "No decisions check on $RULES yet."
           fi
 
   risk-gate:
@@ -150,8 +166,8 @@ jobs:
           # file that does not exist on main yet.
           mkdir -p /tmp/risk
           for f in scripts/classify-risk.sh risk-rules.txt scripts/risk-tier.sh scripts/check-specialists.sh scripts/lib.sh; do
-            if git cat-file -e "$BASE:factory/$f" 2>/dev/null; then
-              git show "$BASE:factory/$f" > "/tmp/risk/${f##*/}"
+            if git cat-file -e "$RULES:factory/$f" 2>/dev/null; then
+              git show "$RULES:factory/$f" > "/tmp/risk/${f##*/}"
             elif [ -f "factory/$f" ]; then
               cp "factory/$f" "/tmp/risk/${f##*/}"
             fi
@@ -159,7 +175,7 @@ jobs:
           # The tier is the highest of the path rules, the spec's risk_floor, the floors of the
           # decision records it names and the RISK of every report in its work folder. Until
           # main has risk-tier.sh, the path rules alone, as before; never the PR's own copy.
-          if git cat-file -e "$BASE:factory/scripts/risk-tier.sh" 2>/dev/null; then
+          if git cat-file -e "$RULES:factory/scripts/risk-tier.sh" 2>/dev/null; then
             tier=$(RISK_RULES=/tmp/risk/risk-rules.txt bash /tmp/risk/risk-tier.sh "$BASE")
           else
             tier=$(RISK_RULES=/tmp/risk/risk-rules.txt bash /tmp/risk/classify-risk.sh "$BASE")
@@ -174,11 +190,11 @@ jobs:
         run: |
           # Team mode: the work item carries a passing report from each specialist its tier,
           # team and paths call for (review, ui-review, security, db-review). main's copy of the
-          # check and roster, like the classifier; none on main yet, nothing to check.
-          if git cat-file -e "$BASE:factory/scripts/check-specialists.sh" 2>/dev/null; then
+          # check, like the classifier, and the base branch's roster; none on main yet, nothing to check.
+          if git cat-file -e "$RULES:factory/scripts/check-specialists.sh" 2>/dev/null; then
             bash /tmp/risk/check-specialists.sh "$BASE" "$TIER"
           else
-            echo "No specialists' check on $BASE yet."
+            echo "No specialists' check on $RULES yet."
           fi
       - name: Enforce the human gate
         env:
@@ -196,8 +212,8 @@ jobs:
             R2)
               # The label must be yours and newer than the last push (check-approval.sh), using
               # main's copy of the check, like the classifier.
-              if git cat-file -e "$BASE:factory/scripts/check-approval.sh" 2>/dev/null; then
-                git show "$BASE:factory/scripts/check-approval.sh" > /tmp/approval.sh
+              if git cat-file -e "$RULES:factory/scripts/check-approval.sh" 2>/dev/null; then
+                git show "$RULES:factory/scripts/check-approval.sh" > /tmp/approval.sh
               else
                 cp factory/scripts/check-approval.sh /tmp/approval.sh
               fi

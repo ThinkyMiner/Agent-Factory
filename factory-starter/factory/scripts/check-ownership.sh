@@ -17,6 +17,10 @@
 # e2e-report.md, attribution.md, FEATURE.md, tickets.jsonl) or exactly what merging origin/feature/<f>
 # into the base gives (absent from both counts as the same): changes reach main through
 # feature/<f>'s pull requests, which met every check on the way in.
+# A sync/<f> branch's pull request (integrate.sh sync: main merged into feature/<f>) goes to feature/<f>
+# only. Each path it changes is as on the newest origin/main commit it holds, and feature/<f> has not
+# changed that path since it left main: it brings main's files, which met every check on the way in,
+# and never overwrites the feature's work. Its tier comes from its paths, as for any pull request.
 # A team's pull request changes contracts/ only when its work folder's id is a GitHub issue
 # labelled ticket, type:contract-change, to:<its team> and state:accepted or state:done (read with
 # gh, so GH_TOKEN and GH_REPO in CI); a gh failure is a violation, never a pass.
@@ -33,6 +37,7 @@ command -v jq >/dev/null 2>&1 || { echo "ownership: jq is not installed" >&2; ex
 
 base=${1:-origin/main}
 git rev-parse -q --verify "$base^{commit}" >/dev/null || { echo "ownership: unknown base ref $base" >&2; exit 2; }
+git merge-base "$base" HEAD >/dev/null 2>&1 || { echo "ownership: HEAD shares no history with $base" >&2; exit 1; }
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 teams=${TEAMS_FILE:-}
 if [ -z "$teams" ]; then
@@ -105,6 +110,28 @@ case "$head_ref" in
       printf '  %s  (%s)\n' "$f" "$verdict"
     done < "$tmp/files"
     [ "$bad" = 0 ] || { echo "ownership: this planning pull request changes paths it may not (above)" >&2; exit 1; }
+    echo "ownership: ok"; exit 0 ;;
+  sync/*)
+    feat=${head_ref#sync/}
+    if ! [[ "$feat" =~ ^f[0-9]{3}-[a-z0-9][a-z0-9-]{0,40}$ ]]; then
+      echo "ownership: $head_ref is not a feature's sync branch (sync/f001-slug)" >&2; exit 1
+    fi
+    case "$base" in "feature/$feat"|"origin/feature/$feat") ;; *) echo "ownership: sync/$feat goes to feature/$feat only, not $base" >&2; exit 1 ;; esac
+    M=refs/remotes/origin/main
+    git rev-parse -q --verify "$M^{commit}" >/dev/null || { echo "ownership: origin/main does not exist, so sync/$feat cannot be compared with it" >&2; exit 2; }
+    sync_refs "$M" "$base" HEAD || { echo "ownership: sync/$feat shares no history with origin/main and $base" >&2; exit 1; }
+    echo "ownership: sync pull request for $feat (main merged into feature/$feat)"
+    bad=0
+    while IFS= read -r -d '' f; do
+      case $(sync_verdict "$base" HEAD "$f") in
+        ok) verdict="as on main" ;;
+        both) verdict="NOT OK: feature/$feat changed it too since it left main; the two meet at integration" ;;
+        *) verdict="NOT OK: not as on main; a sync brings main's files unchanged" ;;
+      esac
+      case "$verdict" in NOT\ OK*) bad=1 ;; esac
+      printf '  %s  (%s)\n' "$f" "$verdict"
+    done < "$tmp/files"
+    [ "$bad" = 0 ] || { echo "ownership: this sync pull request changes paths it may not (above)" >&2; exit 1; }
     echo "ownership: ok"; exit 0 ;;
   integrate/*)
     feat=${head_ref#integrate/}

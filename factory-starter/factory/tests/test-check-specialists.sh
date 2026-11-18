@@ -296,4 +296,18 @@ test_runs_from_a_ci_copy() {
   run bash "$TEST_TMP/ci/check-specialists.sh" main R2; expect_rc 1; expect_out "MISSING      security.md"
 }
 
+
+test_sync_branch_is_exempt() {
+  setup; item 12-share "team: backend"; item 13-more "team: frontend"; echo x >> server/a.js; commit   # two items, no reports
+  HEAD_REF=sync/f001-share-links run "$S" main R2; expect_rc 0
+  expect_out "sync/f001-share-links: exempt. It brings main's files unchanged (the ownership check makes sure)"
+  HEAD_REF=Sync/f001-share-links run "$S" main R2; expect_rc 1; expect_err "exactly one work folder"   # no look-alike
+  HEAD_REF=sync/f001-share-links run "$S" --needs main R2; expect_rc 1                      # --needs ignores it
+  local b
+  for b in 'sync/../x' 'sync/f1-x' $'sync/f001-x\n' 'sync/f001-x/y' 'sync/$(touch pwned)' 'sync/' 'sync/F001-x'; do
+    HEAD_REF=$b run "$S" main R1; [ "$RC" = 1 ] || fail "[$b] gave exit $RC"; expect_err "not a feature's sync branch"
+  done
+  [ ! -e pwned ] || fail "a branch name was run"
+}
+
 run_tests

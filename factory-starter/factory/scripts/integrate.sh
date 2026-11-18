@@ -26,11 +26,21 @@
 #   integrate.sh close <f>                  after that pull request merged: delete feature/<f> and
 #                                           integrate/<f>; the next cycle may be dispatched
 #   integrate.sh ready <f>                  exit 0 when origin/integrate/<f> holds tests/e2e/<f>/
+#   integrate.sh sync <f>                   when main has moved on (a factory change merged after
+#                                           dispatch): push sync/<f>, origin/main merged into
+#                                           origin/feature/<f>, and open its pull request to feature/<f>.
+#                                           Refuses when the two conflict or both changed a file: they
+#                                           meet at integration. Touches no checkout, so it runs during
+#                                           planning too. Its tier comes from its paths (factory
+#                                           files: R2, the human approves); it merges with a merge
+#                                           commit, never a squash, so main becomes part of feature/<f>.
+#                                           Pushes nothing when sync/<f> already holds both.
 # Exit codes: 0 ok; 1 refused or failed (run: e2e failed in round 1); 3 escalated to the human (e2e
 # failed in two rounds); 4 a merge conflict, ticketed to the owning teams.
 # Refuses while a planning cycle is open (planning and integration share the main checkout in
-# version 1) or the checkout has uncommitted changes (save excepted). Every subcommand but tests
-# leaves the checkout on main, unless that would carry uncommitted work there; then it says so.
+# version 1; sync excepted) or the checkout has uncommitted changes (save, sync excepted). Every
+# subcommand but tests leaves the checkout on main, unless that would carry uncommitted work
+# there; then it says so.
 # Text posted to GitHub goes through ticket.sh or clean_text; nothing read is ever run.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -39,7 +49,7 @@ die() { echo "integrate: $*" >&2; exit 1; }
 say() { echo "integrate: $*"; }
 
 cmd=${1:-}; f=${2:-}
-case "$cmd" in tests|save|run|tickets|pr|close|ready) ;; *) sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1 ;; esac
+case "$cmd" in tests|save|run|tickets|pr|close|ready|sync) ;; *) sed -n '2,43p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1 ;; esac
 [[ "$f" =~ ^f[0-9]{3}-[a-z0-9][a-z0-9-]{0,40}$ ]] || die "usage: integrate.sh $cmd <feature> (like f001-share-links)"
 shift 2
 top=$(git rev-parse --show-toplevel 2>/dev/null) || die "run this inside the factory's repository"
@@ -57,6 +67,44 @@ fi
 
 me=$(session_team "$top") || die "this session has no team (FACTORY_TEAM=${FACTORY_TEAM:-unset} in $top)"
 [ "$me" = orchestrator ] || die "only the orchestrator integrates; $me can check integrate.sh ready $f"
+
+if [ "$cmd" = sync ]; then
+  command -v gh >/dev/null 2>&1 || die "gh is not installed"
+  git fetch -q --prune origin || die "cannot reach origin"
+  F="refs/remotes/origin/feature/$f" M=refs/remotes/origin/main
+  git rev-parse -q --verify "$F^{commit}" >/dev/null || die "feature/$f is not on origin: dispatch.sh makes it"
+  git rev-parse -q --verify "$M^{commit}" >/dev/null || die "origin/main does not exist"
+  if git merge-base --is-ancestor "$M" "$F"; then say "feature/$f already holds everything on main: nothing to sync"; exit 0; fi
+  S="refs/remotes/origin/sync/$f" pushed=""
+  # Already pushed and holding both (a label on its pull request stays valid): push nothing.
+  if ! { git rev-parse -q --verify "$S^{commit}" >/dev/null && git merge-base --is-ancestor "$M" "$S" &&
+         git merge-base --is-ancestor "$F" "$S"; }; then
+    rc=0; t=$(git merge-tree --write-tree --no-messages "$F" "$M" 2>/dev/null) || rc=$?
+    t=${t%%$'\n'*}
+    [ "$rc" = 0 ] && git cat-file -e "$t^{tree}" 2>/dev/null ||
+      die "main and feature/$f conflict, so main cannot be merged in: they meet at integration (integrate.sh run)"
+    c=$(git commit-tree "$t" -p "$F" -p "$M" -m "Sync main into feature/$f") || die "cannot make the merge commit"
+    sync_refs "$M" "$F" "$c" || die "feature/$f shares no history with main"
+    bad=""
+    while IFS= read -r -d '' p; do
+      [ "$(sync_verdict "$F" "$c" "$p")" = ok ] || bad+=" $(printf '%s' "$p" | tr -d '\000-\037\177' | cut -c1-80)"
+    done < <(git diff -z --name-only --no-renames "$F...$c")
+    [ -z "$bad" ] || die "main and feature/$f both changed:$bad. A sync brings only files the feature never changed; they meet at integration (integrate.sh run)"
+    git push -q -f origin "$c:refs/heads/sync/$f" || die "cannot push sync/$f"
+    pushed=" (updated)"
+  fi
+  n=$(gh pr list --head "sync/$f" --base "feature/$f" --state open --json number --jq '.[0].number // empty' </dev/null) ||
+    die "cannot list pull requests on GitHub"
+  if [ -z "$n" ]; then
+    url=$(gh pr create --base "feature/$f" --head "sync/$f" --title "Sync main into feature/$f" \
+      --body "Merges main into feature/$f, so the factory changes made since dispatch reach this feature's sessions and scripts. Every path is as on main and untouched by the feature (the ownership check makes sure). Merge it with a merge commit, not a squash, so main becomes part of feature/$f and the next sync starts from here." </dev/null) ||
+      die "cannot open the pull request sync/$f -> feature/$f"
+    n=${url##*/}; [[ "$n" =~ ^[0-9]+$ ]] || die "unexpected answer from gh: $url"; pushed=" (opened)"
+  fi
+  say "sync/$f -> feature/$f: pull request #$n$pushed"
+  say "the human approves it (human-approved) and merges it with a merge commit, not a squash, so main becomes part of feature/$f: gh pr merge $n --merge"
+  exit 0
+fi
 if c=$(active_cycle "$home"); then
   die "planning cycle $c is open, and planning and integration share the main checkout in version 1: finish it (or round.sh abandon), then run this again"
 fi

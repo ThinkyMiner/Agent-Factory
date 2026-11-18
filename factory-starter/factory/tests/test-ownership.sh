@@ -382,4 +382,71 @@ test_unreadable_roster_fails() {
   expect_rc 1; expect_err "unreadable"
 }
 
+
+# ---- sync/<f>: main merged into feature/<f> ----
+# syncb <f>: feature/<f> (a ref, as a clone has it) with a backend item; main then gains factory and
+# human files (origin/main); the checkout is sync/<f>, origin/main merged into the feature branch.
+syncb() {
+  git switch -q main && git switch -q -c "feature/$1"
+  item 12-share "team: backend"; printf '%s\n' 1 2 3 4 5 6 7 8 9 > server/c.js; echo works > server/a.js; commit
+  git update-ref "refs/remotes/origin/feature/$1" HEAD
+  git switch -q main; mkdir -p .claude/agents; echo new > .claude/agents/x.md
+  jq '.limits = {slot_hours: 6}' factory/teams.json > t && mv t factory/teams.json
+  echo brief > product/BRIEF.md; commit; git update-ref refs/remotes/origin/main HEAD
+  git switch -q -c "sync/$1" "refs/remotes/origin/feature/$1"; git merge -q --no-edit main >/dev/null; git branch -q -D "feature/$1"
+}
+sync_check() { HEAD_REF=sync/f001-share run "$O" origin/feature/f001-share; }
+
+test_sync_pr_brings_main_into_the_feature_branch() {
+  setup; syncb f001-share
+  sync_check; expect_rc 0; expect_out "sync pull request for f001-share (main merged into feature/f001-share)"
+  expect_out ".claude/agents/x.md  (as on main)"; expect_out "factory/teams.json  (as on main)"; expect_out "product/BRIEF.md  (as on main)"
+  git switch -q main; echo newer > .claude/agents/x.md; commit; git update-ref refs/remotes/origin/main HEAD; git switch -q sync/f001-share
+  sync_check; expect_rc 0                                       # main moved on: the sync brings what main had
+  run "$O" origin/feature/f001-share; expect_rc 0; expect_out "sync pull request"   # the branch name from git
+}
+
+test_sync_pr_changes_nothing_main_does_not() {
+  local c
+  for c in 'echo sneaky > server/a.js' 'echo x > web/new.js' "echo '##' >> factory/teams.json" 'git rm -q product/INBOX.md' \
+           'chmod +x .claude/agents/x.md' 'echo old > .claude/agents/x.md' 'mkdir -p work/13-x && echo x > work/13-x/spec.md' \
+           'mkdir -p .github && echo x > .github/ci.yml' 'echo x > CLAUDE.md'; do
+    setup; syncb f001-share; eval "$c"; commit
+    sync_check; [ "$RC" = 1 ] || fail "[$c] passed: $(cat "$OUT")"
+    expect_out "(NOT OK: not as on main; a sync brings main's files unchanged)"
+  done
+}
+
+test_sync_pr_never_overwrites_the_feature_s_work() {
+  setup; syncb f001-share; echo base > server/a.js; commit                        # main's version over the feature's work
+  sync_check; expect_rc 1; expect_out "server/a.js  (NOT OK: feature/f001-share changed it too since it left main; the two meet at integration)"
+  setup; git switch -q main; printf '%s\n' 1 2 3 4 5 6 7 8 9 > server/c.js; commit
+  syncb f001-share                                                                # here the feature changed nothing in c.js yet
+  git switch -q main; perl -pi -e 's/^9$/nine/' server/c.js; commit; git update-ref refs/remotes/origin/main HEAD
+  git update-ref refs/remotes/origin/feature/f001-share sync/f001-share           # the first sync merged
+  git switch -q -c feature/f001-share sync/f001-share; perl -pi -e 's/^1$/one/' server/c.js; commit   # then the feature changes c.js
+  git update-ref refs/remotes/origin/feature/f001-share HEAD; git switch -q -C sync/f001-share HEAD; git branch -q -D feature/f001-share
+  git merge -q --no-edit main >/dev/null                                          # merges cleanly: both lines changed
+  sync_check; expect_rc 1; expect_out "server/c.js  (NOT OK"
+}
+
+test_sync_branch_names_and_base() {
+  setup; syncb f001-share
+  local b
+  for b in 'sync/F001-share' 'sync/f1-x' 'sync/../x' 'sync/f001-x;id' 'sync/$(touch pwned)' 'sync/' $'sync/f001-share\n'; do
+    HEAD_REF=$b run "$O" origin/feature/f001-share; [ "$RC" = 1 ] || fail "[$b] gave exit $RC"; expect_err "is not a feature's sync branch"
+  done
+  [ ! -e pwned ] || fail "a branch name was run"
+  HEAD_REF=sync/f001-share run "$O" main; expect_rc 1; expect_err "sync/f001-share goes to feature/f001-share only, not main"
+  git update-ref refs/remotes/origin/feature/f002-other refs/remotes/origin/feature/f001-share
+  HEAD_REF=sync/f002-other run "$O" origin/feature/f001-share; expect_rc 1; expect_err "goes to feature/f002-other only"
+  HEAD_REF=sync/f001-share run "$O" origin/feature/f002-other; expect_rc 1; expect_err "goes to feature/f001-share only"
+  git update-ref -d refs/remotes/origin/main
+  sync_check; expect_rc 2; expect_err "origin/main does not exist"
+  git switch -q --orphan stray; echo x > lone.txt; git add -A; git commit -qm stray
+  git update-ref refs/remotes/origin/main main
+  sync_check; expect_rc 1; expect_err "shares no history"                        # no history with the feature branch
+  run "$O" main; expect_rc 1; expect_err "HEAD shares no history with main"         # any pull request, not only a sync
+}
+
 run_tests

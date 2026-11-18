@@ -91,10 +91,10 @@ At start, resume and compaction the `session-start.sh` hook prints the team's ch
 
 | Rule | Guard hook (as it happens) | CI (before merge) |
 |---|---|---|
-| A team writes only its own paths, its own work folders and append-only paths (by appending) | `guard.sh` checks every Edit, Write and every file a shell command writes | `ownership` job: `check-ownership.sh` with the roster from the base branch |
+| A team writes only its own paths, its own work folders and append-only paths (by appending) | `guard.sh` checks every Edit, Write and every file a shell command writes | `ownership` job: `main`'s `check-ownership.sh` with the roster from the base branch |
 | A session writes only inside its own worktree (and temp dirs) | `guard.sh` | (not applicable) |
 | A pull request carries one work folder; its spec's `team:` decides the team | (not applicable) | `ownership` |
-| A pull request cannot widen its own ownership | the roster is blocked for sessions | roster and script read from the base branch |
+| A pull request cannot widen its own ownership | the roster is blocked for sessions | script from `main`, roster from the base branch |
 | Factory files change only in their own pull request | blocked for sessions | `ownership` fails a team PR that touches them; `risk-gate` makes them R2 |
 | Your files (`CLAUDE.md`, `product/BRIEF.md`, `product/ROADMAP.md`) change only in your pull requests | owned by no team, so blocked | `ownership` exempts a PR that changes only these and factory files; `risk-gate` makes them R2 (your label) |
 | Sessions do not message each other | `crossSessionInbound: "refuse"`, `ListAgents` denied | (not applicable) |
@@ -104,7 +104,7 @@ At start, resume and compaction the `session-start.sh` hook prints the team's ch
 | The planning transcript, state, positions and attachments are written only by the planning scripts | direct writes to `planning/*/discussion.jsonl`, `state.json`, `dispatch.jsonl`, `positions/`, `attachments/` and shell commands naming `.factory/planning` are blocked | a `planning/<cycle>` pull request may change only `planning/<cycle>/` (and, to supersede, earlier `DECISIONS.md`); every `planning/*` and `contracts/*` file is R2 |
 | No one reads a sealed position before the round closes | Read, Grep and Glob into `.factory/planning/*/sealed/` are blocked, for every session | (not applicable: sealed positions never leave the main checkout) |
 | Approved decisions are never rewritten | (not applicable) | `decisions.sh check-append-only`: a record on the base branch may only gain `status: superseded` and `superseded_by` |
-| An item's tier is the highest of its paths, its spec's `risk_floor`, the floors of the decision records it names and every reviewer's `RISK` | (not applicable; `/work` asks the same script) | `risk-gate` runs the base branch's `risk-tier.sh` (in single-team factories too); both names of a renamed file count |
+| An item's tier is the highest of its paths, its spec's `risk_floor`, the floors of the decision records it names and every reviewer's `RISK` | (not applicable; `/work` asks the same script) | `risk-gate` runs `main`'s `risk-tier.sh` (in single-team factories too); both names of a renamed file count |
 | Every item has a passing review; a `ui_review` team's item also a passing UI review; an R2 or R3 item a passing security review (except one that holds only acceptance criteria or an acceptance review: the build they judge gets its own); a change to a db path a passing database review | (not applicable; `/work` runs the reviewers `check-specialists.sh --needs` names) | `risk-gate` step "Specialists' reports": `check-specialists.sh` with the base branch's roster |
 | A security raise is honoured | (not applicable) | `decisions.sh validate`: every `RAISE: <record> <tier>` in `threat-model.md` or `db-review.md` needs that record's `risk_floor` at least as high (checked at each draft, at approval and by `dispatch.sh`) |
 | A contract changes only by planning or under an accepted contract-change ticket | writes to `contracts/*` need a grant for the session's team in `.factory/grants/` (only `ticket.sh accept` writes one) | `ownership`: a team PR touching `contracts/*` must be the work item of a `type:contract-change` ticket to that team, accepted or done; a planning PR may only add new contracts its cycle promoted. Generated code must match: the `check` job runs `check-contracts.sh` |
@@ -113,8 +113,9 @@ At start, resume and compaction the `session-start.sh` hook prints the team's ch
 | Every research finding is sourced | (not applicable; `/research-work` runs it as its gate) | the `check` job runs `check-brief.sh --changed`: every finding cites a source, every source has a URL, a date and a quote, unsourced ideas are labelled assumptions or hypotheses |
 | You decide which feedback research reads | `research/feedback/SOURCES.md` is blocked for every session | `ownership`: your file, even inside `research/`; R2 |
 | The UI reviewer runs only the browser tooling | a session whose `agent_type` is `ui-reviewer` may run exactly `make ui-shots URL=<url> OUT=<dir>`, nothing else | (not applicable) |
-| A feature reaches `main` only from `integrate/<f>`, once its e2e tests pass and research accepts the round | (not applicable) | the `check` job's "Feature gate" (`check-feature.sh`, the base branch's copy): `feature/*` into `main` always fails; `integrate/<f>` into `main` needs an e2e report saying pass, an acceptance review saying `VERDICT: accept` for that report's commit, nothing but records changed since that commit, `feature/<f>` protected with `main`'s checks, and `make e2e` passing in CI |
+| A feature reaches `main` only from `integrate/<f>`, once its e2e tests pass and research accepts the round | (not applicable) | the `check` job's "Feature gate" (`check-feature.sh`, `main`'s copy): `feature/*` into `main` always fails; `integrate/<f>` into `main` needs an e2e report saying pass, an acceptance review saying `VERDICT: accept` for that report's commit, nothing but records changed since that commit, `feature/<f>` protected with `main`'s checks, and `make e2e` passing in CI |
 | A feature's items go to its feature branch, and a feature branch takes only them | (not applicable; `/work` and `/research-work` branch from it) | Feature gate: a work folder whose spec says `feature: <f>` merges only into `feature/<f>`, and a pull request into `feature/<f>` carries exactly one such folder |
+| A factory change reaches a feature dispatched before it | (not applicable; `integrate.sh sync <f>` touches no checkout) | every job copies its checks from `main` (`RULES`), never from the base branch, so a feature's pull requests meet today's checks; a `sync/<f>` pull request into `feature/<f>` (main merged in) passes `ownership` only when every path it changes is as on `main` and untouched by the feature; the feature gate, specialists and acceptance lock leave it to that; its paths set its tier (factory files: R2, your label) |
 | Integration records are written only by the integration scripts and integration-qa | `features/*/e2e-report.md`, `FEATURE.md` and `tickets.jsonl` are blocked for every session (scripts only); `tests/e2e/` and `features/*/attribution.md` only for the orchestrator's session; only the orchestrator pushes `integrate/<f>` or opens a pull request into it | `ownership`: never a team's path; an `integrate/<f>` pull request changes only this feature's records and what merging `feature/<f>` into `main` gives |
 | E2E tests do not change to make the product pass | `integrate.sh save` refuses to change or delete a saved test unless the team declined its bug ticket (`--dispute`); `integrate.sh run` refuses tests that differ from the last save | Feature gate: nothing outside the records changed since the tested commit, and CI runs `make e2e` itself |
 
@@ -312,6 +313,12 @@ there with the same checks) and reaches `main` through `integrate/<f>`, the orch
 the feature branch, `main` merged in, the e2e tests and the integration records. Its pull request
 to `main` is the only way in. The orchestrator runs `/integrate <f>`; `factory/scripts/integrate.sh`
 decides what passes.
+
+A feature branch starts as `main` was at dispatch. CI holds its pull requests to `main`'s checks
+anyway; for the sessions' own prompts and scripts to catch up after a factory change merges, the
+orchestrator runs `integrate.sh sync <f>`. It pushes `sync/<f>` (`main` merged into the feature
+branch) and opens its pull request, or refuses when the two changed the same file. You approve it
+like any factory change.
 
 1. **Criteria first.** Research's `acceptance` item writes `features/<f>/acceptance.md` into the
    feature branch: `## AC<n>: <title>`, a `- decisions:` line naming records, and a `- check:` a

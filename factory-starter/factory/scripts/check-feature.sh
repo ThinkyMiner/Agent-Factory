@@ -14,6 +14,8 @@
 #     GitHub shows feature/<f> protected and requiring every status check main requires (main must
 #     require some; a gh failure fails); then, only if all of that holds, `make e2e` passes in the
 #     checked-out tree.
+#   sync/<f>: into feature/<f> only, where it passes here (main merged into the feature branch, by
+#     integrate.sh sync: check-ownership.sh makes sure every path it changes is as on main).
 #   base feature/<g>: the pull request carries exactly one work folder, whose spec says feature: <g>.
 #   any other base: no work folder's spec names a feature (a feature's item goes to feature/<f>).
 #   Otherwise: "not a feature pull request", exit 0.
@@ -60,8 +62,15 @@ branch_feature() {
 kind=""
 if branch_feature "$head_ref" feature; then kind=feature
 elif branch_feature "$head_ref" integrate; then kind=integrate
+elif branch_feature "$head_ref" sync; then kind=sync
 fi
 hf=$bf
+
+if [ "$kind" = sync ]; then
+  [ "$bb" = "feature/$hf" ] || die "sync/$hf goes to feature/$hf only, not $(show "$bb")"
+  echo "feature: sync/$hf -> feature/$hf: main merged into the feature branch (the ownership check makes sure every path is as on main)"
+  exit 0
+fi
 
 if [ "$kind" = feature ] && [ "$bb" = main ]; then
   echo "feature: $head_ref -> main: NOT OK. A feature reaches main only from integrate/$hf, opened by integrate.sh pr." >&2

@@ -268,3 +268,18 @@ has_contract_grant() {
   done
   return 1
 }
+
+# A sync/<f> pull request merges main into feature/<f>, so the factory's own changes reach a feature
+# dispatched before them. It may only bring what main has, over paths the feature never changed.
+# sync_refs <main-ref> <base-ref> <head>: sets sync_s, the newest main commit <head> holds (so a sync
+# stays valid when main moves on), and sync_mb, where <base-ref> and sync_s meet. 1: no shared history.
+sync_refs() {
+  sync_s=$(git merge-base "$3" "$1" 2>/dev/null) && sync_mb=$(git merge-base "$sync_s" "$2" 2>/dev/null)
+}
+# sync_verdict <base-ref> <head> <path>, after sync_refs: ok (as on main, untouched by the feature),
+# main (not as on main), or both (the feature changed it too since it left main). A git error is not ok.
+sync_verdict() {
+  if ! git diff --quiet --no-ext-diff --no-textconv "$sync_s" "$2" -- ":(literal)$3" 2>/dev/null; then echo main
+  elif ! git diff --quiet --no-ext-diff --no-textconv "$sync_mb" "$1" -- ":(literal)$3" 2>/dev/null; then echo both
+  else echo ok; fi
+}

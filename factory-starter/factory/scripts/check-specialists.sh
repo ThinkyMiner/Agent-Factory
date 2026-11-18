@@ -23,7 +23,9 @@
 # it. More than one work folder, no spec, or a team that is not active: exit 1.
 # With HEAD_REF (the head branch, in CI) integrate/<f>, the check is exempt: each work folder passed it
 # when it merged into feature/<f>, and check-ownership.sh makes sure they arrive unchanged. An
-# integrate/ HEAD_REF that is not integrate/<feature id> fails. --needs ignores HEAD_REF.
+# integrate/ HEAD_REF that is not integrate/<feature id> fails. sync/<f> (main merged into feature/<f>)
+# is exempt the same way: each path is as on main, where it passed, and check-ownership.sh makes sure.
+# --needs ignores HEAD_REF.
 # Exit 0 ok, 1 something missing or not passing, 2 usage or environment.
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -43,6 +45,12 @@ if [ "$needs" = 0 ]; then
       echo "specialists: the head branch is not a feature's integration branch (integrate/f001-slug)" >&2; exit 1
     fi
     echo "specialists: $HEAD_REF: exempt. Each work folder passed this check when it merged into feature/${HEAD_REF#integrate/}, and the ownership check makes sure they arrive unchanged."
+    exit 0 ;;
+  sync/*)
+    if ! [[ "$HEAD_REF" =~ ^sync/f[0-9]{3}-[a-z0-9][a-z0-9-]{0,40}$ ]]; then
+      echo "specialists: the head branch is not a feature's sync branch (sync/f001-slug)" >&2; exit 1
+    fi
+    echo "specialists: $HEAD_REF: exempt. It brings main's files unchanged (the ownership check makes sure), and each passed this check on its way into main."
     exit 0 ;;
   esac
 fi
