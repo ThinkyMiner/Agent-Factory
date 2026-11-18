@@ -17,7 +17,7 @@ export type ItemSummary = ReturnType<typeof summary>
 
 export interface ApiState {
   version: number
-  factory: { repo: string; demo: boolean; isGit: boolean; head: string | null; main: string | null; autoMergeMax: Tier | 'none'; staleMinutes: number; actions: boolean }
+  factory: { repo: string; demo: boolean; isGit: boolean; head: string | null; main: string | null; autoMergeMax: Tier | 'none'; staleMinutes: number; actions: boolean; teams: boolean }
   github: GitHubStatus & { repo?: string }
   items: ItemSummary[]
   needsYou: NeedsEntry[]

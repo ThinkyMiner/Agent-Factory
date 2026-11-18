@@ -1,6 +1,7 @@
 // Git access: reads, plus `fetch origin` with each GitHub refresh. Every call is execFile with an argument array (never a shell), and
 // GIT_OPTIONAL_LOCKS=0 so reading never takes the index lock from under a running factory.
 import { execFile, spawn } from 'node:child_process'
+import { basename, dirname } from 'node:path'
 
 import type { BranchCommit } from '../core/api.ts'
 
@@ -48,6 +49,41 @@ export async function workBranches(repo: string): Promise<Branch[]> {
     byName.set(name, { name, ref: local ? name : `origin/${name}`, sha, time: time ?? '' })
   }
   return [...byName.values()]
+}
+
+export interface Worktree {
+  path: string
+  branch: string | null // null: detached
+  exists: boolean // false: git still lists it, but the folder is gone
+}
+
+/** Every checkout of this repository: the main one first, then the linked worktrees. */
+export async function worktrees(repo: string): Promise<Worktree[]> {
+  const out = await ok(git(repo, ['worktree', 'list', '--porcelain', '-z']))
+  const list: Worktree[] = []
+  for (const line of (out ?? '').split('\0')) {
+    if (line.startsWith('worktree ')) list.push({ path: line.slice(9), branch: null, exists: true })
+    else if (line.startsWith('branch ') && list.length) list.at(-1)!.branch = line.slice(7).replace(/^refs\/heads\//, '')
+    else if (line.startsWith('prunable') && list.length) list.at(-1)!.exists = false
+  }
+  return list
+}
+
+/** Team mode: the worktrees in ../<repo>.teams/<team> (next to the main checkout, listed first), with their team. */
+export const teamWorktrees = (list: Worktree[]) =>
+  list.slice(1).flatMap((w) => (basename(dirname(w.path)) === `${basename(list[0]!.path)}.teams` ? [{ ...w, team: basename(w.path) }] : []))
+
+/** Short names of local and origin branches under a prefix ("feature/"), each with the ref to read
+ *  (origin's copy first: teams push there, a local branch may lag). */
+export async function branchesUnder(repo: string, prefix: string): Promise<Map<string, string[]>> {
+  const out = await ok(git(repo, ['for-each-ref', '--format=%(refname)', `refs/remotes/origin/${prefix}`, `refs/heads/${prefix}`]))
+  const m = new Map<string, string[]>()
+  for (const full of (out ?? '').split('\n').filter(Boolean)) {
+    const ref = full.replace(/^refs\/heads\//, '').replace(/^refs\/remotes\//, '')
+    const name = ref.replace(/^origin\//, '').slice(prefix.length)
+    m.set(name, ref.startsWith('origin/') ? [ref, ...(m.get(name) ?? [])] : [...(m.get(name) ?? []), ref])
+  }
+  return m
 }
 
 export interface TreeEntry {

@@ -85,6 +85,17 @@ checked-out branch, is flagged, because CI and new runs use `main`'s copy.
 
 **Audits**: the weekly `/audit` reports, newest first.
 
+**Team mode** (a factory with `factory/teams.json`, see the kit's `docs/factory/TEAMS.md`). The
+control room adds a **Teams** table: each team's Herdr session (state and message), its worktree's
+branch and the work item it holds. **Planning** (`g p`) shows the planning cycle (status, how long
+in it, who still owes a position, answer or accept, the decision records, the pull request, the
+transcript and the planning events) and each feature (its branches, its issues by team with where
+each is, and its acceptance criteria, e2e report and acceptance review). Needs you adds: a work
+item stopped in a team worktree (its `BLOCKED.md`, committed or not), a brief or decisions waiting
+for your label or merge, each `needs-human` decision record, a stopped meeting, and a session in
+Herdr's `error` or `blocked` (dialog) state. Team mode's own events are not notices; an
+`escalation` from the sweep is one, in its own words.
+
 Light and dark themes follow the system; switch in the top bar or the palette. The look follows Warp's factory pages: Azeret Mono for structure, hairlines, square corners and figure frames.
 
 ## Keyboard
@@ -92,7 +103,7 @@ Light and dark themes follow the system; switch in the top bar or the palette. T
 | | |
 |---|---|
 | ⌘K / Ctrl+K | command palette: items, screens, commands |
-| `g` then `r` `b` `u` `q` `m` `i` `f` `a` | go to a screen |
+| `g` then `r` `b` `u` `q` `m` `i` `f` `a` `p` | go to a screen |
 | `j` / `k`, Enter | move through the page's list, open |
 | `/` | focus the page's filter |
 | ← → in a chart | move between weeks; Enter lists the items |
@@ -110,6 +121,10 @@ Light and dark themes follow the system; switch in the top bar or the palette. T
 | `memory/`, `docs/factory/audits/`, `.claude/`, `factory/`, `CLAUDE.md` | memory, reflections, audits, configuration |
 | git history of `main` | merges, squash commits, reverts. `git fetch origin` runs with every GitHub refresh, so work done on GitHub (the factory workflow) shows up; it updates only remote-tracking branches |
 | `gh` (GraphQL) | issues, labels and their times, pull requests, checks, files, auto-merge |
+| team mode: `factory/teams.json` (main, else the working tree), `git worktree list` (`../<repo>.teams/<team>`) | teams, what each owns, each team's checkout; a team worktree on `work/<id>-<slug>` is read like the main checkout for that item |
+| team mode: `planning/<cycle>/` | the cycle named by `.factory/planning/active`, else the newest; read from the working tree, its `planning/` branch, the feature branch and main, whichever copy's `state.json` history is longest. Sealed positions are only checked to exist, never read |
+| team mode: `feature/<f>`, `integrate/<f>` (origin first) and issues labelled `feature:<f>` | features, their records and items |
+| team mode, optional: `herdr-app ls`, `hc get <terminal> --json` | each team session's state. Only the space named after the repo folder is kept; every other space, tab and terminal is dropped unread. Never `hc send` or `keys`. Without them: "sessions unavailable" |
 | `~/.claude/projects/**` | model and tokens per run. The format is not a stable interface: only files under that folder are read, lines are de-duplicated, and token figures are hidden when nothing can be read |
 
 Everything is derived again from these files on every change (a full read takes
@@ -168,3 +183,8 @@ Tailwind. `demo/generate.ts` builds the demo factory (a real git repo);
 - Token figures from real Claude Code transcripts: the reader was written against
   the documented format and synthetic files.
 - Windows (line endings would make every local factory file look changed).
+- Team mode was checked against one real factory, with one cycle (dispatched) and one feature;
+  the brief, positions, discussion and escalated states only against the test fixture. Herdr
+  states were seen as `idle`, `working` and `done`; `error`, `blocked` and `.status.msg` only from
+  the fake `hc`. Team worktrees and Herdr are outside the watched folder, so their changes appear
+  within 30 seconds (the clock), not at once.

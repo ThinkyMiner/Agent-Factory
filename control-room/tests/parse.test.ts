@@ -42,6 +42,23 @@ describe('parseEvents', () => {
     expect(notices[4]!.message).toMatch(/unknown tier "R9"/)
     expect((events[3] as { tier?: string }).tier).toBeUndefined()
   })
+  test('team mode: planning, slot and item events are not notices; an escalation is a warning in its own words', () => {
+    const text = ['round', 'approval', 'position', 'message', 'contract', 'dispatch', 'item', 'slot', 'ticket', 'integration']
+      .map((type) => JSON.stringify({ ts: '2026-11-01T10:00:00Z', type, work_id: '', cycle: 'c001-x' }))
+      .concat('{"ts":"2026-11-01T10:00:00Z","type":"escalation","reason":"slot","detail":"backend has held a build slot for 4 hours"}')
+      .join('\n')
+    const { events, notices } = parseEvents(text, 'f')
+    expect(events).toHaveLength(11)
+    expect(notices).toEqual([{ level: 'warn', source: 'f', message: 'line 11: escalation (slot): backend has held a build slot for 4 hours' }])
+  })
+  test('team mode stage names count as the pipeline stage they stand for, and keep their name in the detail', () => {
+    const ev = (stage: string, detail?: string) => JSON.stringify({ ts: '2026-11-01T10:00:00Z', type: 'stage', work_id: '6', stage, status: 'blocked', round: '1', detail })
+    const { events, notices } = parseEvents([ev('evidence-review', 'see BLOCKED.md'), ev('criteria'), ev('security', 'x'), ev('ui-review'), ev('design')].join('\n'), 'f')
+    expect(notices).toEqual([])
+    expect(events.map((e) => [(e as { stage: string }).stage, (e as { detail?: string }).detail])).toEqual([
+      ['review', 'evidence-review: see BLOCKED.md'], ['build', 'criteria'], ['review', 'security: x'], ['review', 'ui-review'], ['spec', 'design'],
+    ])
+  })
   test('a half-written last line is skipped silently when tailing', () => {
     const text = '{"ts":"2026-11-01T10:00:00Z","type":"lifecycle","event":"Stop","session_id":"s"}\n{"ts":"2026-11-01T10:0'
     expect(parseEvents(text, 'f', { partialTail: true }).notices).toEqual([])

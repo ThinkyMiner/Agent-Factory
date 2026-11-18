@@ -29,6 +29,10 @@ const lines = (s: string) => s.replace(/\r\n?/g, '\n').split('\n')
 
 // ---------- events.jsonl ----------
 
+/** Team mode's own events: planning (shown in the cycle view), slots, items, tickets, integration. Not
+ *  notices. An escalation is the sweep asking for the human, so it stays one, with its words. */
+export const TEAM_EVENTS = new Set(['round', 'approval', 'position', 'message', 'contract', 'dispatch', 'item', 'slot', 'ticket', 'integration'])
+
 /**
  * Parse an events.jsonl file. Unknown event types are kept (as type "unknown") so they
  * still show in Activity; malformed lines become notices. When `partialTail` is set, a
@@ -57,7 +61,12 @@ export function parseEvents(text: string, source: string, opts: { partialTail?: 
     if (!schema) {
       const ts = (obj as { ts?: unknown })?.ts
       events.push({ type: 'unknown', ts: typeof ts === 'string' ? ts : undefined, key, raw: key })
-      notices.push({ level: 'info', source, message: `line ${i + 1}: unknown event type ${JSON.stringify(type)}, shown in Activity only` })
+      if (type === 'escalation') {
+        const o = obj as { reason?: unknown; detail?: unknown }
+        notices.push({ level: 'warn', source, message: `line ${i + 1}: escalation${typeof o.reason === 'string' ? ` (${o.reason})` : ''}: ${typeof o.detail === 'string' ? o.detail : 'no detail'}` })
+      } else if (!TEAM_EVENTS.has(type as string)) {
+        notices.push({ level: 'info', source, message: `line ${i + 1}: unknown event type ${JSON.stringify(type)}, shown in Activity only` })
+      }
       return
     }
     const r = schema.safeParse(obj)
