@@ -10,6 +10,8 @@ export const ACTIONS_DIR = join(tmpdir(), 'control-room-e2e', 'actions')
 export const ACTIONS_URL = 'http://127.0.0.1:4397'
 export const SCALED_DIR = join(tmpdir(), 'control-room-e2e', 'scaled')
 export const SCALED_URL = 'http://127.0.0.1:4396'
+export const TEAMS_DIR = join(tmpdir(), 'control-room-e2e', 'teams')
+export const TEAMS_URL = 'http://127.0.0.1:4395'
 
 export default defineConfig({
   testDir: 'e2e',
@@ -45,6 +47,13 @@ export default defineConfig({
       url: `${SCALED_URL}/api/state`,
       reuseExistingServer: false,
       timeout: 120_000,
+    },
+    {
+      // a team-mode factory: planning cycle, feature, team worktrees, fake Herdr (e2e/teams.spec.ts)
+      command: `node e2e/serve-teams.ts ${TEAMS_DIR} 4395`,
+      url: `${TEAMS_URL}/api/state`,
+      reuseExistingServer: false,
+      timeout: 60_000,
     },
   ],
 })

@@ -45,18 +45,30 @@ const optionalNumber = z.preprocess(
 const optionalString = z.preprocess((v) => v ?? undefined, z.string().optional())
 const optionalTimestamp = z.preprocess((v) => v ?? undefined, timestamp.optional())
 
-export const StageEventSchema = z.object({
-  ts: timestamp,
-  type: z.literal('stage'),
-  work_id: z.coerce.string(),
-  branch: z.string().default(''),
-  stage: z.enum(STAGES),
-  status: z.enum(STATUSES),
-  round: count,
-  detail: optionalString,
-  tier: z.enum(TIERS).optional().catch(undefined),
-  pr: optionalNumber.catch(undefined),
-})
+// Team mode's /work and /research-work name more stages. Each counts as the pipeline stage it
+// stands for, and keeps its own name at the front of the detail.
+export const STAGE_ALIAS: Record<string, Stage> = {
+  design: 'spec', 'ui-review': 'review', security: 'review', 'db-review': 'review',
+  research: 'build', 'brief-gate': 'gate', criteria: 'build', 'criteria-gate': 'gate', 'acceptance-review': 'build', 'evidence-review': 'review',
+}
+
+export const StageEventSchema = z
+  .object({
+    ts: timestamp,
+    type: z.literal('stage'),
+    work_id: z.coerce.string(),
+    branch: z.string().default(''),
+    stage: z.string().pipe(z.enum([...STAGES, ...(Object.keys(STAGE_ALIAS) as [string, ...string[]])])),
+    status: z.enum(STATUSES),
+    round: count,
+    detail: optionalString,
+    tier: z.enum(TIERS).optional().catch(undefined),
+    pr: optionalNumber.catch(undefined),
+  })
+  .transform((e) => {
+    const as = STAGE_ALIAS[e.stage]
+    return as ? { ...e, stage: as, detail: e.detail ? `${e.stage}: ${e.detail}` : e.stage } : { ...e, stage: e.stage as Stage }
+  })
 
 export const LifecycleEventSchema = z.object({
   ts: timestamp,

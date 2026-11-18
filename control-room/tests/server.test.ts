@@ -75,12 +75,15 @@ describe('http server (read-only)', () => {
     expect(JSON.parse(r.body).items).toHaveLength(36)
     expect((await call(`${srv.url}/api/items/32`)).status).toBe(200)
     expect((await call(`${srv.url}/api/items/999`)).status).toBe(404)
+    // one team: no team mode, nothing team-shaped
+    expect(JSON.parse(r.body).factory.teams).toBe(false)
+    expect(JSON.parse((await call(`${srv.url}/api/teams`)).body)).toBeNull()
   })
   test('every non-GET method on every path is refused, and nothing changes', async () => {
     const before = (await call(`${srv.url}/api/state`)).body
     const githubBefore = readFileSync(demo.github, 'utf8')
     for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
-      for (const path of ['/api/state', '/api/items/32', '/api/factory/file', '/api/memory', '/api/actions/approve', '/api/actions/mark-ready', '/api/actions/answer', '/', '/board']) {
+      for (const path of ['/api/state', '/api/items/32', '/api/factory/file', '/api/memory', '/api/teams', '/api/actions/approve', '/api/actions/mark-ready', '/api/actions/answer', '/', '/board']) {
         const r = await call(`${srv.url}${path}`, { method, headers: { 'content-type': 'application/json', origin: srv.url, 'x-control-room-token': srv.token }, body: '{"pr":132,"issue":37}' })
         expect(r.status, `${method} ${path}`).toBe(405)
       }

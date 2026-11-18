@@ -1,6 +1,6 @@
 import { Suspense } from 'react'
 import { NavLink, Outlet } from 'react-router'
-import { Activity, Brain, ChartColumn, ClipboardCheck, Cloud, CloudOff, Cog, Columns3, LayoutDashboard, Monitor, Moon, Sprout, Sun, WifiOff } from 'lucide-react'
+import { Activity, Brain, ChartColumn, ClipboardCheck, Cloud, CloudOff, Cog, Columns3, LayoutDashboard, Monitor, Moon, Sprout, Sun, Users, WifiOff } from 'lucide-react'
 import { useApiState, useLiveUpdates, useNow } from '@/lib/api'
 import { ago, cn } from '@/lib/utils'
 import { Banner, Loading } from './States'
@@ -17,6 +17,7 @@ export const NAV = [
   { to: '/improvement', label: 'Improvement', icon: Sprout, key: 'i' },
   { to: '/factory', label: 'Factory', icon: Cog, key: 'f' },
   { to: '/audits', label: 'Audits', icon: ClipboardCheck, key: 'a' },
+  { to: '/planning', label: 'Planning', icon: Users, key: 'p' }, // team mode only
 ]
 
 const THEMES: { t: Theme; label: string; icon: typeof Sun }[] = [
@@ -74,7 +75,7 @@ export function Layout() {
             </div>
           </div>
           <nav aria-label="Screens" className="order-last -mx-5 flex w-[calc(100%+40px)] overflow-x-auto border-t border-border px-3 xl:order-none xl:mx-0 xl:w-auto xl:border-t-0 xl:px-0">
-            {NAV.map((n) => (
+            {NAV.filter((n) => n.to !== '/planning' || data?.factory.teams).map((n) => (
               <NavLink
                 key={n.to}
                 to={n.to}

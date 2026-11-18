@@ -108,7 +108,7 @@ export class Factory {
           this.dirty = false
           const next = await computeState(this.repo, this.gh, { staleMinutes: this.opts.staleMinutes })
           // ponytail: full recompute (~150 ms on 36 items); go incremental if a real factory makes this slow
-          const fp = createHash('sha1').update(JSON.stringify([next.items.map(summary), next.needsYou, next.running, next.snap.notices, next.snap.github, next.runs, next.meta.map((f) => [f.path, f.drift, f.where, f.text])])).digest('hex')
+          const fp = createHash('sha1').update(JSON.stringify([next.items.map(summary), next.needsYou, next.running, next.snap.notices, next.snap.github, next.runs, next.meta.map((f) => [f.path, f.drift, f.where, f.text]), next.teams])).digest('hex')
           this.state = next
           if (fp !== this.fingerprint) {
             this.fingerprint = fp
@@ -219,6 +219,7 @@ export class Factory {
   improvement = () => ({ ...improvementView(this.state.meta, this.gh.data?.pulls ?? []), github: this.state.snap.github })
   factory = () => factoryView(this.state.meta)
   audits = () => auditsView(this.state.meta)
+  teams = () => this.state.teams
 
   /** One factory file and its changes against main; only paths the loader listed. */
   async factoryFile(path: string) {

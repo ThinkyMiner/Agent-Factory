@@ -102,6 +102,7 @@ export async function startServer(factory: Factory, opts: ServerOptions): Promis
         if (path === '/api/improvement') return send(res, 200, factory.improvement())
         if (path === '/api/factory') return send(res, 200, factory.factory())
         if (path === '/api/audits') return send(res, 200, factory.audits())
+        if (path === '/api/teams') return send(res, 200, factory.teams())
         if (path === '/api/factory/file') {
           const f = await factory.factoryFile(url.searchParams.get('path') ?? '')
           return f ? send(res, 200, f) : send(res, 404, { error: 'not a factory file' })
@@ -190,7 +191,7 @@ function apiState(f: Factory, opts: ServerOptions): ApiState {
   const s = f.state
   return {
     version: f.version,
-    factory: { repo: f.repo, demo: opts.demo, isGit: s.snap.isGit, head: s.snap.head, main: s.snap.main, autoMergeMax: s.snap.autoMergeMax, staleMinutes: f.opts.staleMinutes, actions: !!opts.actions },
+    factory: { repo: f.repo, demo: opts.demo, isGit: s.snap.isGit, head: s.snap.head, main: s.snap.main, autoMergeMax: s.snap.autoMergeMax, staleMinutes: f.opts.staleMinutes, actions: !!opts.actions, teams: !!s.teams },
     github: s.snap.github,
     items: s.items.map(summary),
     needsYou: s.needsYou,

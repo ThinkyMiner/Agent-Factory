@@ -144,7 +144,7 @@ export function Palette({ open, setOpen, onHelp }: { open: boolean; setOpen: (o:
 
 const KEYS: [string, string][] = [
   ['⌘K or Ctrl+K', 'Command palette: items, screens, commands'],
-  ['g then r b u q m i f a', 'Control room, Board, Runs, Quality, Memory, Improvement, Factory, Audits'],
+  ['g then r b u q m i f a p', 'Control room, Board, Runs, Quality, Memory, Improvement, Factory, Audits, Planning (team mode)'],
   ['j / k', 'Next or previous row in the page'],
   ['Enter', 'Open the focused row'],
   ['/', "Focus the page's filter"],

@@ -15,6 +15,7 @@ export interface Snapshot {
   main: string | null
   autoMergeMax: Tier | 'none'
   rules: RiskRule[]
+  worktrees: g.Worktree[] // every checkout, the main one first
   inputs: ItemInputs[]
   events: FactoryEvent[] // every event, deduplicated, file order
   lifecycle: LifecycleEvent[]
@@ -61,24 +62,31 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
 
   // ---- collect every copy of every file we care about, by origin ----
   const sources: Source[] = []
+  // A work folder in a checkout: the main one, or a team's worktree (team mode) on that item's branch.
   // A checkout rewrites mtimes, so a tracked, unmodified file takes its last commit time;
   // only modified or untracked files use the mtime.
-  const dirty = isGit ? await g.dirtyPaths(repo, ['work/']) : null
-  const worktreeTime = async (rel: string) => {
-    if (dirty && !dirty.has(rel)) {
-      const c = await g.lastCommitTime(repo, 'HEAD', rel)
-      if (c) return c
+  const addCheckout = async (root: string, only?: string) => {
+    const dirty = isGit ? await g.dirtyPaths(root, ['work/']) : null
+    const time = async (rel: string) => {
+      if (dirty && !dirty.has(rel)) {
+        const c = await g.lastCommitTime(root, 'HEAD', rel)
+        if (c) return c
+      }
+      return (await stat(join(root, rel))).mtime.toISOString()
     }
-    return (await stat(join(repo, rel))).mtime.toISOString()
-  }
-  for (const d of await listDir(join(repo, 'work'))) {
-    if (!d.isDirectory() || !FOLDER.test(d.name)) continue
-    for (const f of await listDir(join(repo, 'work', d.name))) {
-      if (!f.isFile()) continue
-      const rel = `work/${d.name}/${f.name}`
-      sources.push({ origin: 'worktree', path: rel, read: async () => ({ text: (await readText(join(repo, rel))) ?? '', time: f.name === 'BLOCKED.md' ? await worktreeTime(rel) : (await stat(join(repo, rel))).mtime.toISOString() }) })
+    for (const d of await listDir(join(root, 'work'))) {
+      if (!d.isDirectory() || !FOLDER.test(d.name) || (only && d.name !== only)) continue
+      for (const f of await listDir(join(root, 'work', d.name))) {
+        if (!f.isFile()) continue
+        const rel = `work/${d.name}/${f.name}`
+        sources.push({ origin: 'worktree', path: rel, read: async () => ({ text: (await readText(join(root, rel))) ?? '', time: f.name === 'BLOCKED.md' ? await time(rel) : (await stat(join(root, rel))).mtime.toISOString() }) })
+      }
     }
   }
+  // team worktrees first: for its own item, a team's checkout is newer than the main one
+  const worktrees = isGit ? await g.worktrees(repo) : []
+  for (const w of g.teamWorktrees(worktrees)) if (w.exists && w.branch?.startsWith('work/')) await addCheckout(w.path, w.branch.slice(5))
+  await addCheckout(repo)
   for (const dir of ['tests/acceptance', 'memory/observations']) {
     for (const f of await listDir(join(repo, dir))) {
       if (!f.isFile()) continue
@@ -290,6 +298,7 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
     main,
     autoMergeMax,
     rules,
+    worktrees,
     inputs,
     events,
     lifecycle,

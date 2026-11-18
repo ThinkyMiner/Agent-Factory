@@ -5,12 +5,14 @@ import type { ApiState, ItemDetail, RunsResponse } from '../../../server/core/ap
 import type { Quality } from '../../../server/core/quality.ts'
 import type { AuditsView, FactoryView, ImprovementView, MemoryView, MetaFile } from '../../../server/core/meta.ts'
 import type { GitHubStatus } from '../../../server/core/types.ts'
+import type { TeamsView } from '../../../server/core/teams.ts'
 
 export type { ApiState, ItemDetail, ItemSummary, RunRow, RunsResponse } from '../../../server/core/api.ts'
 export type { Quality, Metric, Point, Part } from '../../../server/core/quality.ts'
 export type { NeedsEntry, RunningEntry, StageView, NeedsKind, State, Column } from '../../../server/core/derive.ts'
 export type { Tier, Stage, Notice } from '../../../server/core/types.ts'
 export type { AuditsView, Drift, FactoryView, ImprovementView, MemoryView, Prediction } from '../../../server/core/meta.ts'
+export type { CycleView, FeatureView, Message, SessionTab, TeamRow, TeamsView } from '../../../server/core/teams.ts'
 
 export class HttpError extends Error {
   constructor(readonly status: number, message: string) {
@@ -84,6 +86,8 @@ export const useImprovement = () => useQuery({ queryKey: ['improvement'], queryF
 export const useFactoryConfig = () => useQuery({ queryKey: ['factory'], queryFn: () => getJson<FactoryView>('/api/factory') })
 export const useFactoryFile = (path: string | null) =>
   useQuery({ enabled: !!path, queryKey: ['factory-file', path], queryFn: () => getJson<MetaFile & { diff: string | null }>(`/api/factory/file?path=${encodeURIComponent(path!)}`) })
+/** Team mode only: null when the factory has no factory/teams.json. */
+export const useTeams = (enabled = true) => useQuery({ enabled, queryKey: ['teams'], queryFn: () => getJson<TeamsView | null>('/api/teams') })
 export const useAudits = () => useQuery({ queryKey: ['audits'], queryFn: () => getJson<AuditsView>('/api/audits') })
 
 /** Subscribe to server changes; returns whether the stream is connected. */

@@ -1,11 +1,11 @@
 // Home. Job 1: tell me what needs me. "Needs you" always wins the visual hierarchy.
 import { Link } from 'react-router'
 import { CircleCheck, Copy, Info } from 'lucide-react'
-import { useApiState, useNow, type ApiState, type NeedsEntry } from '@/lib/api'
+import { useApiState, useNow, useTeams, type ApiState, type NeedsEntry, type SessionTab } from '@/lib/api'
 import { ago, cn, elapsed } from '@/lib/utils'
 import { PageHeader } from '@/components/Layout'
 import { Empty, ErrorState, Loading, Section } from '@/components/States'
-import { ItemId, LiveDot, Mono, NeedsTag, NEEDS, StageLabel, TierChip, TONE_BORDER, needsTone } from '@/components/vocab'
+import { ItemId, LiveDot, Mono, NeedsTag, NEEDS, StageLabel, StateBadge, TierChip, TONE_BORDER, needsTone } from '@/components/vocab'
 
 export function ControlRoom() {
   const { data, error, isLoading, refetch } = useApiState()
@@ -15,7 +15,7 @@ export function ControlRoom() {
       <div className="px-5 py-4">
         {isLoading && <Loading rows={5} label="Loading the factory" />}
         {error && <ErrorState title="Could not load the factory state" error={error} onRetry={() => void refetch()} />}
-        {data && (data.items.length === 0 ? <NewFactory data={data} /> : <Home data={data} />)}
+        {data && (data.items.length === 0 && !data.factory.teams ? <NewFactory data={data} /> : <Home data={data} />)}
       </div>
     </>
   )
@@ -33,6 +33,7 @@ function Home({ data }: { data: ApiState }) {
   return (
     <>
       <NeedsYou entries={data.needsYou} />
+      {data.factory.teams && <Teams />}
       <Running data={data} />
       <Merged data={data} />
       <Notices data={data} />
@@ -108,6 +109,89 @@ export function CopyCommand({ cmd, className }: { cmd: string; className?: strin
       {cmd}
       <Copy aria-hidden className="size-3 text-muted group-data-[copied]:text-pass" />
     </button>
+  )
+}
+
+const SESSION: Record<string, string> = { working: 'text-run', blocked: 'text-block', error: 'text-fail' }
+function Session({ s }: { s?: SessionTab }) {
+  if (!s) return <span className="text-faint">no tab</span>
+  return (
+    <span className="inline-flex flex-wrap items-baseline gap-x-1.5">
+      {s.state === 'working' && <LiveDot label="working" />}
+      <Mono className={SESSION[s.state] ?? 'text-muted'}>{s.state}</Mono>
+      {s.msg && <span className="text-[12px] text-muted">{s.msg}</span>}
+    </span>
+  )
+}
+
+/** Team mode: each team's session, checkout and the item it holds; the cycle in one line. */
+function Teams() {
+  const { data } = useTeams()
+  if (!data) return null
+  const c = data.cycle
+  const waiting = c?.waiting.map((w) => w.team).filter((t, i, a) => a.indexOf(t) === i)
+  return (
+    <Section
+      title="Teams"
+      count={data.teams.filter((t) => t.inRoster).length}
+      id="teams"
+      actions={!data.sessions.available && <span>sessions unavailable</span>}
+    >
+      {c && (
+        <p className="panel mb-2 px-3 py-2 text-[13px]">
+          <Link to="/planning" className="underline underline-offset-2">Planning {c.name}</Link>: <Mono>{c.state?.status ?? 'state unreadable'}</Mono>
+          {c.state?.feature && <> → <Mono>{c.state.feature}</Mono></>}
+          {!!waiting?.length && <span className="text-muted"> · waiting for {waiting.join(', ')}</span>}
+        </p>
+      )}
+      {data.rosterError && <p role="alert" className="mb-2 text-fail">{data.rosterError}</p>}
+      <div className="overflow-x-auto">
+        <table className="panel w-full text-left">
+          <thead className="text-muted">
+            <tr className="border-b border-border">
+              <th className="px-3 py-2">Team</th>
+              <th className="px-3 py-2">Session</th>
+              <th className="px-3 py-2">Checkout</th>
+              <th className="px-3 py-2">Holds</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.teams.map((t) => (
+              <tr key={t.name} className="border-b border-border align-top last:border-b-0">
+                <td className="px-3 py-1.5">
+                  <Mono className="text-fg">{t.name}</Mono>
+                  {!t.active && <span className="ml-1.5 text-[12px] text-muted">inactive</span>}
+                  {t.owns.length > 0 && (
+                    <span className="block max-w-[22rem] truncate text-[11.5px] text-muted" title={t.owns.join('  ')}>
+                      owns {t.owns.join(', ')}
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-1.5">{data.sessions.available ? <Session s={t.session} /> : <span className="text-faint">—</span>}</td>
+                <td className="px-3 py-1.5">
+                  {!t.checkout ? (
+                    <span className="text-faint">{t.inRoster ? 'no worktree' : '—'}</span>
+                  ) : !t.checkout.exists ? (
+                    <span className="text-block" title={t.checkout.path}>worktree missing</span>
+                  ) : (
+                    <span className="font-mono text-[12px] text-muted" title={t.checkout.path}>{t.checkout.branch ?? 'detached'}</span>
+                  )}
+                </td>
+                <td className="px-3 py-1.5">
+                  {t.item ? (
+                    <Link data-nav-item to={`/items/${t.item.id}`} className="inline-flex flex-wrap items-baseline gap-x-1.5 hover:underline">
+                      <ItemId id={t.item.id} link={false} /> {t.item.title} <StateBadge state={t.item.state} />
+                    </Link>
+                  ) : (
+                    <span className="text-faint">—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Section>
   )
 }
 

@@ -18,6 +18,7 @@ const Memory = page(() => import('./pages/Memory'), 'Memory')
 const Improvement = page(() => import('./pages/Improvement'), 'Improvement')
 const FactoryConfig = page(() => import('./pages/FactoryConfig'), 'FactoryConfig')
 const Audits = page(() => import('./pages/Audits'), 'Audits')
+const Planning = page(() => import('./pages/Planning'), 'Planning')
 
 applyTheme()
 
@@ -39,6 +40,7 @@ const router = createBrowserRouter([
       { path: '/improvement', element: <Improvement /> },
       { path: '/factory', element: <FactoryConfig /> },
       { path: '/audits/:date?', element: <Audits /> },
+      { path: '/planning', element: <Planning /> },
       { path: '*', element: <><PageHeader title="Not found" /><div className="p-5"><Empty title="Nothing here">That page does not exist.</Empty></div></> },
     ],
   },

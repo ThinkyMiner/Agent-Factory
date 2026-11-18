@@ -5,6 +5,8 @@ import { improvementNeeds } from './core/meta.ts'
 import { GitHubDataSchema, type GitHubData, type GitHubStatus } from './core/types.ts'
 import { loadSnapshot } from './sources/load.ts'
 import { loadMeta } from './sources/meta.ts'
+import { deriveTeams } from './core/teams.ts'
+import { loadTeams } from './sources/teams.ts'
 
 export interface GitHubInput {
   data?: GitHubData
@@ -17,8 +19,12 @@ export async function computeState(repo: string, gh: GitHubInput, opts: { now?: 
   const { sessions, runs } = indexLifecycle(snap.lifecycle)
   const ctx: Context = { now: opts.now ?? Date.now(), staleMinutes: opts.staleMinutes, autoMergeMax: snap.autoMergeMax, rules: snap.rules, sessions, runs }
   const d = deriveAll(snap.inputs, ctx)
-  const needsYou = [...d.needsYou, ...improvementNeeds(gh.data?.pulls ?? [], snap.rules, snap.autoMergeMax)].sort(byNeeds)
-  return { snap, meta, ctx, runs, sessions, ...d, needsYou }
+  // team mode: the cycle, features, teams and sessions, and what in them needs you
+  const teamsIn = await loadTeams(snap)
+  const t = teamsIn ? deriveTeams(teamsIn, { issues: gh.data?.issues ?? [], pulls: gh.data?.pulls ?? [] }, d.byId) : null
+  if (t) snap.notices.push(...t.notices)
+  const needsYou = [...d.needsYou, ...improvementNeeds(gh.data?.pulls ?? [], snap.rules, snap.autoMergeMax), ...(t?.needs ?? [])].sort(byNeeds)
+  return { snap, meta, ctx, runs, sessions, ...d, needsYou, teams: t?.view ?? null }
 }
 export type FactoryState = Awaited<ReturnType<typeof computeState>>
 
