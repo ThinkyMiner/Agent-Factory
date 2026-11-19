@@ -37,9 +37,10 @@ When a cycle is dispatched, the feature branch `origin/feature/f<NNN>-<slug>` ho
 `git show origin/feature/<feature>:planning/<cycle>/dispatch.jsonl`. For each line whose team is
 yours, unless `gh issue list --label feature:<feature> --label team:<your team>` already has it:
 `factory/scripts/item.sh create --feature <feature> --title "<what it delivers>"`, with the item,
-its decisions, contract and what it waits for on stdin. Then tell the human which items are ready,
-in an order that respects the `after` column, so they can run `/work <number>` here (research:
-`/research-work <number>`). Research's `acceptance` item comes first: the e2e tests are written
+its decisions, contract and what it waits for on stdin. The sweep then types `/work <number>` here
+(research: `/research-work <number>`) whenever this session waits for input, lowest number first
+(`factory/scripts/autostart.sh`): you do not start them yourself. Tell the human which items are
+ready, in an order that respects the `after` column, in case the sweep is not running. Research's `acceptance` item comes first: the e2e tests are written
 from it, and a build item cannot start until they are in (`/work` checks with `integrate.sh ready`;
 `integrate.sh` rings you when they are). With `factory/scripts/policy.sh rigor` printing `mvp`,
 build items are ready at once, whatever the `after` column says about `acceptance`.

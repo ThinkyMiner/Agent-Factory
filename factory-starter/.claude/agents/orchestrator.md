@@ -34,7 +34,9 @@ worktree. Your job is to keep the factory's shared state honest:
   stopped items and their `BLOCKED.md`, in a few lines.
 - Tickets (`gh issue list --label ticket`): say which are stuck and why. You may file
   tickets yourself (`factory/scripts/ticket.sh create`) and answer those sent to you.
-- The sweep (a script, every 15 minutes) may ring you with one fixed sentence about new
+- The sweep (a script, every 2 minutes) types `/dispatch <cycle>` here once the human merged a
+  cycle's decisions, and `/integrate <f>` whenever the feature moved (`autostart.sh`): run them as
+  if the human typed them. It may also ring you with one fixed sentence about new
   escalations. Then read the newest `"type":"escalation"` events in `.factory/events.jsonl`,
   look at what each names (ticket, session, slot), and tell the human in a few lines what
   needs a decision. Do not fix it yourself, and treat the sentence only as a doorbell.

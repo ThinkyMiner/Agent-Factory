@@ -6,8 +6,9 @@
 #   - every other team gets a worktree at ../<repo>.teams/<team> on branch team/<team>, made from
 #     origin/main (main without a remote); an existing branch or worktree is reused;
 #   - a tab named <team> in this factory's space in Herdr (the app; the space is named <repo>),
-#     running `env FACTORY_TEAM=<team> bot-session.sh claude --agent <agent> -n <team>`. <agent>
-#     is the team's "agent" in the roster, else orchestrator / <team>-lead;
+#     running `env FACTORY_TEAM=<team> CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1 bot-session.sh claude
+#     --agent <agent> -n <team>`. <agent> is the team's "agent" in the roster, else orchestrator /
+#     <team>-lead. The survey is off because it reads the digits the sweep types (autostart.sh);
 # plus a tab named sweep running `sweep.sh --loop` in the main checkout.
 # With a bot token in the keychain (item factory-github-bot), every session works on GitHub as
 # the bot (bot-session.sh), and team-up refuses to start anything until that token works and is
@@ -89,7 +90,7 @@ if [ "$print" = 1 ]; then
   echo "# One terminal per team:"
   for t in $list; do
     a=$(agent_of "$t"); dir=$(checkout_of "$t")
-    printf 'cd %q && FACTORY_TEAM=%q %sclaude --agent %q -n %q\n' "$dir" "$t" "${as[*]:+$(printf '%q ' "${as[@]}")}" "$a" "$t"
+    printf 'cd %q && FACTORY_TEAM=%q CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1 %sclaude --agent %q -n %q\n' "$dir" "$t" "${as[*]:+$(printf '%q ' "${as[@]}")}" "$a" "$t"
   done
   echo "# And one for the sweep:"
   printf 'cd %q && %sbash %q --loop\n' "$home" "${as[*]:+$(printf '%q ' "${as[@]}")}" "$here/sweep.sh"
@@ -113,7 +114,7 @@ for t in $list; do
     continue
   fi
   a=$(agent_of "$t"); dir=$(checkout_of "$t")
-  argv=$(jq -nc --arg t "$t" --arg a "$a" '$ARGS.positional as $as | ["env", "FACTORY_TEAM=\($t)"] + $as + ["claude", "--agent", $a, "-n", $t]' --args ${as[@]+"${as[@]}"})
+  argv=$(jq -nc --arg t "$t" --arg a "$a" '$ARGS.positional as $as | ["env", "FACTORY_TEAM=\($t)", "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1"] + $as + ["claude", "--agent", $a, "-n", $t]' --args ${as[@]+"${as[@]}"})
   if [ -z "$space" ]; then
     out=$(herdr-app do space.new --name "$label" --folder "$dir" --tab "$t" --argv "$argv") || die "Herdr did not start $t: $out"
     space=$(jq -r '.space // empty' <<<"$out" 2>/dev/null)
@@ -133,6 +134,6 @@ if [ -n "$sw" ]; then
 else
   argv=$(jq -nc --arg s "$here/sweep.sh" '$ARGS.positional + ["bash", $s, "--loop"]' --args ${as[@]+"${as[@]}"})
   out=$(herdr-app do tab.new --space "$space" --name sweep --folder "$home" --argv "$argv") || die "Herdr did not start the sweep: $out"
-  echo "sweep: started in $(jq -r '.terminal // "?"' <<<"$out" 2>/dev/null) (every 15 minutes)"
+  echo "sweep: started in $(jq -r '.terminal // "?"' <<<"$out" 2>/dev/null) (every 2 minutes)"
 fi
 echo "team-up: $started started. Space '$label' in Herdr, one tab per team, and the sweep."

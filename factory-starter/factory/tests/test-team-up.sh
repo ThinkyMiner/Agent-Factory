@@ -32,7 +32,7 @@ SH
   export PATH="$TEST_TMP/fake:$PATH"
 }
 layout() { jq "$1" "$TEST_TMP/fake/layout" > "$TEST_TMP/l" && mv "$TEST_TMP/l" "$TEST_TMP/fake/layout"; }
-argv() { jq -nc --arg t "$1" --arg a "$2" --arg b "$SCRIPTS/bot-session.sh" '["env", "FACTORY_TEAM=\($t)", $b, "claude", "--agent", $a, "-n", $t]'; }
+argv() { jq -nc --arg t "$1" --arg a "$2" --arg b "$SCRIPTS/bot-session.sh" '["env", "FACTORY_TEAM=\($t)", "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1", $b, "claude", "--agent", $a, "-n", $t]'; }
 BOT=ghp_factorybot0000000000000000000000
 
 kit() {  # a team-mode factory in $TEST_TMP/app, cwd inside it
@@ -58,8 +58,8 @@ test_print_makes_worktrees_and_prints_launch_commands() {
   kit
   run "$U" --print; expect_rc 0
   expect_out "agents work on GitHub as $BOT"
-  expect_out "cd $TEST_TMP/app && FACTORY_TEAM=orchestrator $SCRIPTS/bot-session.sh claude --agent orchestrator -n orchestrator"
-  expect_out "cd $(BE) && FACTORY_TEAM=backend $SCRIPTS/bot-session.sh claude --agent backend-lead -n backend"
+  expect_out "cd $TEST_TMP/app && FACTORY_TEAM=orchestrator CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1 $SCRIPTS/bot-session.sh claude --agent orchestrator -n orchestrator"
+  expect_out "cd $(BE) && FACTORY_TEAM=backend CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1 $SCRIPTS/bot-session.sh claude --agent backend-lead -n backend"
   expect_out "cd $TEST_TMP/app && $SCRIPTS/bot-session.sh bash $SCRIPTS/sweep.sh --loop"
   expect_eq "$(git -C "$(BE)" rev-parse --abbrev-ref HEAD)" team/backend
   [ ! -e "$TEST_TMP/app.teams/frontend" ] || fail "launched an inactive team"
@@ -77,7 +77,7 @@ test_from_origin_main_when_there_is_a_remote() {
 
 test_runs_from_a_worktree_too() {
   kit; run "$U" --print; cd "$(BE)"
-  run "$U" --print; expect_rc 0; expect_out "cd $TEST_TMP/app && FACTORY_TEAM=orchestrator $SCRIPTS/bot-session.sh"
+  run "$U" --print; expect_rc 0; expect_out "cd $TEST_TMP/app && FACTORY_TEAM=orchestrator CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1 $SCRIPTS/bot-session.sh"
 }
 
 test_foreign_directory_in_the_way_fails() {
@@ -155,10 +155,10 @@ test_without_a_bot_token_sessions_work_as_you_and_it_says_so() {
   kit; fake_app; fake_keychain
   run "$U"; expect_rc 0; expect_out "agents work on GitHub as you (human): there is no bot token"
   expect_out "risk-gate cannot tell"
-  plain=$(jq -nc '["env", "FACTORY_TEAM=backend", "claude", "--agent", "backend-lead", "-n", "backend"]')
+  plain=$(jq -nc '["env", "FACTORY_TEAM=backend", "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1", "claude", "--agent", "backend-lead", "-n", "backend"]')
   grep -qxF -- "do tab.new --space sp1 --name backend --folder $(BE) --argv $plain" "$TEST_TMP/app.log" || fail "backend tab wrong: $(cat "$TEST_TMP/app.log")"
   grep -qF -- "--name sweep --folder $TEST_TMP/app --argv [\"bash\"," "$TEST_TMP/app.log" || fail "sweep tab wrong: $(cat "$TEST_TMP/app.log")"
-  run "$U" --print; expect_rc 0; expect_out "cd $(BE) && FACTORY_TEAM=backend claude --agent backend-lead -n backend"
+  run "$U" --print; expect_rc 0; expect_out "cd $(BE) && FACTORY_TEAM=backend CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1 claude --agent backend-lead -n backend"
   expect_out "cd $TEST_TMP/app && bash $SCRIPTS/sweep.sh --loop"
 }
 
@@ -187,7 +187,7 @@ test_frontend_team_runs_the_kits_frontend_lead() {
   kit; jq '.teams.frontend.active = true' factory/teams.json > t.json && cp t.json factory/teams.json
   cp "$KIT/.claude/agents/frontend-lead.md" .claude/agents/
   run "$U" --print; expect_rc 0
-  expect_out "cd $TEST_TMP/app.teams/frontend && FACTORY_TEAM=frontend $SCRIPTS/bot-session.sh claude --agent frontend-lead -n frontend"
+  expect_out "cd $TEST_TMP/app.teams/frontend && FACTORY_TEAM=frontend CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1 $SCRIPTS/bot-session.sh claude --agent frontend-lead -n frontend"
   expect_eq "$(git -C "$TEST_TMP/app.teams/frontend" rev-parse --abbrev-ref HEAD)" team/frontend
 }
 
@@ -195,7 +195,7 @@ test_research_team_runs_the_kits_research_lead() {
   kit; jq '.teams.research = {owns: ["research/*"], evidence_review: true}' factory/teams.json > t.json && cp t.json factory/teams.json
   cp "$KIT/.claude/agents/research-lead.md" .claude/agents/
   run "$U" --print; expect_rc 0
-  expect_out "cd $TEST_TMP/app.teams/research && FACTORY_TEAM=research $SCRIPTS/bot-session.sh claude --agent research-lead -n research"
+  expect_out "cd $TEST_TMP/app.teams/research && FACTORY_TEAM=research CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1 $SCRIPTS/bot-session.sh claude --agent research-lead -n research"
   expect_eq "$(git -C "$TEST_TMP/app.teams/research" rev-parse --abbrev-ref HEAD)" team/research
 }
 

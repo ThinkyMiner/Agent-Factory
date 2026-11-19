@@ -225,10 +225,23 @@ ring_team() {
 # `--if idle` never rang a session that had already worked. A plain send still refuses a blocked
 # terminal (one showing a dialog), so a ring never answers a dialog: never add --force here.
 # ponytail: checked, then sent; a session that starts a turn in between gets the line queued.
-hc_ring() {
+hc_ring() { hc_waiting "$1" && hc send "$1" "$2" >/dev/null 2>&1; }
+hc_waiting() {
   local st
   st=$(hc ls --json 2>/dev/null | jq -r --arg t "$1" 'first(.terminals[]? | select(.address == $t) | .status) // empty' 2>/dev/null)
-  case "$st" in idle|done) hc send "$1" "$2" >/dev/null 2>&1 ;; *) return 1 ;; esac
+  case "$st" in idle|done) return 0 ;; *) return 1 ;; esac
+}
+
+# hc_type <terminal> <command>: type a slash command into a terminal waiting for input, key by key,
+# then enter. hc send marks its text as a note from another program, and a skill only a person may
+# start runs only when typed, so this is how a script starts one (autostart.sh). Only a slash
+# command of a-z, 0-9, space and - is typed: anything else exits 2.
+hc_type() {
+  local i k keys=()
+  [[ "$2" =~ ^/[a-z][a-z0-9\ -]{0,79}$ ]] || return 2
+  hc_waiting "$1" || return 1
+  for ((i = 0; i < ${#2}; i++)); do k=${2:i:1}; [ "$k" = " " ] && k=space; keys+=("$k"); done
+  hc keys "$1" "${keys[@]}" enter >/dev/null 2>&1
 }
 
 # ---- contracts ----

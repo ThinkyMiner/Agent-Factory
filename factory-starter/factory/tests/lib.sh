@@ -61,7 +61,8 @@ JSON
   BE="$TEST_TMP/app.teams/backend"; FE="$TEST_TMP/app.teams/frontend"; MAIN="$TEST_TMP/app"
 }
 # fake_hc <dir> <log>: an hc in <dir> (put <dir> on PATH) that records each send in <log> as
-# "<terminal>|<text>", plus "|<more args>" if it was given any. `hc ls --json` lists terminals t1 to
+# "<terminal>|<text>", plus "|<more args>" if it was given any, and each `hc keys` as
+# "<terminal>|keys <key> <key>...". `hc ls --json` lists terminals t1 to
 # t99, each with the status in $TEST_TMP/hc-status-<terminal>, else $TEST_TMP/hc-status, else done
 # (hc's word for a session that has finished a turn and waits for input).
 fake_hc() {
@@ -73,6 +74,7 @@ case "$1" in
         jq -cn --arg a "t$i" --arg s "$s" '{address: $a, status: $s}'
       done | jq -s '{terminals: .}' ;;
   send) printf '%s|%s%s\n' "$2" "$3" "${4:+|${*:4}}" >> "$log" ;;
+  keys) printf '%s|keys %s\n' "$2" "${*:3}" >> "$log" ;;
   *) exit 3 ;;
 esac
 SH

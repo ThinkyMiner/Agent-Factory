@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# The sweep: finds what is stuck and tells the orchestrator. A script on a timer, not a model, so
-# it costs nothing while all is well.
+# The sweep: starts approved work (autostart.sh) and finds what is stuck and tells the
+# orchestrator. A script on a timer, not a model, so it costs nothing while all is well.
 #   sweep.sh           one pass
-#   sweep.sh --loop    a pass every FACTORY_SWEEP_SECONDS (default 900); team-up runs it in a tab
+#   sweep.sh --loop    a pass every FACTORY_SWEEP_SECONDS (default 120); team-up runs it in a tab
 # It escalates (limits from "limits" in factory/teams.json, defaults in brackets):
 #   - a ticket still open and unanswered after ticket_answer_hours [8]
 #   - a declined ticket that is disputed, and a ticket declined twice
@@ -23,7 +23,7 @@ die() { echo "sweep: $*" >&2; exit 1; }
 DOORBELL="The sweep has new escalations. Read the latest escalation events in .factory/events.jsonl, look at what they point to, and tell the human what needs a decision."
 
 if [ "${1:-}" = --loop ]; then
-  every=${FACTORY_SWEEP_SECONDS:-900}; [[ "$every" =~ ^[1-9][0-9]{0,5}$ ]] || every=900
+  every=${FACTORY_SWEEP_SECONDS:-120}; [[ "$every" =~ ^[1-9][0-9]{0,5}$ ]] || every=120
   while :; do bash "$0" || true; sleep "$every"; done
 fi
 [ $# -eq 0 ] || die "usage: sweep.sh [--loop]"
@@ -31,6 +31,7 @@ top=$(git rev-parse --show-toplevel 2>/dev/null) || die "run this inside the fac
 home=$(factory_home "$top")
 teams=$(teams_file "$home") || die "the sweep is for team mode, and this factory has no factory/teams.json"
 dir="$home/.factory"; mkdir -p "$dir"; sf="$dir/sweep.json"
+"$here/autostart.sh" || true
 limit() { local v; v=$(jq -r --arg k "$1" '.limits[$k] // empty' "$teams" 2>/dev/null); [[ "$v" =~ ^[0-9]{1,5}$ ]] && echo "$v" || echo "$2"; }
 epoch() { jq -rn --arg d "$1" '$d | try (sub("\\.[0-9]+"; "") | fromdateiso8601) catch empty'; }
 now=$(date -u +%s)

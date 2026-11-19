@@ -178,7 +178,8 @@ ticket.sh verify <n> | dispute <n> --reason "..." | withdraw <n> --reason "..." 
   (closes). A ticket can be disputed once; after that it goes to the orchestrator.
 - Text is posted with `@mentions` and HTML neutralised. Each action comments with a
   machine-readable line, sets the `state:` label and writes a `ticket` event.
-- An accepted ticket is a work item for the receiving team: you run `/work <n>` in its tab.
+- An accepted ticket is a work item for the receiving team: the sweep types `/work <n>` in its tab
+  when the ticket is about a dispatched feature (`feature:<f>`); for any other, you do.
 
 `item.sh create --title "..." [--proposed] [--feature <id>]` (body on stdin) is how `/work` and
 `/groom` create issues; in team mode it labels the issue `team:<team>`.
@@ -193,8 +194,27 @@ one. A session that died keeps its slot; the sweep reports it, and deleting
 
 ## The sweep
 
-A script in its own tab (`sweep.sh --loop`, every 15 minutes), not a model, so it costs nothing
-while all is well. It escalates tickets unanswered for 8 hours, a declined ticket that is disputed
+A script in its own tab (`sweep.sh --loop`, every 2 minutes), not a model, so it costs nothing
+while all is well.
+
+Each pass first starts approved work (`autostart.sh`), so nobody types it. You decide what gets
+built when you merge a cycle's decisions; from there the sweep types the next command into the tab
+that runs it, only while that tab waits for input, and the skill checks all it checks when you
+type it:
+
+| It types | Into | When |
+|---|---|---|
+| `/dispatch <cycle>` | orchestrator | the cycle's state on `origin/main` is `approval`, its `DECISIONS.md` is there, and no feature branch is open |
+| `/work <n>` (research: `/research-work <n>`) | the team's tab | issue `<n>` is open on the open feature (`feature:<f>`), labelled `team:<team>` (an item from dispatch) or a ticket `to:<team>` in `state:accepted`, and has no `work/<n>-*` branch |
+| `/integrate <f>` | orchestrator | `feature/<f>` or `integrate/<f>` moved since it last typed it |
+
+`/dispatch` and `/work` are typed again after `retry_minutes` (30) while nothing came of them (a
+full slot, tests not in yet). Work outside a dispatched feature still waits for you to type
+`/work`. Typing is key by key (`hc keys`), because a skill only a person may start does not run
+from `hc send`; team-up turns Claude Code's feedback survey off, since it reads typed digits.
+`FACTORY_AUTOSTART=0` in the sweep's environment turns this off.
+
+Then it escalates tickets unanswered for 8 hours, a declined ticket that is disputed
 or declined twice, tickets that block each other in a cycle, a team over its ticket budget, a
 session stuck on a dialog for 10 minutes, a session working with no event for 30 minutes, and a
 slot held for 4 hours (all in `limits`). Each new finding is an `escalation` event, once while it
@@ -205,8 +225,9 @@ escalations and tell the human. The findings never travel in that sentence.
 
 A feature that needs more than one team, or one team's work that is worth a decision record, starts
 with a planning cycle. The orchestrator chairs it with `/plan`; leads take part with `/inbox`. Those two answer the doorbell, so the model may start
-them; `/work`, `/research-work`, `/dispatch` and `/integrate` start only when you type them
-(`test-doorbell.sh` holds both halves). The
+them; `/work`, `/research-work`, `/dispatch` and `/integrate` start only when typed, never by a
+model (`test-doorbell.sh` holds both halves): by you, or by the sweep for work that follows from
+decisions you approved (see The sweep). The
 record is `planning/c<NNN>-<slug>/` on the branch `planning/c<NNN>-<slug>` in the main checkout, and
 its pull request is how you approve it. Version 1 runs one cycle at a time: `round.sh open` refuses
 while one is open (a marker in `.factory/planning/active`).
