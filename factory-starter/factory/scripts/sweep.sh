@@ -80,8 +80,9 @@ fi
 
 # ---- sessions (Herdr) ----
 label=$(basename "$home"); orch=""; blocked=$(jq -c '.blocked // {} | if type == "object" then . else {} end' <<<"$state")
+busy=$(jq -c '.working // {} | if type == "object" then . else {} end' <<<"$state")
 if command -v herdr-app >/dev/null 2>&1 && lay=$(herdr-app ls 2>/dev/null) && jq -e '.spaces | type == "array"' <<<"$lay" >/dev/null 2>&1; then
-  was=$blocked; blocked='{}'
+  was=$blocked; blocked='{}'; wasbusy=$busy; busy='{}'
   bm=$(limit blocked_minutes 10); sm=$(limit silent_minutes 30)
   while IFS=$'\t' read -r t term st; do
     team_names "$teams" | grep -qxF -- "$t" || continue
@@ -93,9 +94,14 @@ if command -v herdr-app >/dev/null 2>&1 && lay=$(herdr-app ls 2>/dev/null) && jq
         mins=$(( (now - since) / 60 ))
         [ "$mins" -lt "$bm" ] || add "blocked:$t:$since" blocked "$t" "the $t session has waited on a dialog for $mins minutes (Herdr tab $t)" ;;
       working)
+        # Silent since its last event, or since this sweep first saw it working, whichever is later:
+        # a session that has just started a turn (often one autostart typed) is not silent.
+        since=$(jq -r --arg t "$t" '.[$t] // empty' <<<"$wasbusy"); [[ "$since" =~ ^[0-9]{1,12}$ ]] || since=$now
+        busy=$(jq -c --arg t "$t" --argjson s "$since" '. + {($t): $s}' <<<"$busy")
         last=$(grep -F "\"team\":\"$t\"" "$dir/events.jsonl" 2>/dev/null | tail -1 | jq -r '.ts // empty' 2>/dev/null)
         lt=$( [ -n "$last" ] && epoch "$last")
         if [ -n "$lt" ]; then
+          [ "$lt" -ge "$since" ] || lt=$since
           mins=$(( (now - lt) / 60 ))
           [ "$mins" -lt "$sm" ] || add "silent:$t:$last" silent "$t" "the $t session has been working for $mins minutes without an event"
         fi ;;
@@ -140,7 +146,7 @@ ring=$(jq -r 'if .ring == true then "true" else "false" end' <<<"$state"); [ -z 
 if [ "$ring" = true ] && [ -n "$orch" ] && command -v hc >/dev/null 2>&1; then
   hc_ring "$orch" "$DOORBELL" && ring=false
 fi
-jq -n --argjson seen "$seen" --argjson b "$blocked" --argjson r "$ring" '{seen: $seen, blocked: $b, ring: $r}' > "$sf.new" && mv "$sf.new" "$sf"
+jq -n --argjson seen "$seen" --argjson b "$blocked" --argjson w "$busy" --argjson r "$ring" '{seen: $seen, blocked: $b, working: $w, ring: $r}' > "$sf.new" && mv "$sf.new" "$sf"
 
 n_all=$(printf '%s' "$found" | grep -c . || true); n_new=$(printf '%s' "$new" | grep -c . || true)
 printf '%s' "$found" | jq -r --argjson seen "$(jq -c '.seen // {}' <<<"$state" 2>/dev/null || echo '{}')" '.key as $k | "  \(if ($seen | has($k)) then "   " else "new" end) \(.text)"'

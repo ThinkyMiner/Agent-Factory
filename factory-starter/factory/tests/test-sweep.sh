@@ -88,6 +88,8 @@ test_a_session_working_without_events() {
   setup; echo '[]' > "$FAKE_GH/issues.json"; sessions orchestrator:idle backend:working frontend:working
   mkdir -p .factory
   printf '{"ts":"%s","type":"stage","team":"backend"}\nnot json\n{"ts":"%s","type":"stage","team":"frontend"}\n' "$(ago 2400)" "$(ago 300)" > .factory/events.jsonl
+  run "$W"; expect_out "0 open finding(s)"                                  # first seen working: the clock starts
+  jq -c '.working |= map_values(. - 2400)' .factory/sweep.json > s && mv s .factory/sweep.json
   run "$W"; expect_out "the backend session has been working for 40 minutes without an event"
   grep -q "frontend session" "$OUT" && fail "frontend had a recent event"
   true
@@ -123,6 +125,7 @@ test_a_planning_round_past_its_time() {
 test_a_finding_that_returns_is_escalated_again() {
   setup; echo '[]' > "$FAKE_GH/issues.json"; sessions orchestrator:idle backend:working
   mkdir -p .factory; printf '{"ts":"%s","type":"stage","team":"backend"}\n' "$(ago 2400)" > .factory/events.jsonl
+  run "$W"; jq -c '.working.backend -= 2400' .factory/sweep.json > s && mv s .factory/sweep.json
   run "$W"; expect_eq "$(escalations | wc -l | tr -d ' ')" 1
   printf '{"ts":"%s","type":"stage","team":"backend"}\n' "$(ago 1)" >> .factory/events.jsonl; run "$W"
   expect_eq "$(jq '.seen | length' .factory/sweep.json)" 0
@@ -170,6 +173,29 @@ test_loop_runs_passes() {
   FACTORY_SWEEP_SECONDS=1 "$W" --loop > loop.out 2>&1 & pid=$!
   sleep 3; kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null || true
   [ "$(grep -c '^sweep: .*open finding' loop.out)" -ge 2 ] || fail "fewer than two passes: $(cat loop.out)"
+}
+
+test_a_silent_session_counts_from_when_it_started_working() {
+  setup; echo '[]' > "$FAKE_GH/issues.json"; mkdir -p .factory
+  printf '{"ts":"%s","type":"stage","team":"backend"}\n' "$(ago 2400)" > .factory/events.jsonl   # its last event: 40 minutes ago
+  sessions orchestrator:idle backend:working
+  run "$W"; expect_rc 0; expect_out "0 open finding(s)"            # just started a turn (autostart): not silent
+  jq -c '.working.backend -= 1860' .factory/sweep.json > s && mv s .factory/sweep.json
+  run "$W"; expect_out "the backend session has been working for 31 minutes without an event"
+  expect_eq "$(escalations)" "silent backend"
+}
+
+test_a_recent_event_or_a_pause_restarts_the_silence() {
+  setup; echo '[]' > "$FAKE_GH/issues.json"; mkdir -p .factory
+  printf '{"ts":"%s","type":"stage","team":"backend"}\n' "$(ago 300)" > .factory/events.jsonl
+  sessions orchestrator:idle backend:working; run "$W"
+  jq -c '.working.backend -= 7200' .factory/sweep.json > s && mv s .factory/sweep.json
+  run "$W"; expect_out "0 open finding(s)"                           # working 2 hours, but an event 5 minutes ago
+  printf '{"ts":"%s","type":"stage","team":"backend"}\n' "$(ago 7200)" > .factory/events.jsonl
+  sessions orchestrator:idle backend:done; run "$W"
+  expect_eq "$(jq -c .working .factory/sweep.json)" '{}'              # waiting for input: forgotten
+  sessions orchestrator:idle backend:working; run "$W"; expect_out "0 open finding(s)"
+  echo '{"working": "x", "seen": 3}' > .factory/sweep.json; run "$W"; expect_rc 0   # a corrupt state file
 }
 
 run_tests
