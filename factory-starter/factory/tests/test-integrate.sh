@@ -561,6 +561,10 @@ test_sync_merges_main_into_the_feature_branch_without_touching_the_checkout() {
   local first; first=$(git -C "$o" rev-parse "sync/$F")
   orch sync "$F"; expect_rc 0; expect_out "pull request #$p"; expect_eq "$(git -C "$o" rev-parse "sync/$F")" "$first" "sync/$F after a second run"
   ! grep -q "(updated)\|(opened)" "$OUT" || fail "a second run pushed again: $(cat "$OUT")"
+  # the feature moves on (an item merged), main does not: still nothing pushed
+  push_to backend "feature/$F" server/built.txt "an item"
+  orch sync "$F"; expect_rc 0; expect_out "pull request #$p"; expect_eq "$(git -C "$o" rev-parse "sync/$F")" "$first" "sync/$F after the feature moved"
+  ! grep -q "(updated)\|(opened)" "$OUT" || fail "the feature moving made sync push again: $(cat "$OUT")"
   # main moves on: the same pull request, updated
   push_to human main factory/notes.txt "a second kit fix"
   orch sync "$F"; expect_rc 0; expect_out "pull request #$p (updated)"
@@ -580,6 +584,15 @@ test_sync_refuses_when_main_and_the_feature_both_changed_a_file() {
   origin_has "sync/$F" && fail "a refused sync was pushed"
   [ -z "$(ls "$FAKE_GH/pulls")" ] || fail "a refused sync opened a pull request"
   on_main
+}
+
+test_a_kept_sync_is_remade_when_the_feature_changed_a_file_it_brings() {
+  integ_setup; local o=$TEST_TMP/origin.git first
+  push_to human main e2e.sh "$(sed '$s/$/ # main/' "$MAIN/e2e.sh")"
+  orch sync "$F"; expect_rc 0; expect_out "(opened)"; first=$(git -C "$o" rev-parse "sync/$F")
+  push_to backend "feature/$F" e2e.sh "$(sed '1s/$/ # the feature/' "$MAIN/e2e.sh")"     # merges cleanly, but the feature changed it too
+  orch sync "$F"; expect_rc 1; expect_err "main and feature/$F both changed: e2e.sh"
+  expect_eq "$(git -C "$o" rev-parse "sync/$F")" "$first" "a refused sync is not pushed"
 }
 
 # ---- drop: the human stopped the feature ----

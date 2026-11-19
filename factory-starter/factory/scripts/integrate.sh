@@ -40,7 +40,8 @@
 #                                           planning too. Its tier comes from its paths (factory
 #                                           files: R2, the human approves); it merges with a merge
 #                                           commit, never a squash, so main becomes part of feature/<f>.
-#                                           Pushes nothing when sync/<f> already holds both.
+#                                           Pushes nothing when sync/<f> already holds main and
+#                                           still merges cleanly into feature/<f>.
 # Exit codes: 0 ok; 1 refused or failed (run: e2e failed in round 1); 3 escalated to the human (e2e
 # failed in two rounds); 4 a merge conflict, ticketed to the owning teams.
 # Refuses while a planning cycle is open (planning and integration share the main checkout in
@@ -82,9 +83,20 @@ if [ "$cmd" = sync ]; then
   git rev-parse -q --verify "$M^{commit}" >/dev/null || die "origin/main does not exist"
   if git merge-base --is-ancestor "$M" "$F"; then say "feature/$f already holds everything on main: nothing to sync"; exit 0; fi
   S="refs/remotes/origin/sync/$f" pushed=""
-  # Already pushed and holding both (a label on its pull request stays valid): push nothing.
-  if ! { git rev-parse -q --verify "$S^{commit}" >/dev/null && git merge-base --is-ancestor "$M" "$S" &&
-         git merge-base --is-ancestor "$F" "$S"; }; then
+  # Already pushed and holding main: push nothing, so a label on its pull request stays valid. That
+  # holds when the feature has moved on since (an item merged) too, as long as the two still merge
+  # cleanly and the feature changed none of the files the sync brings.
+  keep=0
+  if git rev-parse -q --verify "$S^{commit}" >/dev/null && git merge-base --is-ancestor "$M" "$S"; then
+    if git merge-base --is-ancestor "$F" "$S"; then keep=1
+    elif git merge-tree --write-tree --no-messages "$F" "$S" >/dev/null 2>&1 && sync_refs "$M" "$F" "$S"; then
+      keep=1
+      while IFS= read -r -d '' p; do
+        [ "$(sync_verdict "$F" "$S" "$p")" = ok ] || keep=0
+      done < <(git diff -z --name-only --no-renames "$F...$S")
+    fi
+  fi
+  if [ "$keep" = 0 ]; then
     rc=0; t=$(git merge-tree --write-tree --no-messages "$F" "$M" 2>/dev/null) || rc=$?
     t=${t%%$'\n'*}
     [ "$rc" = 0 ] && git cat-file -e "$t^{tree}" 2>/dev/null ||
