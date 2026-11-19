@@ -88,4 +88,18 @@ test_a_sync_branch_is_exempt() {
   [ ! -e pwned ] || fail "a branch name was run"
 }
 
+test_a_siblings_tests_merged_into_the_base_are_not_this_changes_edit() {
+  # CI checks the pull request merged with its base. A sibling item's tests that reached the base
+  # after this branch began show up after this branch's lock, unchanged: not an edit.
+  setup; tests_commit a
+  git switch -q main; echo "sibling" > tests/acceptance/b.test; git add .; git commit -qm "sibling" -m "Factory-Stage: tests"
+  git switch -q work/7-thing; build_commit a; git merge -q --no-edit main
+  run "$L" main; expect_rc 0; expect_out "locked at"
+  echo "weakened" > tests/acceptance/b.test; git commit -qam "edit the sibling's test"   # hostile: not as the base has it
+  run "$L" main; expect_rc 1; expect_err "b.test"
+  git checkout -q main -- tests/acceptance/b.test; git commit -qm "put it back"
+  echo "weakened" > tests/acceptance/a.test; git commit -qam "edit my own"                # this change's own test still locked
+  run "$L" main; expect_rc 1; expect_err "a.test"
+}
+
 run_tests

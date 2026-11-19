@@ -2,7 +2,8 @@
 # Fail if acceptance tests were changed after the test-author committed them.
 # The test-author marks its commit with the trailer "Factory-Stage: tests".
 # Anything under tests/acceptance/ that differs between the latest such commit
-# and HEAD was edited by someone else, usually to make a failing test pass.
+# and HEAD, and is not exactly as the base has it, was edited by someone else,
+# usually to make a failing test pass.
 #   check-acceptance-lock.sh [base-ref]   (default base: origin/main)
 # HEAD_REF sync/<f> (main merged into feature/<f>, in CI): exempt. It brings main's files unchanged
 # (check-ownership.sh makes sure), and each passed this check on its way into main.
@@ -32,7 +33,16 @@ if [ -z "$lock" ]; then
   exit 0
 fi
 
-changed=$(git diff --name-only "$lock" HEAD -- "$dir")
+# A file that differs from the lock but that the base changed after this branch left it, and that
+# this change leaves exactly as the base has it, came from the base (a sibling item merged into it;
+# CI checks the merge with it), not from this change.
+mb=$(git merge-base "$base" "$lock") || { echo "acceptance lock: $base and the tests commit share no history" >&2; exit 1; }
+changed=$(git diff -z --name-only "$lock" HEAD -- "$dir" | while IFS= read -r -d '' f; do
+  if git diff --quiet "$base" HEAD -- ":(literal)$f" 2>/dev/null && ! git diff --quiet "$mb" "$base" -- ":(literal)$f" 2>/dev/null; then
+    continue
+  fi
+  printf '%s\n' "$f"
+done)
 if [ -n "$changed" ]; then
   echo "acceptance lock: files changed after the tests commit ${lock:0:8}:" >&2
   echo "$changed" >&2
