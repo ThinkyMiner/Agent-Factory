@@ -159,7 +159,7 @@ say_as() {  # say_as <from> <to> <kind> <body>: a transcript line written by the
   event message cycle="$cyc" round="$status" id="$id" from="$1" to="$2" kind="$3"
 }
 ring_all() {
-  local t; for t in $cteams; do ring_team "$home" "$t" "Planning needs you: run /inbox." || echo "round: could not ring $t (busy, or no Herdr): tell it to run /inbox"; done
+  local t; for t in $cteams; do ring_team "$home" "$t" "Planning needs you: run /inbox." || echo "round: could not ring $t now: the sweep rings it when its tab waits (without Herdr, tell it to run /inbox)"; done
 }
 move() {  # move <new status>
   local t; t=$(now)

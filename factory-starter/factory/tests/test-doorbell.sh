@@ -83,4 +83,18 @@ test_no_ring_when_the_tab_is_not_in_this_factory_s_space() {
   expect_rc 1; expect_eq "$(rang)" ""
 }
 
+test_a_ring_that_cannot_go_is_kept_for_the_sweep_without_its_words() {
+  ring working; expect_rc 1; [ -f app/.factory/rings/backend ] || fail "a busy session's ring was dropped"
+  expect_eq "$(wc -c < app/.factory/rings/backend | tr -d ' ')" 0 "the kept ring holds words"
+  rm -rf app/.factory; ring done; expect_rc 0; [ ! -e app/.factory/rings/backend ] || fail "a ring that went was kept"
+  ring idle '{"spaces":[{"name":"app","tabs":[]}]}'; expect_rc 1; [ -f app/.factory/rings/backend ] || fail "a closed tab's ring was dropped"
+  rm -rf app/.factory; RC=0; ( PATH="$(path_without herdr-app hc)"; . "$SCRIPTS/lib.sh"; ring_team "$TEST_TMP/app" backend x ) || RC=$?
+  expect_rc 1; [ ! -e app/.factory/rings ] || fail "kept a ring without Herdr, where nothing will ring it"
+  local bad
+  for bad in "../evil" "a/b" "" "Backend" '$(touch pwned)'; do
+    ( . "$SCRIPTS/lib.sh"; ring_later "$TEST_TMP/app" "$bad" ) && fail "ring_later took [$bad]"
+  done
+  [ ! -e evil ] && [ ! -e pwned ] && [ ! -e app/.factory/evil ] || fail "a hostile team name wrote outside rings/"
+}
+
 run_tests

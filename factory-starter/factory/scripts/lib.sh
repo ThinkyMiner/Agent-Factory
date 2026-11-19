@@ -210,14 +210,24 @@ transcript_append() {
 # ring_team <home> <team> <text>: the doorbell. Types a fixed line into the team's tab in this
 # factory's Herdr space, only if that session is waiting for input. Never carries content: the
 # line says where to look. Returns 1 when it could not ring (no Herdr, no such tab, or the session
-# is busy).
+# is busy). With Herdr running, a ring that could not go is kept (ring_later) and the sweep rings
+# that team once its tab waits for input.
 ring_team() {
   local term
   command -v herdr-app >/dev/null 2>&1 && command -v hc >/dev/null 2>&1 || return 1
   term=$(herdr-app ls 2>/dev/null | jq -r --arg l "$(basename "$1")" --arg t "$2" \
     '[.spaces[]? | select(.name == $l)][0].tabs[]? | select(.name == $t) | .terminals[0].terminal // empty' 2>/dev/null | head -1)
-  [ -n "$term" ] || return 1
-  hc_ring "$term" "$3"
+  if [ -n "$term" ] && hc_ring "$term" "$3"; then return 0; fi
+  ring_later "$1" "$2"; return 1
+}
+
+# ring_later <home> <team>: note that <team> is owed a doorbell, as an empty file
+# .factory/rings/<team>. Only that one is owed is kept, never the words: the sweep rings with
+# later_line, its own fixed sentence, so nothing written there can reach another session.
+ring_later() { valid_team_name "$2" && mkdir -p "$1/.factory/rings" 2>/dev/null && : > "$1/.factory/rings/$2"; }
+later_line() {
+  if [ "$1" = orchestrator ]; then echo "Planning: a round can close. Run /plan."
+  else echo "Something is waiting for you: run /inbox."; fi
 }
 
 # hc_ring <terminal> <text>: type text into a terminal that is waiting for input. hc calls such a

@@ -189,4 +189,13 @@ test_github_failures_stop_without_a_false_record() {
   expect_eq "$(events)" 1
 }
 
+test_a_new_ticket_rings_the_team_it_is_for() {
+  setup; fake_herdr; ask frontend backend; expect_rc 0
+  expect_eq "$(cat "$TEST_TMP/hd/hc.log")" "t2|A ticket for you: run /inbox."
+  echo working > "$TEST_TMP/hc-status-t3"; ask backend frontend; expect_rc 0
+  [ -f "$MAIN/.factory/rings/frontend" ] || fail "a busy receiver's ring was not kept for the sweep"
+  rm -rf "$MAIN/.factory/rings"; PATH="$(path_without herdr-app hc):$FAKE_GH/bin"; ask frontend backend
+  expect_rc 0; [ ! -e "$MAIN/.factory/rings" ] || fail "kept a ring without Herdr"
+}
+
 run_tests

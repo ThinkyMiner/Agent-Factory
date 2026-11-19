@@ -15,6 +15,7 @@
 # Each new finding becomes an escalation event in .factory/events.jsonl, and the orchestrator's
 # Herdr tab gets one fixed doorbell when it waits for input, never the findings themselves. A finding is
 # escalated once while it lasts; a doorbell that could not ring is retried next pass.
+# It also rings each team owed a doorbell that could not ring when it was sent (.factory/rings/).
 # State: .factory/sweep.json. Only reads GitHub.
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -31,7 +32,17 @@ top=$(git rev-parse --show-toplevel 2>/dev/null) || die "run this inside the fac
 home=$(factory_home "$top")
 teams=$(teams_file "$home") || die "the sweep is for team mode, and this factory has no factory/teams.json"
 dir="$home/.factory"; mkdir -p "$dir"; sf="$dir/sweep.json"
-"$here/autostart.sh" || true
+typedto=$("$here/autostart.sh") || true
+[ -z "$typedto" ] || printf '%s\n' "$typedto"
+# Doorbells that could not ring when they were sent (the tab was busy): ring them now, with the
+# sweep's own fixed line. Not a tab autostart typed into this pass: it has just started a turn.
+for f in "$dir"/rings/*; do
+  [ -f "$f" ] || continue
+  t=${f##*/}; rm -f "$f"
+  valid_team_name "$t" && team_names "$teams" | grep -qxF -- "$t" || continue
+  if grep -qF " into $t (" <<<"$typedto"; then ring_later "$home" "$t"; continue; fi
+  ring_team "$home" "$t" "$(later_line "$t")" && echo "sweep: rang $t (a doorbell that had waited)"
+done
 limit() { local v; v=$(jq -r --arg k "$1" '.limits[$k] // empty' "$teams" 2>/dev/null); [[ "$v" =~ ^[0-9]{1,5}$ ]] && echo "$v" || echo "$2"; }
 epoch() { jq -rn --arg d "$1" '$d | try (sub("\\.[0-9]+"; "") | fromdateiso8601) catch empty'; }
 now=$(date -u +%s)

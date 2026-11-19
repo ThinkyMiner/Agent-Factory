@@ -110,5 +110,9 @@ rc=0; id=$(transcript_append "$tx" "$lock" "$pre" "$line") || rc=$?
 [ "$rc" = 0 ] || die "could not write the transcript (code $rc$( [ "$rc" = 75 ] && echo ': another writer held the lock; try again'))"
 "$here/emit-event.sh" message cycle="$cyc" round="$status" id="$id" from="$me" to="$to" kind="$kind" >/dev/null 2>&1 || true
 echo "$id"
-if [ "$kind" = question ] && in_cycle "$to"; then ring_team "$home" "$to" "Planning needs you: run /inbox." || true; fi
+if [ "$kind" = question ]; then
+  for t in $( [ "$to" = all ] && printf '%s\n' "$cteams" || { in_cycle "$to" && printf '%s\n' "$to"; } ); do
+    [ "$t" = "$me" ] || ring_team "$home" "$t" "Planning needs you: run /inbox." || true
+  done
+fi
 if [ "$me" != orchestrator ] && bash "$here/round.sh" ready >/dev/null 2>&1; then ring_team "$home" orchestrator "Planning: a round can close. Run /plan." || true; fi

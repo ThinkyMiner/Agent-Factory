@@ -150,4 +150,12 @@ test_the_sweep_runs_autostart_each_pass() {
   setup; feature; issue 7 OPEN feature:f001-x team:backend
   run "$SCRIPTS/sweep.sh"; expect_rc 0; expect_out "typed /work 7 into backend (t2)"
 }
+test_the_sweep_does_not_ring_a_tab_autostart_just_typed_into() {
+  setup; feature; issue 7 OPEN feature:f001-x team:backend; mkdir -p .factory/rings; : > .factory/rings/backend
+  echo working > "$TEST_TMP/hc-status-t1"
+  run "$SCRIPTS/sweep.sh"; expect_rc 0
+  expect_eq "$(typed)" "t2|keys / w o r k space 7 enter;"
+  [ -f .factory/rings/backend ] || fail "the waiting ring was dropped instead of kept for the next pass"
+}
+
 run_tests

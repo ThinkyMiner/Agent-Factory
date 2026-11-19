@@ -97,6 +97,7 @@ Change this ticket only with \`factory/scripts/ticket.sh\` (accept, decline, don
   n=${url##*/}; [[ "$n" =~ ^[0-9]+$ ]] || die "unexpected answer from gh: $url"
   event number="$n" action=create from="$me" to="$to" ticket_type="$type" feature="$feature" state=open
   echo "ticket #$n: $me → $to ($type). $url"
+  ring_team "$(factory_home "$top")" "$to" "A ticket for you: run /inbox." || true
   ;;
 
 accept|decline|done|verify|dispute|withdraw)

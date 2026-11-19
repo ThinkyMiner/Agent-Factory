@@ -214,6 +214,13 @@ full slot, tests not in yet). Work outside a dispatched feature still waits for 
 from `hc send`; team-up turns Claude Code's feedback survey off, since it reads typed digits.
 `FACTORY_AUTOSTART=0` in the sweep's environment turns this off.
 
+Next it rings doorbells that waited. A ticket rings the team it is for, a planning question rings
+the team it asks (`--to all`: every team in the cycle but the asker), and dispatch and the rounds
+ring the teams they name. A tab that is busy or closed cannot be rung, so the ring is kept as an
+empty file, `.factory/rings/<team>`, and each pass tries again with its own fixed sentence ("run
+/inbox"; the orchestrator's is "run /plan"), never words from the file. A tab autostart just typed
+into keeps its ring for the next pass. Without Herdr nothing is kept: tell the team yourself.
+
 Then it escalates tickets unanswered for 8 hours, a declined ticket that is disputed
 or declined twice, tickets that block each other in a cycle, a team over its ticket budget, a
 session stuck on a dialog for 10 minutes, a session working with no event for 30 minutes, and a

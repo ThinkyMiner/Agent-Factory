@@ -96,5 +96,5 @@ done < <(printf '%s\n' "$items" | jq -r '[.team, .item] | @tsv')
 "$here/emit-event.sh" round cycle="$cyc" status=dispatched >/dev/null 2>&1 || true
 echo "dispatch: $cyc is feature/$feature, $(printf '%s\n' "$items" | grep -c .) item(s)."
 for t in $(printf '%s\n' "$items" | jq -r .team | sort -u); do
-  ring_team "$home" "$t" "New items for you: run /inbox." && echo "dispatch: rang $t" || echo "dispatch: could not ring $t (busy, or no Herdr): tell it to run /inbox"
+  ring_team "$home" "$t" "New items for you: run /inbox." && echo "dispatch: rang $t" || echo "dispatch: could not ring $t now: the sweep rings it when its tab waits (without Herdr, tell it to run /inbox)"
 done

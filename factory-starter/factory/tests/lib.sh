@@ -42,6 +42,15 @@ path_without() {
   echo "$d"
 }
 
+# fake_herdr: the factory's Herdr space with every team idle; hc records what it types
+fake_herdr() {
+  mkdir -p "$TEST_TMP/hd"
+  jq -n '{spaces: [{name: "app", tabs: [{name: "orchestrator", terminals: [{terminal: "t1"}]}, {name: "backend", terminals: [{terminal: "t2"}]},
+                                        {name: "frontend", terminals: [{terminal: "t3"}]}, {name: "research", terminals: [{terminal: "t4"}]}]}]}' > "$TEST_TMP/hd/layout"
+  printf '#!/usr/bin/env bash\n[ "$1" = ls ] && cat "$TEST_TMP/hd/layout"\n' > "$TEST_TMP/hd/herdr-app"
+  fake_hc "$TEST_TMP/hd" "$TEST_TMP/hd/hc.log"
+  chmod +x "$TEST_TMP/hd/herdr-app" "$TEST_TMP/hd/hc"; export PATH="$TEST_TMP/hd:$PATH"
+}
 # team_setup: a team-mode factory. Main checkout $MAIN (the orchestrator's) with a roster, and
 # worktrees for backend ($BE) and frontend ($FE) where factory team-up would put them.
 team_setup() {
@@ -257,7 +266,10 @@ run_tests() {
     TEST_TMP=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/factory-test.XXXXXX")" && pwd -P)
     OUT=$TEST_TMP/.out ERR=$TEST_TMP/.err
     export TEST_TMP OUT ERR
-    ( cd "$TEST_TMP" || exit 99; set -e; "$fn" ) 2>"$TEST_TMP/.log"
+    # No test reaches a real Herdr on the machine: herdr-app and hc fail unless a test fakes them.
+    mkdir -p "$TEST_TMP/.noherdr" && printf '#!/bin/sh\nexit 1\n' > "$TEST_TMP/.noherdr/hc" &&
+      cp "$TEST_TMP/.noherdr/hc" "$TEST_TMP/.noherdr/herdr-app" && chmod +x "$TEST_TMP/.noherdr/"*
+    ( cd "$TEST_TMP" || exit 99; PATH="$TEST_TMP/.noherdr:$PATH"; set -e; "$fn" ) 2>"$TEST_TMP/.log"
     rc=$?
     case "$fn:$rc" in
       test_*:0) p=$((p+1)); echo "  ok     $fn" ;;

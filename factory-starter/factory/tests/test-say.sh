@@ -3,14 +3,6 @@
 . "$(dirname "$0")/lib.sh"
 SAY="$SCRIPTS/say.sh"; R="$SCRIPTS/round.sh"
 lines() { jq -s length "$P/discussion.jsonl" 2>/dev/null || echo 0; }
-fake_herdr() {  # the factory's Herdr space with every team idle; hc records what it types
-  mkdir -p "$TEST_TMP/hd"
-  jq -n '{spaces: [{name: "app", tabs: [{name: "orchestrator", terminals: [{terminal: "t1"}]}, {name: "backend", terminals: [{terminal: "t2"}]},
-                                        {name: "frontend", terminals: [{terminal: "t3"}]}, {name: "research", terminals: [{terminal: "t4"}]}]}]}' > "$TEST_TMP/hd/layout"
-  printf '#!/usr/bin/env bash\n[ "$1" = ls ] && cat "$TEST_TMP/hd/layout"\n' > "$TEST_TMP/hd/herdr-app"
-  fake_hc "$TEST_TMP/hd" "$TEST_TMP/hd/hc.log"
-  chmod +x "$TEST_TMP/hd/herdr-app" "$TEST_TMP/hd/hc"; export PATH="$TEST_TMP/hd:$PATH"
-}
 
 test_what_may_be_said_depends_on_the_round_and_the_role() {
   planning_setup; meeting_to positions; position_ok > "$TEST_TMP/pos"
@@ -130,6 +122,16 @@ test_questions_ring_the_team_and_a_finished_round_rings_the_orchestrator() {
   by backend "$SAY" answer --to orchestrator --refs c001-m004 --body "Seven days."; expect_rc 0
   expect_eq "$(tail -1 "$TEST_TMP/hd/hc.log")" "t1|Planning: a round can close. Run /plan."
   grep -c . "$TEST_TMP/hd/hc.log" | grep -qx 2 || fail "rang more than twice: $(cat "$TEST_TMP/hd/hc.log")"
+}
+
+test_a_question_to_all_rings_every_team_in_the_cycle_but_the_asker() {
+  planning_setup; meeting_to discussion-1; fake_herdr
+  by orchestrator "$SAY" question --to all --body "Which week opens first?"; expect_rc 0
+  expect_eq "$(sort "$TEST_TMP/hd/hc.log" | tr '\n' ';')" "t2|Planning needs you: run /inbox.;t3|Planning needs you: run /inbox.;t4|Planning needs you: run /inbox.;"
+  rm "$TEST_TMP/hd/hc.log"
+  by backend "$SAY" question --to all --body "Does anyone need the raw RRULE?"; expect_rc 0
+  ! grep -q '^t2|' "$TEST_TMP/hd/hc.log" || fail "the asker rang itself"
+  grep -q '^t3|' "$TEST_TMP/hd/hc.log" && grep -q '^t4|' "$TEST_TMP/hd/hc.log" || fail "$(cat "$TEST_TMP/hd/hc.log")"
 }
 
 run_tests
