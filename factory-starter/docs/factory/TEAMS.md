@@ -271,7 +271,8 @@ at the end of discussion, and an objection still standing on the last draft, mus
 The orchestrator never overrules; you decide.
 
 `DECISIONS.md` records: `## c001-D01: Title`, then `- owner:`, `- affects:`, `- status: decided |
-needs-human`, optional `risk_floor`, `supersedes`, `contract`, `refs`, and the sections Decision,
+needs-human`, optional `risk_floor`, `supersedes`, `contract`, `refs`, `decided_by: human` (a needs-human
+record you have since decided; it settles the open questions in its refs), and the sections Decision,
 Reasoning, Alternatives rejected, Dissent. Then a `## Work breakdown` table:
 `| item | team | delivers | after | contract | decisions |`. The full format is in the header of
 `factory/scripts/decisions.sh`.

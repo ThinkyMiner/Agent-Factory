@@ -47,6 +47,24 @@ test_the_work_breakdown_is_checked() {
   broken 's/\| share-research \| research \| who shares notes and why/| Share Research | research | who/' "item must be a short slug"
 }
 
+test_a_question_left_open_is_settled_by_the_humans_decision() {
+  cycle; jq '.unanswered = ["c001-m004"]' "$P/state.json" > s && mv s "$P/state.json"
+  human() { decisions_ok c001 "$1" "none" c001-m004 | X="$2" perl -pe 's/^(- refs: c001-m004)$/$1\n$ENV{X}/'; }
+  human needs-human "" > "$P/DECISIONS.md"
+  run "$D" items "$P"; expect_rc 1; expect_err "1 needs-human record(s) left: c001-D02"
+  human decided "- decided_by: human" > "$P/DECISIONS.md"
+  run "$D" validate "$P"; expect_rc 0; expect_out "0 needs-human"
+  run "$D" items "$P"; expect_rc 0                                      # dispatch may go
+  human decided "" > "$P/DECISIONS.md"
+  run "$D" validate "$P"; expect_rc 1; expect_err "once the human decides it: status: decided, decided_by: human"
+  for bad in "- decided_by: orchestrator" "- decided_by: human, backend" "- decided_by: \$(touch pwned)"; do
+    human decided "$bad" > "$P/DECISIONS.md"; run "$D" validate "$P"; expect_rc 1; expect_err "decided_by can only be human"
+  done
+  human needs-human "- decided_by: human" > "$P/DECISIONS.md"
+  run "$D" validate "$P"; expect_rc 1; expect_err "decided_by can only be human, on a record with status: decided"
+  [ ! -e pwned ] || fail "decided_by was run"
+}
+
 test_open_questions_and_objections_must_be_settled() {
   cycle; decisions_ok c001 > "$P/DECISIONS.md"
   jq '.unanswered = ["c001-m004"]' "$P/state.json" > s && mv s "$P/state.json"

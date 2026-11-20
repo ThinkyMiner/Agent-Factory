@@ -78,7 +78,7 @@ request ready.
 
 **approval.** Tell the human, in a few lines: the pull request, each needs-human record and the
 choice it asks for. The human settles those: by editing DECISIONS.md on the pull request, or by
-telling you. If told, change only that record (`status: decided`, the human's words under
+telling you. If told, change only that record (`status: decided`, `decided_by: human`, the human's words under
 Decision, "Decided by the human" under Reasoning, Dissent kept), run `decisions.sh validate`,
 commit and `git push origin planning/<cycle>`, and say the push needs their `human-approved` label
 again. Approval is the human merging the pull request. Then run `/dispatch`.

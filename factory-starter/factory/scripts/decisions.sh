@@ -10,10 +10,11 @@
 #   - owner: <team>            - affects: <teams> | none      - status: decided | needs-human
 #   - risk_floor: R0..R3 (opt) - supersedes: c000-D03 (opt)   - contract: contracts/... (opt)
 #   - refs: c001-m014, ... (opt: transcript ids it settles)
+#   - decided_by: human (opt: a needs-human record the human has since decided, now status: decided)
 #   ### Decision / ### Reasoning / ### Alternatives rejected / ### Dissent   (each non-empty)
 # then "## Work breakdown", a table: | item | team | delivers | after | contract | decisions |
 # validate also checks, from state.json and the transcript: every question left open in discussion
-# is in the refs of a needs-human record, and every objection to the current draft made its record
+# is in the refs of a needs-human record, or of a decided one with decided_by: human, and every objection to the current draft made its record
 # needs-human with the objecting team named under Dissent (skipped with --new-draft).
 # validate and items also read the specialists' raises: a line "RAISE: c001-D02 R2 <why>" in the
 # cycle's threat-model.md or db-review.md (a plain file; either may be missing) needs that record of
@@ -55,6 +56,7 @@ check() {
       defined $f->{affects} or $e->("$where: affects is missing (teams, or none)");
       for ($list->($f->{affects})) { $team{$_} or $e->("$where: affects names $_, not a cycle team") }
       ($f->{status} // "") =~ /^(decided|needs-human)$/ or $e->("$where: status must be decided or needs-human");
+      !defined $f->{decided_by} || $f->{decided_by} eq "human" && ($f->{status} // "") eq "decided" or $e->("$where: decided_by can only be human, on a record with status: decided");
       !defined $f->{risk_floor} || $f->{risk_floor} =~ /^R[0-3]$/ or $e->("$where: risk_floor must be R0 to R3");
       !defined $f->{supersedes} || $f->{supersedes} =~ /^c\d{3}-D\d{2}$/ && $f->{supersedes} !~ /^\Q$pre\E-/ or $e->("$where: supersedes must name a record of an earlier cycle");
       !defined $f->{contract} || $f->{contract} =~ m{^contracts/[^\s]+$} && $f->{contract} !~ m{\.\.} or $e->("$where: contract must be a path under contracts/");
@@ -64,9 +66,10 @@ check() {
       }
     }
     my %nh = map { $_->{id} => $_ } grep { ($_->{f}{status} // "") eq "needs-human" } @recs;
+    my @hold = (values %nh, grep { ($_->{f}{decided_by} // "") eq "human" } @recs);
     for my $q (grep { length } split /,/, $unans) {
-      grep { my $r = $_; grep { $_ eq $q } $list->($r->{f}{refs}) } values %nh
-        or $e->("question $q was left open in discussion: a needs-human record must list it under refs");
+      grep { my $r = $_; grep { $_ eq $q } $list->($r->{f}{refs}) } @hold
+        or $e->("question $q was left open in discussion: a needs-human record must list it under refs (once the human decides it: status: decided, decided_by: human)");
     }
     for my $o (grep { length } split /,/, $objs) {
       my ($t, $id) = split /:/, $o, 2;
