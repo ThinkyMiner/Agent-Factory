@@ -7,9 +7,10 @@
 #   discussion-N  orchestrator: question, proposal         teams: question, answer, objection, proposal
 #   review        orchestrator: question, objection, proposal   teams: answer
 #   decisions     orchestrator: decision, proposal, dissent      teams: accept, objection (once per team per draft)
-# An answer refs a question put to the answering team (or to all); an objection in the decisions
-# round refs the record it objects to (c001-D02). Limits (factory/teams.json "limits"): a team says
-# at most messages_per_round [4] per round; the orchestrator asks one team at most
+# An answer refs a question put to the answering team (or to all) that it has not answered yet; an
+# objection in the decisions round refs the record it objects to (c001-D02). Limits (factory/teams.json
+# "limits"): a team says at most messages_per_round [4] per round, answers aside (an answer is owed,
+# so a team that has used its messages can still give one); the orchestrator asks one team at most
 # questions_per_team [3] per round; a body is at most message_chars [2000] characters, so longer
 # material goes in a file passed with --attach (from this worktree or a temp folder; copied into
 # planning/<cycle>/attachments/).
@@ -71,8 +72,8 @@ for r in ${ids[@]+"${ids[@]}"}; do
 done
 reflist=$(printf '%s\n' ${ids[@]+"${ids[@]}"} | jq -R 'select(length > 0)' | jq -sc .)
 
-mine=$(msgs | jq -s --arg r "$status" --arg me "$me" '[.[] | select(.round == $r and .from == $me and .kind != "position")] | length')
-if [ "$role" = team ]; then
+mine=$(msgs | jq -s --arg r "$status" --arg me "$me" '[.[] | select(.round == $r and .from == $me and .kind != "position" and .kind != "answer")] | length')
+if [ "$role" = team ] && [ "$kind" != answer ]; then
   [ "$mine" -lt "$(lim messages_per_round 4)" ] || die "limit: $me has said $mine things in the $status round (limits.messages_per_round)"
 elif [ "$kind" = question ] && [ "$to" != all ] && [ "$to" != human ]; then
   asked=$(msgs | jq -s --arg r "$status" --arg t "$to" '[.[] | select(.round == $r and .from == "orchestrator" and .kind == "question" and .to == $t)] | length')
@@ -80,8 +81,9 @@ elif [ "$kind" = question ] && [ "$to" != all ] && [ "$to" != human ]; then
 fi
 case "$kind" in
   answer)
-    msgs | jq -se --argjson refs "$reflist" --arg me "$me" 'any(.[]; .kind == "question" and .from != $me and (.to == $me or .to == "all") and (.id as $i | $refs | index($i)))' >/dev/null ||
-      die "an answer must --refs a question put to $me or to all" ;;
+    msgs | jq -se --argjson refs "$reflist" --arg me "$me" '. as $all | any($all[]; .kind == "question" and .from != $me and (.to == $me or .to == "all")
+        and (.id as $i | $refs | index($i)) and (.id as $q | all($all[]; .kind != "answer" or .from != $me or ((.refs // []) | index($q) | not))))' >/dev/null ||
+      die "an answer must --refs a question put to $me or to all that $me has not answered yet" ;;
   accept|objection)
     if [ "$status" = decisions ]; then
       [ "$draft" -gt 0 ] || die "there is no draft yet to accept or object to"

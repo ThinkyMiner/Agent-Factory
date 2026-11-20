@@ -10,12 +10,14 @@
 #   - a team over its tickets_per_day [5]
 #   - a session in Herdr's blocked state (a permission or trust dialog) for blocked_minutes [10]
 #   - a session working with no event for silent_minutes [30]
+#   - a team whose session has ended (hc sees a shell in its Herdr tab, where claude ran)
 #   - a build slot held for slot_hours [4]
 #   - a planning round (positions, discussion, review, decisions) open for round_minutes [60]
 # Each new finding becomes an escalation event in .factory/events.jsonl, and the orchestrator's
 # Herdr tab gets one fixed doorbell when it waits for input, never the findings themselves. A finding is
 # escalated once while it lasts; a doorbell that could not ring is retried next pass.
-# It also rings each team owed a doorbell that could not ring when it was sent (.factory/rings/).
+# It also rings each team owed a doorbell that could not ring when it was sent (.factory/rings/),
+# and rings the orchestrator once when the human has approved a cycle's brief (nothing else tells it).
 # State: .factory/sweep.json. Only reads GitHub.
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -95,9 +97,16 @@ busy=$(jq -c '.working // {} | if type == "object" then . else {} end' <<<"$stat
 if command -v herdr-app >/dev/null 2>&1 && lay=$(herdr-app ls 2>/dev/null) && jq -e '.spaces | type == "array"' <<<"$lay" >/dev/null 2>&1; then
   was=$blocked; blocked='{}'; wasbusy=$busy; busy='{}'
   bm=$(limit blocked_minutes 10); sm=$(limit silent_minutes 30)
+  agents=$(hc ls --json 2>/dev/null | jq -c '[.terminals[]? | select(.address | type == "string") | {(.address): (.agent // "" | tostring)}] | add // {}' 2>/dev/null) || agents='{}'
+  [ -n "$agents" ] || agents='{}'
   while IFS=$'\t' read -r t term st; do
     team_names "$teams" | grep -qxF -- "$t" || continue
     [ "$t" = orchestrator ] && orch=$term
+    # Herdr can go on calling the tab claude-code after claude exits; hc names the program it sees.
+    case "$(jq -r --arg t "$term" '.[$t] // empty' <<<"$agents" 2>/dev/null)" in zsh|bash|sh|fish|dash|ksh)
+      add "down:$t:$term" down "$t" "the $t session has ended (its Herdr tab $term shows a shell): run factory team-up to start it again"
+      continue ;;
+    esac
     case "$st" in
       blocked)
         since=$(jq -r --arg t "$t" '.[$t] // empty' <<<"$was"); [[ "$since" =~ ^[0-9]{1,12}$ ]] || since=$now
@@ -131,9 +140,19 @@ while IFS=$'\t' read -r t since; do
 done < <(jq -r '.held // {} | objects | to_entries[] | [.key, (.value | strings)] | @tsv' "$dir/slots.json" 2>/dev/null)
 
 # ---- planning ----
+brief_rung=$(jq -r '.brief_rung // empty | strings' <<<"$state")
 if cyc=$(active_cycle "$home" 2>/dev/null); then
   IFS=$'\t' read -r st since < <(jq -r '[(.status // "" | strings), (.round_started_at // "" | strings)] | @tsv' "$home/planning/$cyc/state.json" 2>/dev/null) || true
   case "${st:-}" in
+    brief)
+      pr=$(jq -r '.pr // empty | numbers' "$home/planning/$cyc/state.json" 2>/dev/null)
+      if [ -n "$pr" ] && [ "$brief_rung" != "$cyc" ]; then
+        human=${FACTORY_HUMAN:-$(gh variable get FACTORY_HUMAN 2>/dev/null || true)}
+        if FACTORY_HUMAN=$human bash "$here/check-approval.sh" "$pr" brief-approved >/dev/null 2>&1; then
+          ring_team "$home" orchestrator "$(later_line orchestrator)" && echo "sweep: rang orchestrator (the brief of $cyc is approved)"
+          brief_rung=$cyc     # rung, or left in .factory/rings for the next pass
+        fi
+      fi ;;
     positions|discussion-*|review|decisions)
       t0=$(epoch "${since:-}")
       if [ -n "$t0" ] && [ $(( (now - t0) / 60 )) -ge "$(limit round_minutes 60)" ]; then
@@ -157,7 +176,7 @@ ring=$(jq -r 'if .ring == true then "true" else "false" end' <<<"$state"); [ -z 
 if [ "$ring" = true ] && [ -n "$orch" ] && command -v hc >/dev/null 2>&1; then
   hc_ring "$orch" "$DOORBELL" && ring=false
 fi
-jq -n --argjson seen "$seen" --argjson b "$blocked" --argjson w "$busy" --argjson r "$ring" '{seen: $seen, blocked: $b, working: $w, ring: $r}' > "$sf.new" && mv "$sf.new" "$sf"
+jq -n --argjson seen "$seen" --argjson b "$blocked" --argjson w "$busy" --argjson r "$ring" --arg br "$brief_rung" '{seen: $seen, blocked: $b, working: $w, ring: $r, brief_rung: $br}' > "$sf.new" && mv "$sf.new" "$sf"
 
 n_all=$(printf '%s' "$found" | grep -c . || true); n_new=$(printf '%s' "$new" | grep -c . || true)
 printf '%s' "$found" | jq -r --argjson seen "$(jq -c '.seen // {}' <<<"$state" 2>/dev/null || echo '{}')" '.key as $k | "  \(if ($seen | has($k)) then "   " else "new" end) \(.text)"'

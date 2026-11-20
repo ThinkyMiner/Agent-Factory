@@ -77,7 +77,7 @@ Reply in exactly this shape:
     round: <n>
     - <team>: <criterion ids> (<n> tests)
     TEST FAULTS:
-    - <test name>: <why the test itself is wrong>
+    - <test name> | team: <the team whose owns cover the code the test runs> | <why the test itself is wrong, quoting the criterion and the output line>
     UNATTRIBUTED:
     - <test name>: <why no team's code is at fault; which contract or record is silent or wrong>
 

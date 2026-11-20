@@ -211,4 +211,38 @@ test_doorbells_that_waited_are_rung_with_the_sweeps_own_line() {
   expect_eq "$(ls .factory/rings | wc -l | tr -d ' ')" 0
 }
 
+test_an_approved_brief_rings_the_orchestrator_once() {
+  setup; echo '[]' > "$FAKE_GH/issues.json"; export FACTORY_HUMAN=human
+  mkdir -p .factory/planning planning/c001-share; echo c001-share > .factory/planning/active
+  jq -n --arg a "$(ago 9000)" '{status: "brief", pr: 5, teams: ["backend"], round_started_at: $a}' > planning/c001-share/state.json
+  jq -n '{head: {ref: "planning/c001-share", repo: {full_name: "o/r"}}, base: {repo: {full_name: "o/r"}}}' > "$FAKE_GH/pulls/5.json"
+  jq -n --arg t "$(ago 600)" '[{ref: "refs/heads/planning/c001-share", activity_type: "push", timestamp: $t}]' > "$FAKE_GH/activity.json"
+  label() { jq -n --arg a "$1" --arg t "$(ago "$2")" '[{id: 1, event: "labeled", label: {name: "brief-approved"}, actor: {login: $a}, created_at: $t}]' > "$FAKE_GH/events/5.json"; }
+  echo '[]' > "$FAKE_GH/events/5.json"; run "$W"; expect_rc 0; expect_eq "$(rings)" 0
+  label factory-bot 60; run "$W"; expect_eq "$(rings)" 0            # an agent's label is not an approval
+  label human 900; run "$W"; expect_eq "$(rings)" 0                  # added before the last push
+  label human 60; echo working > "$TEST_TMP/hc-status-t1"
+  run "$W"; expect_eq "$(rings)" 0; expect_eq "$(ls .factory/rings)" orchestrator   # busy: kept for later
+  rm "$TEST_TMP/hc-status-t1"; run "$W"; expect_out "rang orchestrator (a doorbell that had waited)"
+  expect_eq "$(cat "$TEST_TMP/hc.log")" "t1|Planning: a round can close. Run /plan."
+  run "$W"; run "$W"; expect_eq "$(rings)" 1; expect_eq "$(escalations)" ""
+  rm "$MAIN/.factory/sweep.json" "$TEST_TMP/hc.log"; run "$W"; expect_out "rang orchestrator (the brief of c001-share is approved)"
+  for pr in '"5; touch pwned"' '"$(touch pwned)"' 0 null; do
+    jq -n --argjson p "$pr" '{status: "brief", pr: $p, teams: ["backend"]}' > planning/c001-share/state.json
+    rm -f "$MAIN/.factory/sweep.json" "$TEST_TMP/hc.log"; run "$W"; expect_rc 0; expect_eq "$(rings)" 0 "pr $pr"
+  done
+  [ ! -e pwned ] || fail "a pull request number was run"
+}
+
+test_a_team_whose_session_ended_is_escalated_once() {
+  setup; echo '[]' > "$FAKE_GH/issues.json"
+  echo zsh > "$TEST_TMP/hc-agent-t2"; echo vim > "$TEST_TMP/hc-agent-t3"
+  run "$W"; expect_rc 0; expect_out "the backend session has ended (its Herdr tab t2 shows a shell): run factory team-up"
+  expect_eq "$(escalations)" "down backend"                          # frontend runs something, not a bare shell
+  expect_eq "$(cat "$TEST_TMP/hc.log")" "t1|$(sed -n 's/^DOORBELL="\(.*\)"$/\1/p' "$W")"
+  run "$W"; expect_eq "$(escalations | wc -l | tr -d ' ')" 1
+  rm "$TEST_TMP/hc-agent-t2"; run "$W"; expect_out "0 open finding(s)"
+  echo bash > "$TEST_TMP/hc-agent-t1"; run "$W"; expect_out "the orchestrator session has ended"
+}
+
 run_tests

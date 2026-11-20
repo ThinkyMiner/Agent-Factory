@@ -31,9 +31,9 @@ test_dispatched_items_start_in_their_teams_tabs_lowest_first_once() {
   issue 9 OPEN feature:f001-x team:backend; issue 7 OPEN feature:f001-x team:backend
   issue 8 OPEN feature:f001-x team:frontend; issue 6 OPEN feature:f001-x team:research
   run "$A"; expect_rc 0; expect_out "typed /work 7 into backend (t2)"
-  expect_eq "$(typed)" "t1|keys / i n t e g r a t e space f 0 0 1 - x enter;t2|keys / w o r k space 7 enter;t3|keys / w o r k space 8 enter;t4|keys / r e s e a r c h - w o r k space 6 enter;"
+  expect_eq "$(typed)" "t1|keys ctrl+u / i n t e g r a t e space f 0 0 1 - x enter;t2|keys ctrl+u / w o r k space 7 enter;t3|keys ctrl+u / w o r k space 8 enter;t4|keys ctrl+u / r e s e a r c h - w o r k space 6 enter;"
   expect_eq "$(grep -c '"type":"autostart"' .factory/events.jsonl)" 4
-  reset_log; run "$A"; expect_rc 0; expect_eq "$(typed)" "t2|keys / w o r k space 9 enter;"   # backend's tab is free again
+  reset_log; run "$A"; expect_rc 0; expect_eq "$(typed)" "t2|keys ctrl+u / w o r k space 9 enter;"   # backend's tab is free again
   reset_log; run "$A"; expect_rc 0; expect_eq "$(typed)" ""   # all typed less than 30 minutes ago
 }
 
@@ -42,7 +42,7 @@ test_a_busy_or_blocked_tab_is_typed_into_later() {
   echo working > "$TEST_TMP/hc-status-t2"; echo blocked > "$TEST_TMP/hc-status-t1"
   run "$A"; expect_rc 0; expect_eq "$(typed)" ""
   echo idle > "$TEST_TMP/hc-status-t2"; echo done > "$TEST_TMP/hc-status-t1"
-  run "$A"; expect_eq "$(typed)" "t1|keys / i n t e g r a t e space f 0 0 1 - x enter;t2|keys / w o r k space 7 enter;"
+  run "$A"; expect_eq "$(typed)" "t1|keys ctrl+u / i n t e g r a t e space f 0 0 1 - x enter;t2|keys ctrl+u / w o r k space 7 enter;"
 }
 
 test_work_with_a_branch_is_left_alone_and_the_rest_is_retried_after_30_minutes() {
@@ -52,7 +52,7 @@ test_work_with_a_branch_is_left_alone_and_the_rest_is_retried_after_30_minutes()
   reset_log; jq -c '."work:9" -= 1700' .factory/autostart.json > s && mv s .factory/autostart.json
   run "$A"; expect_eq "$(typed)" ""                                           # 28 minutes: not yet
   jq -c '."work:9" -= 200' .factory/autostart.json > s && mv s .factory/autostart.json
-  run "$A"; expect_eq "$(typed)" "t2|keys / w o r k space 9 enter;"           # 31 minutes, still no branch
+  run "$A"; expect_eq "$(typed)" "t2|keys ctrl+u / w o r k space 9 enter;"           # 31 minutes, still no branch
   reset_log; git -C "$MAIN" push -q origin main:refs/heads/work/9-x
   jq -c '."work:9" -= 4000' .factory/autostart.json > s && mv s .factory/autostart.json
   run "$A"; expect_eq "$(typed)" ""                                           # its branch is on origin
@@ -74,7 +74,7 @@ test_only_work_on_the_open_feature_for_one_team_is_typed() {
   issue 15 OPEN ticket feature:f001-x team:frontend state:accepted   # a ticket goes by to:, not team:
   issue 16 OPEN ticket feature:f001-x to:frontend state:accepted
   echo working > "$TEST_TMP/hc-status-t1"
-  run "$A"; expect_rc 0; expect_eq "$(typed)" "t3|keys / w o r k space 1 6 enter;"
+  run "$A"; expect_rc 0; expect_eq "$(typed)" "t3|keys ctrl+u / w o r k space 1 6 enter;"
 }
 
 test_dispatch_is_typed_once_a_cycle_is_approved_and_no_feature_is_open() {
@@ -83,10 +83,10 @@ test_dispatch_is_typed_once_a_cycle_is_approved_and_no_feature_is_open() {
   git add -A && git commit -qm c && git push -q origin main
   run "$A"; expect_rc 0; expect_eq "$(typed)" ""                       # not approved yet
   echo '{"status":"approval"}' > planning/c001-x/state.json; git commit -qam a && git push -q origin main
-  run "$A"; expect_eq "$(typed)" "t1|keys / d i s p a t c h space c 0 0 1 - x enter;"
+  run "$A"; expect_eq "$(typed)" "t1|keys ctrl+u / d i s p a t c h space c 0 0 1 - x enter;"
   reset_log; run "$A"; expect_eq "$(typed)" ""                         # once
   feature; jq -c '."dispatch:c001-x" -= 4000' .factory/autostart.json > s && mv s .factory/autostart.json
-  run "$A"; expect_eq "$(typed)" "t1|keys / i n t e g r a t e space f 0 0 1 - x enter;"   # dispatched: no more /dispatch
+  run "$A"; expect_eq "$(typed)" "t1|keys ctrl+u / i n t e g r a t e space f 0 0 1 - x enter;"   # dispatched: no more /dispatch
 }
 
 test_dispatch_is_not_typed_for_a_broken_cycle() {
@@ -102,13 +102,13 @@ test_dispatch_is_not_typed_for_a_broken_cycle() {
 
 test_integrate_is_typed_again_when_the_feature_moves() {
   setup; feature
-  run "$A"; expect_eq "$(typed)" "t1|keys / i n t e g r a t e space f 0 0 1 - x enter;"
+  run "$A"; expect_eq "$(typed)" "t1|keys ctrl+u / i n t e g r a t e space f 0 0 1 - x enter;"
   reset_log; run "$A"; expect_eq "$(typed)" ""
   git commit -q --allow-empty -m moved && git push -q origin main:feature/f001-x
   echo working > "$TEST_TMP/hc-status-t1"; run "$A"; expect_eq "$(typed)" ""   # busy: later
-  rm "$TEST_TMP/hc-status-t1"; run "$A"; expect_eq "$(typed)" "t1|keys / i n t e g r a t e space f 0 0 1 - x enter;"
+  rm "$TEST_TMP/hc-status-t1"; run "$A"; expect_eq "$(typed)" "t1|keys ctrl+u / i n t e g r a t e space f 0 0 1 - x enter;"
   reset_log; git push -q origin main:refs/heads/integrate/f001-x
-  run "$A"; expect_eq "$(typed)" "t1|keys / i n t e g r a t e space f 0 0 1 - x enter;"
+  run "$A"; expect_eq "$(typed)" "t1|keys ctrl+u / i n t e g r a t e space f 0 0 1 - x enter;"
 }
 
 test_off_without_herdr_without_origin_or_when_turned_off() {
@@ -124,7 +124,7 @@ test_off_without_herdr_without_origin_or_when_turned_off() {
 test_a_github_failure_types_no_work_but_still_integrates() {
   setup; feature; issue 7 OPEN feature:f001-x team:backend; echo 'issue list' > "$FAKE_GH/fail"
   run "$A"; expect_rc 0; expect_err "cannot read the items of f001-x"
-  expect_eq "$(typed)" "t1|keys / i n t e g r a t e space f 0 0 1 - x enter;"
+  expect_eq "$(typed)" "t1|keys ctrl+u / i n t e g r a t e space f 0 0 1 - x enter;"
 }
 
 test_a_corrupt_state_file_is_started_over() {
@@ -143,7 +143,7 @@ test_hc_type_types_only_plain_slash_commands() {
   expect_eq "$(typed)" ""
   echo blocked > "$TEST_TMP/hc-status-t2"; RC=0; hc_type t2 "/work 7" || RC=$?; expect_eq "$RC" 1; expect_eq "$(typed)" ""
   rm "$TEST_TMP/hc-status-t2"; hc_type t2 "/research-work 12"
-  expect_eq "$(typed)" "t2|keys / r e s e a r c h - w o r k space 1 2 enter;"
+  expect_eq "$(typed)" "t2|keys ctrl+u / r e s e a r c h - w o r k space 1 2 enter;"
 }
 
 test_the_sweep_runs_autostart_each_pass() {
@@ -154,7 +154,7 @@ test_the_sweep_does_not_ring_a_tab_autostart_just_typed_into() {
   setup; feature; issue 7 OPEN feature:f001-x team:backend; mkdir -p .factory/rings; : > .factory/rings/backend
   echo working > "$TEST_TMP/hc-status-t1"
   run "$SCRIPTS/sweep.sh"; expect_rc 0
-  expect_eq "$(typed)" "t2|keys / w o r k space 7 enter;"
+  expect_eq "$(typed)" "t2|keys ctrl+u / w o r k space 7 enter;"
   [ -f .factory/rings/backend ] || fail "the waiting ring was dropped instead of kept for the next pass"
 }
 

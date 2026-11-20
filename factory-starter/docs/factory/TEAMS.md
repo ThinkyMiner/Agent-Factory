@@ -39,7 +39,8 @@ factory teams init        # writes factory/teams.json: orchestrator + backend, o
                           # read it, then merge it through a pull request (R2: you approve it)
 factory team-up           # with Herdr open: one worktree per team, and a space named after the repo
                           # with one tab per team running its claude, plus a tab for the sweep; run
-                          # it again to restart a closed tab. A new folder asks whether you trust
+                          # it again to restart a closed tab, or one whose claude exited (hc sees a
+                          # bare shell there: the tab is closed and the team started fresh). A new folder asks whether you trust
                           # it: answer that yourself. It says whose GitHub identity the agents get
 factory team-up --print   # without Herdr: makes the worktrees, prints one launch command per team
 ```
@@ -220,11 +221,14 @@ ring the teams they name. A tab that is busy or closed cannot be rung, so the ri
 empty file, `.factory/rings/<team>`, and each pass tries again with its own fixed sentence ("run
 /inbox"; the orchestrator's is "run /plan"), never words from the file. A tab autostart just typed
 into keeps its ring for the next pass. Without Herdr nothing is kept: tell the team yourself.
+Adding `brief-approved` runs no script, so the sweep checks it: once the label passes
+`check-approval.sh` on the brief's pull request, it rings the orchestrator ("run /plan") once per cycle.
 
 Then it escalates tickets unanswered for 8 hours, a declined ticket that is disputed
 or declined twice, tickets that block each other in a cycle, a team over its ticket budget, a
-session stuck on a dialog for 10 minutes, a session working with no event for 30 minutes, and a
-slot held for 4 hours (all in `limits`). Each new finding is an `escalation` event, once while it
+session stuck on a dialog for 10 minutes, a session working with no event for 30 minutes, a
+slot held for 4 hours (all in `limits`), and a team whose session has ended (hc sees a bare shell
+in its tab; Herdr may still call it claude): run `factory team-up` to start it again. Each new finding is an `escalation` event, once while it
 lasts. Then the orchestrator's tab gets one fixed sentence, only when it is idle: read the
 escalations and tell the human. The findings never travel in that sentence.
 
@@ -255,7 +259,8 @@ run `/work` on. Version 1 dispatches one feature at a time, and refuses without 
 team, which writes the acceptance criteria. What happens next is under Integration.
 
 **The rules, all checked by the scripts, not by the chair.** A team says at most
-`messages_per_round` [4] things per round; the orchestrator asks one team at most
+`messages_per_round` [4] things per round, answers aside: an answer to a question put to it that it
+has not answered yet is always allowed, so a late question cannot strike a team that used its messages; the orchestrator asks one team at most
 `questions_per_team` [3] questions per round; a message body is at most `message_chars` [2000]
 characters (longer material goes in an attached file); a position is at most `position_chars`
 [20000]; at most `discussion_rounds` [2] discussion rounds and `drafts` [3] decision drafts; a
@@ -380,7 +385,10 @@ like any factory change.
 4. **A failed round.** A new integration-qa writes `features/<f>/attribution.md`: per failing test,
    the criterion, the decision record, the contract and the team whose code does not do what they
    say, with evidence. `integrate.sh tickets <f>` checks every line (all or nothing) and files one
-   `bug` ticket per team. The teams fix through their own pipelines, then round 2 runs.
+   `bug` ticket per team. A test integration-qa finds wrong itself gets a bug ticket of its own, to
+   the team whose code it runs, which declines it if it agrees (Disputes, below); you hear of it
+   only if the team accepts it or the dispute keeps the test. The teams fix through their own
+   pipelines, then round 2 runs.
 5. **Two failed rounds** stop the feature: `run` writes an `escalation` event and refuses a third
    round. You decide: more time, a changed criterion, or dropping the feature. To drop it, tell
    the orchestrator: `integrate.sh drop <f> --reason <why>` keeps its branches as tags

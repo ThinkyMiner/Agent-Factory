@@ -73,15 +73,18 @@ JSON
 # "<terminal>|<text>", plus "|<more args>" if it was given any, and each `hc keys` as
 # "<terminal>|keys <key> <key>...". `hc ls --json` lists terminals t1 to
 # t99, each with the status in $TEST_TMP/hc-status-<terminal>, else $TEST_TMP/hc-status, else done
-# (hc's word for a session that has finished a turn and waits for input).
+# (hc's word for a session that has finished a turn and waits for input), and the program in front
+# in $TEST_TMP/hc-agent-<terminal>, else claude-code.
 fake_hc() {
   mkdir -p "$1"
   { echo '#!/usr/bin/env bash'; printf 'log=%q\n' "$2"; cat <<'SH'
 case "$1" in
   ls) for i in $(seq 1 99); do
-        s=$(cat "$TEST_TMP/hc-status-t$i" 2>/dev/null || cat "$TEST_TMP/hc-status" 2>/dev/null || echo done)
-        jq -cn --arg a "t$i" --arg s "$s" '{address: $a, status: $s}'
-      done | jq -s '{terminals: .}' ;;
+        f="$TEST_TMP/hc-status-t$i"; [ -f "$f" ] || f="$TEST_TMP/hc-status"; s=done
+        [ ! -f "$f" ] || { s=""; IFS= read -r s < "$f" || true; }
+        g=claude-code; [ ! -f "$TEST_TMP/hc-agent-t$i" ] || { IFS= read -r g < "$TEST_TMP/hc-agent-t$i" || true; }
+        printf 't%s\t%s\t%s\n' "$i" "$s" "$g"
+      done | jq -Rs '{terminals: [split("\n")[] | select(length > 0) | split("\t") | {address: .[0], status: .[1], agent: .[2]}]}' ;;
   send) printf '%s|%s%s\n' "$2" "$3" "${4:+|${*:4}}" >> "$log" ;;
   keys) printf '%s|keys %s\n' "$2" "${*:3}" >> "$log" ;;
   *) exit 3 ;;

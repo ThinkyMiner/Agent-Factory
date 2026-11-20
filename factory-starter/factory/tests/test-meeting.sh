@@ -96,6 +96,20 @@ test_limit_messages_per_team_per_round() {
   by frontend "$SAY" proposal --to all --body "Another team still may."; expect_rc 0
 }
 
+test_a_team_that_has_used_its_messages_can_still_answer_what_it_owes() {
+  planning_setup; meeting_to discussion-1
+  for i in 1 2 3; do by backend "$SAY" proposal --to all --body "Proposal $i."; expect_rc 0; done
+  by orchestrator "$SAY" question --to backend --body "Expiry?"; q=$(tail -1 "$P/discussion.jsonl" | jq -r .id)
+  by backend "$SAY" answer --to orchestrator --refs "$q" --body "Seven days."; expect_rc 0
+  by backend "$SAY" proposal --to all --body "Proposal 4: the answer did not use a message."; expect_rc 0
+  by orchestrator "$SAY" question --to backend --body "Rate limit?"; q2=$(tail -1 "$P/discussion.jsonl" | jq -r .id)
+  by backend "$SAY" answer --to orchestrator --refs "$q2" --body "Ten a minute."; expect_rc 0     # all 4 used: still owed
+  by backend "$SAY" answer --to orchestrator --refs "$q" --body "Seven days, again."; expect_rc 1; expect_err "that backend has not answered yet"
+  by backend "$SAY" proposal --to all --body "Proposal 5."; expect_rc 1; expect_err "limit: backend has said 4 things"
+  by orchestrator "$R" ready; grep -q "$q backend" "$OUT" && fail "an answered question is still owed"
+  expect_eq "$(jq -s '[.[] | select(.kind == "answer")] | length' "$P/discussion.jsonl")" 2
+}
+
 test_limit_orchestrator_questions_per_team_per_round() {
   planning_setup; meeting_to discussion-1
   for i in 1 2 3; do by orchestrator "$SAY" question --to backend --body "Question $i?"; expect_rc 0; done

@@ -13,7 +13,8 @@
 # With a bot token in the keychain (item factory-github-bot), every session works on GitHub as
 # the bot (bot-session.sh), and team-up refuses to start anything until that token works and is
 # not your own. Without one, sessions work as you, and team-up says what that costs.
-# Idempotent: a team whose tab runs claude is skipped, so this also restarts a closed tab.
+# Idempotent: a team whose tab runs claude is skipped, so this also restarts a closed tab, and a
+# tab whose session ended (hc sees a bare shell there) is closed and the team started again.
 # --print makes the worktrees, then prints plain launch commands instead of using Herdr.
 # Sessions cannot run this (the guard blocks it): identities are handed out by the human.
 set -euo pipefail
@@ -105,13 +106,21 @@ started=0
 for t in $list; do
   # The team's tab in this factory's space, as "<terminal> <app> <status>", or nothing.
   tab=$(jq -r --arg s "$space" --arg t "$t" '[.spaces[] | select(.id == $s) | .tabs[] | select(.name == $t)
-    | .terminals[0] | select(.)][0] | select(.) | "\(.terminal) \(.app) \(.status)"' <<<"$lay")
+    | (.id // "-") as $id | .terminals[0] | select(.) | . + {tab: $id}][0] | select(.) | "\(.terminal) \(.app) \(.status) \(.tab)"' <<<"$lay")
   if [ -n "$tab" ]; then
-    read -r term app status <<<"$tab"
-    [ "$app" = claude-code ] || die "tab $t in Herdr space '$label' is not running claude ($term). Close that tab, then run this again."
-    case "$status" in blocked) echo "$t: running in $term, waiting for you (a trust or sign-in prompt): answer it there" ;;
-                      *) echo "$t: already running in $term" ;; esac
-    continue
+    read -r term app status tid <<<"$tab"
+    # Herdr can go on calling a tab claude-code after claude exits to the shell; hc names what runs.
+    case "$(hc_agent "$term")" in
+      zsh|bash|sh|fish|dash|ksh)
+        [ "$tid" != - ] && herdr-app do tab.close --id "$tid" --confirmed true >/dev/null 2>&1 ||
+          die "tab $t in Herdr space '$label' has only a shell left ($term). Close that tab, then run this again."
+        echo "$t: its session had ended ($term showed a shell); closed that tab" ;;
+      *)
+        [ "$app" = claude-code ] || die "tab $t in Herdr space '$label' is not running claude ($term). Close that tab, then run this again."
+        case "$status" in blocked) echo "$t: running in $term, waiting for you (a trust or sign-in prompt): answer it there" ;;
+                          *) echo "$t: already running in $term" ;; esac
+        continue ;;
+    esac
   fi
   a=$(agent_of "$t"); dir=$(checkout_of "$t")
   argv=$(jq -nc --arg t "$t" --arg a "$a" '$ARGS.positional as $as | ["env", "FACTORY_TEAM=\($t)", "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1"] + $as + ["claude", "--agent", $a, "-n", $t]' --args ${as[@]+"${as[@]}"})

@@ -70,8 +70,12 @@ round started early is a round lost: only two are allowed.
 - `factory/scripts/integrate.sh tickets <f>`: one bug ticket to each team at fault. Exit 1 names the
   invalid lines of attribution.md: run `tests`, one new integration-qa with that output, `save`
   and `tickets` again. Still invalid: stop and tell the human.
-- TEST FAULTS and UNATTRIBUTED in its reply go to the human: a committed e2e test changes only
-  through a dispute, and a silent contract or record is the human's decision.
+- TEST FAULTS in its reply: a committed e2e test changes only through a dispute, so file one bug
+  ticket per faulty test to the team it names (`ticket.sh create --to <team> --type bug --feature <f>`),
+  the needs naming the test and the why quoted as integration-qa wrote it. The team weighs it and
+  declines if it agrees; Disputes below then has a new integration-qa fix the test. Tell the human
+  only if the team accepts it or the dispute keeps the test.
+- UNATTRIBUTED goes to the human: a silent contract or record is the human's decision.
 - The teams fix their code into feature/<f>. When their fixes are merged, run step 2 again: that
   is round 2. Once a round passes, verify each bug ticket you filed (`ticket.sh verify <n>`).
 

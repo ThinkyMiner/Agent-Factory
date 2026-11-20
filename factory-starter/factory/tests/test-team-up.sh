@@ -18,13 +18,15 @@ case "$1 ${2:-}" in
   "do space.new") tab=$(arg --tab "$@")
      [ -f "$S/fail-$tab" ] && { echo '{"error":"could not start"}'; exit 1; }
      jq --arg n "$(arg --name "$@")" --arg tab "$tab" --arg t "$term" \
-       '.spaces += [{id: "sp1", name: $n, tabs: [{name: $tab, terminals: [{terminal: $t, status: "idle", app: "claude-code"}]}]}]' "$L" > "$L.new" && mv "$L.new" "$L"
+       '.spaces += [{id: "sp1", name: $n, tabs: [{id: "tb-\($tab)", name: $tab, terminals: [{terminal: $t, status: "idle", app: "claude-code"}]}]}]' "$L" > "$L.new" && mv "$L.new" "$L"
      jq -nc --arg t "$term" '{space: "sp1", tab: "tb1", terminal: $t}' ;;
   "do tab.new") tab=$(arg --name "$@"); st=idle; [ -f "$S/block-$tab" ] && st=blocked
      [ -f "$S/fail-$tab" ] && { echo '{"error":"could not start"}'; exit 1; }
      jq --arg s "$(arg --space "$@")" --arg tab "$tab" --arg t "$term" --arg st "$st" \
-       '(.spaces[] | select(.id == $s) | .tabs) += [{name: $tab, terminals: [{terminal: $t, status: $st, app: "claude-code"}]}]' "$L" > "$L.new" && mv "$L.new" "$L"
+       '(.spaces[] | select(.id == $s) | .tabs) += [{id: "tb-\($tab)", name: $tab, terminals: [{terminal: $t, status: $st, app: "claude-code"}]}]' "$L" > "$L.new" && mv "$L.new" "$L"
      jq -nc --arg t "$term" '{tab: "tb2", terminal: $t}' ;;
+  "do tab.close") [ -f "$S/fail-close" ] && { echo '{"error":"no"}'; exit 1; }
+     jq --arg id "$(arg --id "$@")" '(.spaces[].tabs) |= map(select(.id != $id))' "$L" > "$L.new" && mv "$L.new" "$L"; echo '{"ok":true}' ;;
   *) exit 3 ;;
 esac
 SH
@@ -129,6 +131,20 @@ test_team_tab_without_claude_stops() {
   kit; fake_app; run "$U"; expect_rc 0
   layout '(.spaces[0].tabs[] | select(.name == "backend") | .terminals[0].app) = null'   # claude exited, a shell is left
   run "$U"; expect_rc 1; expect_err "not running claude (t2). Close that tab"
+}
+
+test_a_tab_whose_session_ended_is_closed_and_the_team_started_again() {
+  kit; fake_app; fake_hc "$TEST_TMP/fake" "$TEST_TMP/hc.log"; run "$U"; expect_rc 0
+  echo zsh > "$TEST_TMP/hc-agent-t2"                                  # claude exited; Herdr still says claude-code
+  run "$U"; expect_rc 0; expect_out "backend: its session had ended (t2 showed a shell); closed that tab"; expect_out "1 started"
+  grep -qxF -- "do tab.close --id tb-backend --confirmed true" "$TEST_TMP/app.log" || fail "the dead tab was not closed: $(cat "$TEST_TMP/app.log")"
+  grep -qF -- "do tab.new --space sp1 --name backend" "$TEST_TMP/app.log" || fail "backend was not started again"
+  expect_eq "$(jq -c '[.spaces[0].tabs[] | select(.name == "backend") | .terminals[0].terminal]' "$TEST_TMP/fake/layout")" '["t5"]'
+  rm "$TEST_TMP/hc-agent-t2"; echo vim > "$TEST_TMP/hc-agent-t5"; : > "$TEST_TMP/app.log"
+  run "$U"; expect_rc 0; expect_out "backend: already running in t5"      # a program, not a bare shell: left alone
+  grep -q '^do ' "$TEST_TMP/app.log" && fail "a tab running a program was touched"
+  echo bash > "$TEST_TMP/hc-agent-t5"; touch "$TEST_TMP/fake/fail-close"
+  run "$U"; expect_rc 1; expect_err "has only a shell left (t5). Close that tab"
 }
 
 test_without_herdr_points_to_print() {
