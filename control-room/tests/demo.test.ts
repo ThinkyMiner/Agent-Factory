@@ -55,6 +55,7 @@ describe('demo factory', () => {
     expect(state.byId.get('4')!.mergedBy).toBeUndefined() // merged by hand with no human-approved label: no evidence of who
     expect(state.byId.get('6')).toMatchObject({ mergedBy: 'human' }) // approved
     expect(state.byId.get('14')).toMatchObject({ mergedBy: 'auto' })
+    expect(state.snap.inputs.find((i) => i.id === '4')!.pull?.baseRefName).toBe('main') // GitHub reports every PR's base; the demo's too, or Quality counts its merges as base unknown
   })
   test('the R2 approval says which paths made it R2', () => {
     expect(state.byId.get('32')!.needs!.summary).toBe('R2 · db/migrations/0007_audit_log.sql (*migrations/*) · review: pass')

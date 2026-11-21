@@ -436,7 +436,7 @@ export function generate(out: string, nowMs = Date.now()) {
       const labels = [`risk:${tier}`]
       const timeline: unknown[] = [{ type: 'labeled', label: `risk:${tier}`, at: iso(prAt) }]
       const pull: Record<string, unknown> = {
-        number, title: sc.title, state: 'OPEN', isDraft: false, headRefName: branch, headSha: run(['rev-parse', branch]).trim(), labels,
+        number, title: sc.title, state: 'OPEN', isDraft: false, headRefName: branch, baseRefName: 'main', headSha: run(['rev-parse', branch]).trim(), labels,
         createdAt: iso(prAt), url: `https://github.com/${REPO_SLUG}/pull/${number}`, body: prBodyFor(sc, tier, reviews.length - 1),
         autoMerge: false, files, timeline,
         checks: ['check', 'secrets', 'risk-gate'].map((name) => ({ name, status: 'COMPLETED', conclusion: 'SUCCESS', url: `https://github.com/${REPO_SLUG}/actions/runs/${number}${name.length}`, completedAt: iso(prAt + 6 * MIN) })),
