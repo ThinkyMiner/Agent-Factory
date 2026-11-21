@@ -200,6 +200,16 @@ describe('merged and closed', () => {
     const human = derive({ stageEvents: [...RUN_TO_PR(), se('gate', 'failed', 69)], pull: pull({ state: 'MERGED', mergedAt: ago(30), labels: ['risk:R2', 'human-approved'] }) })
     expect(human).toMatchObject({ mergedBy: 'human', firstPass: false, fixRounds: 1, fixByStage: { gate: 1 } })
   })
+
+  test('merged: auto-merge still on the merged PR is auto even without the timeline event; no evidence names no one', () => {
+    // GitHub keeps autoMergeRequest on a pull request that auto-merge merged, but the timeline can miss the event
+    const autoOnly = derive({ stageEvents: RUN_TO_PR(), pull: pull({ state: 'MERGED', mergedAt: ago(30), autoMerge: true, timeline: [] }) })
+    expect(autoOnly.mergedBy).toBe('auto')
+    // merged with neither auto-merge nor human-approved: an agent may have merged it with the same account; say who only with evidence
+    const unknown = derive({ stageEvents: RUN_TO_PR(), pull: pull({ state: 'MERGED', mergedAt: ago(30), autoMerge: false, timeline: [] }) })
+    expect(unknown.state).toBe('merged')
+    expect(unknown.mergedBy).toBeUndefined()
+  })
   test('offline: the work folder on main means merged', () => {
     expect(derive({ stageEvents: RUN_TO_PR(), onMain: { at: ago(20) } })).toMatchObject({ state: 'merged', mergedAt: ago(20) })
   })

@@ -51,7 +51,9 @@ describe('demo factory', () => {
   test('fix rounds: #8 used both review fix rounds; #13 one gate and one review', () => {
     expect(state.byId.get('8')).toMatchObject({ fixRounds: 2, fixByStage: { review: 2 }, firstPass: false })
     expect(state.byId.get('13')).toMatchObject({ fixRounds: 2, fixByStage: { gate: 1, review: 1 } })
-    expect(state.byId.get('4')).toMatchObject({ fixRounds: 0, firstPass: true, mergedBy: 'human' })
+    expect(state.byId.get('4')).toMatchObject({ fixRounds: 0, firstPass: true })
+    expect(state.byId.get('4')!.mergedBy).toBeUndefined() // merged by hand with no human-approved label: no evidence of who
+    expect(state.byId.get('6')).toMatchObject({ mergedBy: 'human' }) // approved
     expect(state.byId.get('14')).toMatchObject({ mergedBy: 'auto' })
   })
   test('the R2 approval says which paths made it R2', () => {

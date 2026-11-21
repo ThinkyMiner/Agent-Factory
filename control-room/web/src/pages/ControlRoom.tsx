@@ -326,7 +326,7 @@ function Merged({ data }: { data: ApiState }) {
         {i.mergedInto && i.mergedInto !== 'main' && <span className="font-mono text-[11px] text-muted" title="Merged into the feature branch; main gets it when the feature's integrate pull request merges">→ {i.mergedInto}</span>}
         {i.reverted && <span className="text-[11.5px] font-medium text-fail">reverted</span>}
         <TierChip tier={i.tier} />
-        <span className="w-16 text-[12px] text-muted" title={i.mergedBy === 'auto' ? 'auto-merged' : 'merged by you'}>
+        <span className="w-16 text-[12px] text-muted" title={i.mergedBy === 'auto' ? 'auto-merged' : i.mergedBy === 'human' ? 'merged by you' : 'merged; who merged is not recorded'}>
           {i.mergedBy === 'auto' ? 'auto' : i.mergedBy === 'human' ? 'by you' : ''}
         </span>
         <span className="w-14 text-right text-[12px] text-muted tabular" title={`${i.fixRounds} fix rounds`}>

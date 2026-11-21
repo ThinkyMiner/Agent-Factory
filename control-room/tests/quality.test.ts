@@ -73,6 +73,19 @@ describe('quality over the demo', async () => {
     expect(m('tokens').points.find((p) => p.ids.length)!.notes).toEqual({ [a!.id]: 'partial: 6 of 12 runs readable' })
     expect(quality({ items: [a!], now: NOW, weeks: 8, escapedIssues: [], tokensByItem: new Map() }).metrics.find((x) => x.key === 'throughput')!.note).toContain('feature branch (1 of 1 here)')
   })
+  test('a merged PR or item without a recorded base is "base unknown", not main', () => {
+    const [a, b] = s.items.filter((i) => i.state === 'merged' && i.mergedAt).slice(0, 2).map((i, n) => ({ ...i, mergedInto: n ? undefined : 'feature/f001-x' }))
+    const at = a!.mergedAt!
+    const q2 = quality({
+      items: [a!, b!], now: NOW, weeks: 8, escapedIssues: [], tokensByItem: new Map(),
+      mergedPulls: [{ number: 24, id: a!.id, mergedAt: at, base: 'feature/f001-x' }, { number: 40, id: b!.id, mergedAt: at }],
+    })
+    const m = (k: string) => q2.metrics.find((x) => x.key === k)!
+    expect(m('merged-prs').series).toContain('base unknown')
+    expect(m('merged-prs').points.find((p) => p.ids.length)!.parts!.map((x) => [x.key, x.value])).toEqual([['into a feature branch', 1], ['base unknown', 1]])
+    expect(m('throughput').note).toContain('feature branch (1 of 2 here; 1 with no recorded base)')
+  })
+
   test('lead time and tokens are medians with per-item values', () => {
     const tok = metric('tokens').points.find((p) => p.ids.length > 0)!
     const v = Object.values(tok.perItem!).sort((a, b) => a - b)

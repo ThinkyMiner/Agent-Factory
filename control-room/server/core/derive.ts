@@ -470,7 +470,8 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
   const failingChecks = (pr?.checks ?? []).filter((c) => checkState(c) === 'fail' && !gateRerun(c))
   const readyAt = issue?.labelEvents.filter((e) => (e.label === 'factory:ready' || (dispatched && e.label === 'feature:' + feature)) && e.action === 'added').at(0)?.at ?? events.find((e) => e.stage === 'intake')?.ts
   let mergedBy: ItemView['mergedBy']
-  if (pr?.state === 'MERGED') mergedBy = approved || !pr.timeline.some((x) => x.type === 'auto_merge_enabled') ? 'human' : 'auto'
+  // Who merged is inferred: agents push and merge with the same account, so a merge with neither label nor auto-merge names no one.
+  if (pr?.state === 'MERGED') mergedBy = approved ? 'human' : pr.autoMerge || pr.timeline.some((x) => x.type === 'auto_merge_enabled') ? 'auto' : undefined
 
   // ---------- the state rules, first match wins (DESIGN.md §5) ----------
   let state: State
