@@ -212,8 +212,8 @@ describe('missing and damaged inputs', () => {
     const base = gh.data!.pulls.find((p) => p.number === 25)!
     gh.data!.pulls.push(
       { ...base, number: 9, title: 'Planning c001-reading-list', headRefName: 'planning/c001-reading-list', state: 'MERGED', labels: ['human-approved'] },
-      { ...base, number: 40, title: 'Fix the work breakdown path', headRefName: 'fix/c001-breakdown', labels: ['human-approved', 'risk:R2'], url: 'https://github.invalid/harbor/pull/40',
-        files: [{ path: 'planning/c001-reading-list/DECISIONS.md', additions: 1, deletions: 1 }], checks: [{ name: 'risk-gate', status: 'COMPLETED', conclusion: 'SUCCESS' }] },
+      { ...base, number: 40, title: 'Fix the work breakdown path', headRefName: 'planning/c001-reading-list', labels: ['human-approved', 'risk:R2'], url: 'https://github.invalid/harbor/pull/40',
+        files: [{ path: 'planning/c001-reading-list/DECISIONS.md', additions: 1, deletions: 1 }], checks: [{ name: 'risk-gate', status: 'COMPLETED', conclusion: 'SUCCESS' }] }, // a second PR from the cycle's branch
       { ...base, number: 41, title: 'Unrelated', headRefName: 'fix/other', labels: ['risk:R2'], files: [{ path: 'planning/c001-reading-list-old/x.md', additions: 1, deletions: 0 }] },
     )
     let s = await computeState(fx.repo, gh, { staleMinutes: 30 })
@@ -221,11 +221,11 @@ describe('missing and damaged inputs', () => {
     expect(c).toMatchObject({ name: 'c001-reading-list', state: { status: 'approval' }, pr: { number: 9, state: 'MERGED' } })
     expect(c.blocking.map((b) => [b.number, b.why])).toEqual([[40, 'PR #40 must merge, then /dispatch']])
     expect(c.waiting).toEqual([{ team: 'you', owes: 'PR #40 must merge, then /dispatch' }]) // not "orchestrator owes /dispatch"
-    expect(s.needsYou.find((n) => n.id === 'pr-40')).toMatchObject({ kind: 'merge', summary: 'fix/c001-breakdown · approved: merge it · R2 · planning c001-reading-list waits: PR #40 must merge, then /dispatch' })
+    expect(s.needsYou.find((n) => n.id === 'pr-40')).toMatchObject({ kind: 'merge', summary: 'planning/c001-reading-list · approved: merge it · R2 · planning c001-reading-list waits: PR #40 must merge, then /dispatch' })
     // with auto-merge on, it merges itself once CI is green: still shown, as information
     gh.data!.pulls.find((p) => p.number === 40)!.autoMerge = true
     s = await computeState(fx.repo, gh, { staleMinutes: 30 })
-    expect(s.needsYou.find((n) => n.id === 'pr-40')).toMatchObject({ kind: 'info', summary: expect.stringMatching(/^fix\/c001-breakdown · approved: merging when CI is green · R2 · /) })
+    expect(s.needsYou.find((n) => n.id === 'pr-40')).toMatchObject({ kind: 'info', summary: expect.stringMatching(/^planning\/c001-reading-list · approved: merging when CI is green · R2 · /) })
     // merged: the orchestrator's turn again
     gh.data!.pulls.find((p) => p.number === 40)!.state = 'MERGED'
     s = await computeState(fx.repo, gh, { staleMinutes: 30 })

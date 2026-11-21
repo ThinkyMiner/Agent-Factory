@@ -283,9 +283,11 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
     const pull = state?.pr ? gh.pulls.find((p) => p.number === state.pr) : undefined
     const settled = state?.status === 'dispatched' || state?.status === 'closed'
     // by its files; by its branch name only when GitHub gave no file list
-    const touches = (p: Pull) => (p.files.length ? p.files.some((f) => f.path.startsWith(`${src}/`)) : p.headRefName.startsWith(`${src}-`))
+    const touches = (p: Pull) => (p.files.length ? p.files.some((f) => f.path.startsWith(`${src}/`)) : p.headRefName === src || p.headRefName.startsWith(`${src}-`))
     const blocking = settled ? [] : gh.pulls
-      .filter((p) => p.state === 'OPEN' && p.number !== state?.pr && p.headRefName !== src && touches(p)) // not the cycle's own PR
+      // not the cycle's own PR; a later PR from the same planning branch (a fix after the first merged) is one.
+      // Without a readable state.json, the cycle's own PR is not known: its branch stands for it.
+      .filter((p) => p.state === 'OPEN' && (state ? p.number !== state.pr : p.headRefName !== src) && touches(p))
       .sort((a, b) => a.number - b.number)
       .map((p) => ({ number: p.number, url: p.url, title: p.title, head: p.headRefName, labels: p.labels, why: `PR #${p.number} must merge${state?.status === 'approval' ? ', then /dispatch' : ''}` }))
     const events: CycleView['events'] = []
