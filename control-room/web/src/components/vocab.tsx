@@ -121,6 +121,7 @@ export const NEEDS: Record<NeedsKind, { label: string; verb: string; icon: Lucid
   'waiting-input': { label: 'Waiting', verb: 'Claude Code is waiting for you', icon: Hand, tone: 'run' },
   quiet: { label: 'Quiet', verb: 'Check the run', icon: Hourglass, tone: 'muted' },
   merge: { label: 'Merge', verb: 'Merge the pull request', icon: GitMerge, tone: 'pass' },
+  info: { label: 'Info', verb: 'Nothing to do yet: it moves by itself', icon: Hourglass, tone: 'muted' },
 }
 export function NeedsTag({ kind, className }: { kind: NeedsKind; className?: string }) {
   const n = NEEDS[kind]

@@ -56,7 +56,7 @@ describe('over the demo', async () => {
   test('an improvement PR above the auto-merge tier needs you, like any item PR', () => {
     expect(s.needsYou.filter((n) => n.id === 'pr-141')).toEqual([expect.objectContaining({ kind: 'approve', tier: 'R2', label: 'PR #141', href: '/improvement', summary: 'factory:improvement · R2' })]) // its failing risk-gate is expected until approved
     const pr = gh.data!.pulls.find((p) => p.number === 141)!
-    expect(pullNeeds([{ ...pr, labels: [...pr.labels, 'human-approved'] }], s.snap.rules, 'R1')).toEqual([])
+    expect(pullNeeds([{ ...pr, labels: [...pr.labels, 'human-approved'] }], s.snap.rules, 'R1')).toEqual([expect.objectContaining({ kind: 'merge', href: '/improvement', summary: 'factory:improvement · approved: merge it · R2' })]) // approved is not merged
     const docs = { ...pr, labels: ['factory:improvement'], files: [{ path: 'docs/factory/MEMORY.md', additions: 1, deletions: 0 }] }
     expect(pullNeeds([docs], s.snap.rules, 'R1')).toEqual([]) // R0, auto-merges
     expect(pullNeeds([docs], s.snap.rules, 'none')).toEqual([expect.objectContaining({ kind: 'merge', tier: 'R0' })])

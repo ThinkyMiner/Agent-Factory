@@ -26,7 +26,8 @@ export async function computeState(repo: string, gh: GitHubInput, opts: { now?: 
   if (t) snap.notices.push(...t.notices)
   // every open PR that waits for you and is not an item's or the planning cycle's (those say it themselves)
   const shown = new Set([...d.items.flatMap((i) => (i.pr ? [i.pr.number] : [])), ...(t?.view.cycle?.pr ? [t.view.cycle.pr.number] : [])])
-  const needsYou = [...d.needsYou, ...pullNeeds(gh.data?.pulls ?? [], snap.rules, snap.autoMergeMax, shown), ...(t?.needs ?? []), ...findingNeeds(snap.findings)].sort(byNeeds)
+  const waits = new Map((t?.view.cycle?.blocking ?? []).map((b) => [b.number, `planning ${t!.view.cycle!.name} waits: ${b.why}`]))
+  const needsYou = [...d.needsYou, ...pullNeeds(gh.data?.pulls ?? [], snap.rules, snap.autoMergeMax, shown, waits), ...(t?.needs ?? []), ...findingNeeds(snap.findings)].sort(byNeeds)
   return { snap, meta, ctx, runs, sessions, ...d, needsYou, teams: t?.view ?? null }
 }
 export type FactoryState = Awaited<ReturnType<typeof computeState>>

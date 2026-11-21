@@ -74,6 +74,13 @@ function Cycle({ c }: { c: CycleView }) {
             ) : (
               <span className="text-muted">none yet</span>
             )}
+            {c.blocking.map((b) => (
+              <span key={b.number} className="block text-[12.5px]">
+                <a href={b.url} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">#{b.number}</a>{' '}
+                <span className="text-block">{b.why}</span>
+                <span className="text-muted"> · {b.title}{b.labels.includes('human-approved') ? ' · approved' : ''}</span>
+              </span>
+            ))}
           </Field>
           <Field k="Read from">
             <Mono>{c.source}</Mono>

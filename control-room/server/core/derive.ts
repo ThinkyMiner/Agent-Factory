@@ -100,9 +100,9 @@ export type State =
   | 'closed'
   | 'merged'
 export type Column = 'proposed' | 'ready' | 'in-progress' | 'pr-open' | 'waiting' | 'merged' | 'stopped'
-export type NeedsKind = 'answer' | 'approve' | 'failed' | 'waiting-input' | 'quiet' | 'merge'
+export type NeedsKind = 'answer' | 'approve' | 'failed' | 'waiting-input' | 'quiet' | 'merge' | 'info' // info: nothing to do yet, but it waits
 export type Flag = 'live' | 'quiet' | 'waiting-input' | 'reverted' | 'stale-blocked'
-export const NEEDS_ORDER: NeedsKind[] = ['answer', 'approve', 'failed', 'waiting-input', 'quiet', 'merge']
+export const NEEDS_ORDER: NeedsKind[] = ['answer', 'approve', 'failed', 'waiting-input', 'quiet', 'merge', 'info']
 export const COLUMNS: Column[] = ['proposed', 'ready', 'in-progress', 'pr-open', 'waiting', 'stopped', 'merged']
 
 const COLUMN_OF: Record<State, Column> = {

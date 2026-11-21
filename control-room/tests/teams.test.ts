@@ -192,6 +192,37 @@ describe('missing and damaged inputs', () => {
     expect(s.needsYou.filter((n) => n.id.startsWith('cycle-'))).toEqual([]) // merged: nothing to approve
   })
 
+  test('approved and merged, the cycle still waits on an open PR that fixes its files: Planning and Needs you both say so', async () => {
+    const fx = makeTeamsFactory(join(root, 'blocking'))
+    process.env.PATH = `${fx.bin}:${PATH}`
+    const gh = await readDemoGitHub(fx.github)
+    rmSync(join(fx.repo, '.factory/planning/active'))
+    fx.git('switch', '-q', 'main')
+    fx.git('branch', '-q', '-D', 'planning/c002-share-links', 'feature/f001-reading-list', 'integrate/f001-reading-list')
+    const base = gh.data!.pulls.find((p) => p.number === 25)!
+    gh.data!.pulls.push(
+      { ...base, number: 9, title: 'Planning c001-reading-list', headRefName: 'planning/c001-reading-list', state: 'MERGED', labels: ['human-approved'] },
+      { ...base, number: 40, title: 'Fix the work breakdown path', headRefName: 'fix/c001-breakdown', labels: ['human-approved', 'risk:R2'], url: 'https://github.invalid/harbor/pull/40',
+        files: [{ path: 'planning/c001-reading-list/DECISIONS.md', additions: 1, deletions: 1 }], checks: [{ name: 'risk-gate', status: 'COMPLETED', conclusion: 'SUCCESS' }] },
+      { ...base, number: 41, title: 'Unrelated', headRefName: 'fix/other', labels: ['risk:R2'], files: [{ path: 'planning/c001-reading-list-old/x.md', additions: 1, deletions: 0 }] },
+    )
+    let s = await computeState(fx.repo, gh, { staleMinutes: 30 })
+    const c = s.teams!.cycle!
+    expect(c).toMatchObject({ name: 'c001-reading-list', state: { status: 'approval' }, pr: { number: 9, state: 'MERGED' } })
+    expect(c.blocking.map((b) => [b.number, b.why])).toEqual([[40, 'PR #40 must merge, then /dispatch']])
+    expect(c.waiting).toEqual([{ team: 'you', owes: 'PR #40 must merge, then /dispatch' }]) // not "orchestrator owes /dispatch"
+    expect(s.needsYou.find((n) => n.id === 'pr-40')).toMatchObject({ kind: 'merge', summary: 'fix/c001-breakdown · approved: merge it · R2 · planning c001-reading-list waits: PR #40 must merge, then /dispatch' })
+    // with auto-merge on, it merges itself once CI is green: still shown, as information
+    gh.data!.pulls.find((p) => p.number === 40)!.autoMerge = true
+    s = await computeState(fx.repo, gh, { staleMinutes: 30 })
+    expect(s.needsYou.find((n) => n.id === 'pr-40')).toMatchObject({ kind: 'info', summary: expect.stringMatching(/^fix\/c001-breakdown · approved: merging when CI is green · R2 · /) })
+    // merged: the orchestrator's turn again
+    gh.data!.pulls.find((p) => p.number === 40)!.state = 'MERGED'
+    s = await computeState(fx.repo, gh, { staleMinutes: 30 })
+    expect(s.teams!.cycle!.waiting).toEqual([{ team: 'orchestrator', owes: '/dispatch' }])
+    expect(s.needsYou.find((n) => n.id === 'pr-40')).toBeUndefined()
+  })
+
   test('the brief and the approval rounds need you while their pull request is open', async () => {
     const fx = makeTeamsFactory(join(root, 'four'))
     process.env.PATH = `${fx.bin}:${PATH}`
@@ -260,7 +291,7 @@ describe('missing and damaged inputs', () => {
     }
   })
 
-  test('every open pull request that waits for your label needs you, whatever its branch; drafts, approved ones and the cycle\'s own are not repeated', async () => {
+  test('every open pull request that waits for your label needs you, whatever its branch; drafts and the cycle\'s own are not repeated; approved ones wait for the merge', async () => {
     const fx = makeTeamsFactory(join(root, 'six'))
     process.env.PATH = `${fx.bin}:${PATH}`
     const gh = await readDemoGitHub(fx.github)
@@ -284,6 +315,7 @@ describe('missing and damaged inputs', () => {
       ['approve', 'pr-25', 'integrate/f001-reading-list · add human-approved, then merge · R2', 'https://github.invalid/harbor/pull/25'],
       ['approve', 'pr-31', 'planning/c002-share-links-fix · add human-approved, then merge · R2', 'https://github.invalid/harbor/pull/31'],
       ['failed', 'pr-36', 'planning/fix · approved, but failing: ownership', 'https://github.invalid/harbor/pull/36'],
+      ['merge', 'pr-32', 'factory/csp · approved: merge it · R2', 'https://github.invalid/harbor/pull/32'], // approved, not merged: it still waits on you
       ['merge', 'pr-35', 'sync/f001-reading-list · merge it · R1', 'https://github.invalid/harbor/pull/35'],
     ]) // #12 is the cycle's own PR: its row says what the round needs
   })

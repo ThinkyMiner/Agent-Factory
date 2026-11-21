@@ -205,6 +205,8 @@ export interface CycleView {
   messages: Message[]
   events: { ts: string; type: string; team?: string; text: string }[]
   pr?: { number: number; url?: string; state?: Pull['state']; isDraft?: boolean; labels: string[] }
+  /** other open PRs that change planning/<cycle>/ (a fix to DECISIONS.md...): the cycle waits on them */
+  blocking: { number: number; url: string; title: string; head: string; labels: string[]; why: string }[]
 }
 
 export interface FeatureView {
@@ -279,6 +281,13 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
     notices.push(...disc.notices)
     const records = c.decisions === null ? [] : decisionRecords(c.decisions)
     const pull = state?.pr ? gh.pulls.find((p) => p.number === state.pr) : undefined
+    const settled = state?.status === 'dispatched' || state?.status === 'closed'
+    // by its files; by its branch name only when GitHub gave no file list
+    const touches = (p: Pull) => (p.files.length ? p.files.some((f) => f.path.startsWith(`${src}/`)) : p.headRefName.startsWith(`${src}-`))
+    const blocking = settled ? [] : gh.pulls
+      .filter((p) => p.state === 'OPEN' && p.number !== state?.pr && p.headRefName !== src && touches(p)) // not the cycle's own PR
+      .sort((a, b) => a.number - b.number)
+      .map((p) => ({ number: p.number, url: p.url, title: p.title, head: p.headRefName, labels: p.labels, why: `PR #${p.number} must merge${state?.status === 'approval' ? ', then /dispatch' : ''}` }))
     const events: CycleView['events'] = []
     for (const e of inp.events) {
       if (e.type !== 'unknown') continue
@@ -304,6 +313,7 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
       messages: disc.messages,
       events: events.sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts)),
       pr: state?.pr ? { number: state.pr, url: pull?.url, state: pull?.state, isDraft: pull?.isDraft, labels: pull?.labels ?? [] } : undefined,
+      blocking,
     }
 
     // what in it needs the human, and whose turn it is outside the timed rounds
@@ -312,7 +322,10 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
     const prOpen = pull ? pull.state === 'OPEN' : !c.onMain // without GitHub data: open until main has the record
     const briefOk = !!pull?.labels.includes('brief-approved')
     if (state?.status === 'brief') cycle.waiting.push(!state.pr ? { team: 'orchestrator', owes: 'the brief (round.sh brief)' } : briefOk ? { team: 'orchestrator', owes: 'round.sh next' } : { team: 'you', owes: `the label brief-approved on PR #${state.pr}` })
-    if (state?.status === 'approval') cycle.waiting.push(prOpen ? { team: 'you', owes: `human-approved and a merge of PR #${state.pr ?? '?'}` } : { team: 'orchestrator', owes: '/dispatch' })
+    if (state?.status === 'approval' && prOpen) cycle.waiting.push({ team: 'you', owes: `human-approved and a merge of PR #${state.pr ?? '?'}` })
+    // a fix to the cycle's files in its own PR: whoever merges it (you, above the auto-merge tier) goes first
+    else if (blocking.length) cycle.waiting.push(...blocking.map((b) => ({ team: 'you', owes: b.why })))
+    else if (state?.status === 'approval') cycle.waiting.push({ team: 'orchestrator', owes: '/dispatch' })
     if (state?.status === 'escalated') cycle.waiting.push({ team: 'you', owes: 'a decision: the meeting stopped at two strikes' })
     if (state?.status === 'brief' && state.pr && prOpen && !briefOk) {
       needs.push({ ...base, kind: 'approve', title: 'Approve the brief', summary: `read BRIEF.md, then add the label brief-approved to PR #${state.pr}` })
