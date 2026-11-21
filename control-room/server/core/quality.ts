@@ -23,6 +23,7 @@ export interface Metric {
   kind: 'bars' | 'stacked'
   series?: string[] // stacked: the fixed order of part keys, which fixes their colours
   note?: string
+  cannot?: string // every point empty although there was something to measure: why it cannot be measured
   points: Point[]
 }
 
@@ -178,17 +179,21 @@ export function quality({ items, tokensByItem, tokenRuns = new Map(), mergedPull
   // 9. tokens per merged item (median), saying how many of its runs could be read
   let read = 0
   let total = 0
+  let unread = 0 // merged items whose runs had no readable transcript: in the coverage, not in the median
   const tokens = byMergeWeek((p, i) => {
-    const t = tokensByItem.get(i.id)
-    if (t === undefined) return
-    p.ids.push(i.id)
-    ;(p.perItem ??= {})[i.id] = t
     const c = tokenRuns.get(i.id)
     if (c) {
       read += c.read
       total += c.total
-      if (c.read < c.total) (p.notes ??= {})[i.id] = `partial: ${c.read} of ${c.total} runs readable`
     }
+    const t = tokensByItem.get(i.id)
+    if (t === undefined) {
+      if (c?.total) unread++
+      return
+    }
+    p.ids.push(i.id)
+    ;(p.perItem ??= {})[i.id] = t
+    if (c && c.read < c.total) (p.notes ??= {})[i.id] = `partial: ${c.read} of ${c.total} runs readable`
   })
   for (const p of tokens.values()) p.value = median(Object.values(p.perItem ?? {}))
 
@@ -220,9 +225,18 @@ export function quality({ items, tokensByItem, tokenRuns = new Map(), mergedPull
   ]
   if (mergedPulls.length) metrics.splice(1, 0, { key: 'merged-prs', question: 'How many work pull requests merged each week? (every attempt)', unit: 'count', kind: 'stacked', series: ['into main', 'into a feature branch', 'base unknown'], note: 'Every merged pull request from a work/<id>-<slug> branch, so an item tried twice counts twice. Base unknown: GitHub did not report the branch it merged into.', points: series(prs) })
   if (tokensByItem.size) {
-    const cover = total && read < total ? `Partial: ${read} of ${total} runs of these items had a readable transcript; the rest are not counted.` : 'Every run of these items had a readable transcript.'
+    const cover = total && read < total ? `Partial: ${read} of ${total} runs of these items had a readable transcript; the rest are not counted.${unread ? ` ${unread} merged item${unread === 1 ? '' : 's'} had none and ${unread === 1 ? 'is' : 'are'} not in the median.` : ''}` : 'Every run of these items had a readable transcript.'
     metrics.push({ key: 'tokens', question: 'How many tokens does a merged item cost? (median)', unit: 'tokens', kind: 'bars', note: `The agent runs and foreman sessions tied to the item, from their transcripts. ${total ? cover : ''}`.trim(), points: series(tokens) })
   }
+
+  // an empty chart over merged items: nothing merged is no data; merged items it cannot read is "cannot be measured"
+  const inWindow = series(throughput).reduce((a, p) => a + p.ids.length, 0)
+  const its = inWindow === 1 ? 'its' : 'their'
+  const why: Record<string, string> = {
+    'lead-time': `${inWindow} item${inWindow === 1 ? '' : 's'} merged, but none has a ready time (a factory:ready label or an intake event).`,
+    tokens: `${inWindow} item${inWindow === 1 ? '' : 's'} merged, but none of ${its} runs had a readable transcript.`,
+  }
+  for (const m of metrics) if (inWindow && why[m.key] && m.points.every((p) => !p.ids.length)) m.cannot = why[m.key]
 
   // headline numbers over the last four weeks
   const recent = (m: Map<string, Point>) => series(m).slice(-4)

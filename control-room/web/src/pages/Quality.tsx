@@ -288,7 +288,11 @@ function Card({ m, weeks, pick }: { m: Metric; weeks: number; pick: (d: Drill) =
       </h2>
       {m.note && <p className="mt-1 text-[12px] text-muted">{m.note}</p>}
       {empty ? (
-        <Empty title={`Nothing in the last ${weeks} weeks`} className="mt-3 py-4" />
+        m.cannot ? (
+          <Empty title="Cannot be measured" className="mt-3 py-4">{m.cannot}</Empty>
+        ) : (
+          <Empty title={`No data in the last ${weeks} weeks`} className="mt-3 py-4">{NONE[m.key] ?? 'Nothing merged'} in this window.</Empty>
+        )
       ) : (
         <>
           <div className="mt-2 mb-1">

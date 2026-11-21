@@ -105,6 +105,18 @@ test('a newcomer: where things are, what clears each row, where an item sits, an
   expect(errors).toEqual([])
 })
 
+test('quality: an empty chart says whether nothing happened or it cannot be measured', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto(TEAMS_URL + '/quality')
+  const lead = page.getByRole('region', { name: 'How long from ready to merged? (median hours)' })
+  await expect(lead).toContainText('Cannot be measured')
+  await expect(lead).toContainText('1 item merged, but none has a ready time')
+  const escaped = page.getByRole('region', { name: 'Did defects escape?' })
+  await expect(escaped).toContainText(/No data in the last \d+ weeks/)
+  await expect(escaped).toContainText('Nothing escaped in this window.')
+  expect(errors).toEqual([])
+})
+
 test('factory: the policy card shows every setting and what it changes', async ({ page }) => {
   await page.goto(TEAMS_URL + '/factory')
   const card = page.getByRole('region', { name: 'Factory policy' })

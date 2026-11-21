@@ -86,6 +86,22 @@ describe('quality over the demo', async () => {
     expect(m('throughput').note).toContain('feature branch (1 of 2 here; 1 with no recorded base)')
   })
 
+  test('a merged item with no readable transcript counts in the coverage; an empty chart says whether it cannot be measured', () => {
+    const [a, b] = s.items.filter((i) => i.state === 'merged' && i.mergedAt).slice(0, 2)
+    const q2 = quality({ items: [a!, b!], now: NOW, weeks: 8, escapedIssues: [], tokensByItem: new Map([[a!.id, 500]]), tokenRuns: new Map([[a!.id, { read: 2, total: 2 }], [b!.id, { read: 0, total: 3 }]]) })
+    const m = (q: typeof q2, k: string) => q.metrics.find((x) => x.key === k)!
+    expect(m(q2, 'tokens').note).toContain('Partial: 2 of 5 runs of these items had a readable transcript')
+    expect(m(q2, 'tokens').note).toContain('1 merged item had none and is not in the median')
+    expect(m(q2, 'tokens').cannot).toBeUndefined()
+    // merged items, but none with a readable transcript or a ready time: the chart cannot be measured, which is not "nothing happened"
+    const blind = quality({ items: [{ ...b!, readyAt: undefined }], now: NOW, weeks: 8, escapedIssues: [], tokensByItem: new Map([['other', 1]]), tokenRuns: new Map([[b!.id, { read: 0, total: 3 }]]) })
+    expect(m(blind, 'tokens').cannot).toBe('1 item merged, but none of its runs had a readable transcript.')
+    expect(m(blind, 'lead-time').cannot).toBe('1 item merged, but none has a ready time (a factory:ready label or an intake event).')
+    // nothing merged at all: no data, not unmeasurable
+    const none = quality({ items: [], now: NOW, weeks: 8, escapedIssues: [], tokensByItem: new Map([['other', 1]]) })
+    expect(m(none, 'lead-time').cannot).toBeUndefined()
+  })
+
   test('lead time and tokens are medians with per-item values', () => {
     const tok = metric('tokens').points.find((p) => p.ids.length > 0)!
     const v = Object.values(tok.perItem!).sort((a, b) => a - b)
