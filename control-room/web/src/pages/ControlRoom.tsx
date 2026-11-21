@@ -102,13 +102,13 @@ const hintKey = (n: NeedsEntry) =>
   n.id.startsWith('pr-') ? `pr-${n.kind}` : n.id.startsWith('sweep-') ? 'sweep' : n.id.startsWith('session-') ? `session-${n.kind}` : n.id.startsWith('decision-') ? 'decision' : n.id.startsWith('cycle-') ? 'cycle' : n.kind
 const HINT: Record<string, React.ReactNode> = {
   answer: <>{NEEDS.answer.label}: answer on the item's issue, then run <CopyCommand cmd="/work <id>" /> again (in team mode the team's session picks it up).</>,
-  approve: <>{NEEDS.approve.label}: read the item's pull request, add the <Mono>human-approved</Mono> label on GitHub, then merge.</>,
+  approve: <>{NEEDS.approve.label}: read the item's pull request, add the <Mono>human-approved</Mono> label on GitHub, wait for its checks to pass, then merge it (with auto-merge on, it then merges itself).</>,
   merge: <>{NEEDS.merge.label}: the pull request is ready; merge it on GitHub (nothing will merge it for you).</>,
   failed: <>{NEEDS.failed.label}: open the item to see which check or stage failed; the factory retries only when the run is started again.</>,
   'waiting-input': <>{NEEDS['waiting-input'].label}: a Claude Code session is showing a prompt; answer it in that terminal.</>,
   quiet: <>{NEEDS.quiet.label}: nothing was heard from the run for a while; look at its terminal: it may have stopped.</>,
   info: <>{NEEDS.info.label}: nothing to do; it moves by itself, and is listed so nothing waits unseen.</>,
-  'pr-approve': <>Pull request rows: read it on GitHub, add the <Mono>human-approved</Mono> label, then merge.</>,
+  'pr-approve': <>Pull request rows: read it on GitHub, add the <Mono>human-approved</Mono> label, wait for its checks to pass, then merge it (with auto-merge on, it then merges itself).</>,
   'pr-merge': <>Pull request rows marked {NEEDS.merge.label}: merge it on GitHub.</>,
   'pr-failed': <>Pull request rows marked {NEEDS.failed.label}: a required check fails on GitHub; whoever owns the branch fixes it.</>,
   'pr-info': <>Pull request rows marked {NEEDS.info.label}: approved, with auto-merge on: GitHub merges it when CI is green.</>,

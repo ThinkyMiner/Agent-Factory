@@ -61,6 +61,18 @@ describe('over the demo', async () => {
     expect(pullNeeds([docs], s.snap.rules, 'R1')).toEqual([]) // R0, auto-merges
     expect(pullNeeds([docs], s.snap.rules, 'none')).toEqual([expect.objectContaining({ kind: 'merge', tier: 'R0' })])
   })
+  test('an approved R2 PR: a risk-gate failure from after the label is real; one from before is stale', () => {
+    const pr = gh.data!.pulls.find((p) => p.number === 141)!
+    const at = (m: number) => new Date(NOW - m * 60_000).toISOString()
+    const approved = { ...pr, labels: ['factory:improvement', 'human-approved', 'risk:R2'], timeline: [{ type: 'labeled', label: 'human-approved', at: at(30) }] }
+    const gate = (m: number) => ({ ...approved, checks: [{ name: 'risk-gate', status: 'COMPLETED', conclusion: 'FAILURE', completedAt: at(m) }] })
+    expect(pullNeeds([gate(10)], s.snap.rules, 'R1')).toEqual([expect.objectContaining({ kind: 'failed', summary: 'factory:improvement · approved, but failing: risk-gate' })]) // completed after the approval
+    expect(pullNeeds([gate(40)], s.snap.rules, 'R1')).toEqual([expect.objectContaining({ kind: 'merge', summary: 'factory:improvement · approved: merge it · R2' })]) // before it: CI re-runs it on the label
+    // not approved: the one next action, with or without auto-merge
+    const open = { ...pr, labels: ['risk:R2'], headRefName: 'factory/x', checks: [] }
+    expect(pullNeeds([open], s.snap.rules, 'R1')[0]!.summary).toBe('factory/x · add human-approved, wait for the checks to pass, then merge · R2')
+    expect(pullNeeds([{ ...open, autoMerge: true }], s.snap.rules, 'R1')[0]!.summary).toBe('factory/x · add human-approved; auto-merge then merges it once the checks pass · R2')
+  })
   test('audits newest first, text kept raw for the sanitising renderer', () => {
     const a = auditsView(s.meta)
     expect(a).toHaveLength(2)

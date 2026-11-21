@@ -6,6 +6,7 @@ import { z } from 'zod'
 import type { ItemView, NeedsEntry } from './derive.ts'
 import type { FactoryEvent, Issue, Notice, Parsed, Pull } from './types.ts'
 import { roundWords } from './words.ts'
+import { prNext } from './meta.ts'
 
 // ---------- the roster ----------
 
@@ -267,7 +268,7 @@ export interface FeatureView {
     ticketState?: string // open | accepted | declined | done | verified: its state: label, else its last ticket event
     from?: string // a ticket's sender
     open: boolean
-    item?: { state: ItemView['state']; pr?: number; prUrl?: string }
+    item?: { state: ItemView['state']; pr?: number; prUrl?: string; autoMerge?: boolean }
     dispatch?: DispatchRow
     waitsFor?: string
   }[]
@@ -355,7 +356,9 @@ function eventText(o: Record<string, unknown>): string {
   }
 }
 
-export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[] }, items: Map<string, ItemView>): { view: TeamsView; needs: NeedsEntry[]; notices: Notice[]; waits: Map<string, string> } {
+/** `next`: a pull request's one next action and who takes it (state.ts passes the risk rules in), the same
+ *  function Needs you uses, so the two never disagree. Without it a planning PR is taken as R2. */
+export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[] }, items: Map<string, ItemView>, next: (p: Pull, floor?: 'R2') => ReturnType<typeof prNext> = (p) => prNext(p, 'R2', 'none')): { view: TeamsView; needs: NeedsEntry[]; notices: Notice[]; waits: Map<string, string> } {
   const notices: Notice[] = []
   const needs: NeedsEntry[] = []
 
@@ -422,9 +425,15 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
     const prOpen = pull ? pull.state === 'OPEN' : !c.onMain // without GitHub data: open until main has the record
     const briefOk = !!pull?.labels.includes('brief-approved')
     if (state?.status === 'brief') cycle.waiting.push(!state.pr ? { team: 'orchestrator', owes: 'the brief (round.sh brief)' } : briefOk ? { team: 'orchestrator', owes: 'round.sh next' } : { team: 'you', owes: `the label brief-approved on PR #${state.pr}` })
-    if (state?.status === 'approval' && prOpen) cycle.waiting.push({ team: 'you', owes: `human-approved and a merge of PR #${state.pr ?? '?'}` })
-    // a fix to the cycle's files in its own PR: whoever merges it (you, above the auto-merge tier) goes first
-    else if (blocking.length) cycle.waiting.push(...blocking.map((b) => ({ team: 'you', owes: b.why })))
+    const own = pull && pull.state === 'OPEN' ? next(pull, 'R2') : undefined // the decisions' PR is R2 whatever its files
+    if (state?.status === 'approval' && prOpen) cycle.waiting.push(own ? { team: own.who, owes: `PR #${pull!.number}: ${own.what}` } : { team: 'you', owes: `human-approved and a merge of PR #${state.pr ?? '?'}` })
+    // a fix to the cycle's files in its own PR goes first, merged by whoever its next step names
+    else if (blocking.length) {
+      for (const b of blocking) {
+        const n = next(gh.pulls.find((p) => p.number === b.number)!)
+        cycle.waiting.push({ team: n.who, owes: `PR #${b.number}: ${n.what}${state?.status === 'approval' ? ', then /dispatch' : ''}` })
+      }
+    }
     else if (state?.status === 'approval') cycle.waiting.push({ team: 'orchestrator', owes: '/dispatch' })
     if (state?.status === 'escalated') cycle.waiting.push({ team: 'you', owes: 'a decision: the meeting stopped at two strikes' })
     if (state?.status === 'brief' && state.pr && prOpen && !briefOk) {
@@ -432,7 +441,7 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
     }
     if (state?.status === 'approval' && state.pr && prOpen) {
       const approved = !!pull?.labels.includes('human-approved')
-      needs.push({ ...base, kind: approved ? 'merge' : 'approve', title: 'Approve the decisions', summary: approved ? `PR #${state.pr} is approved: merge it` : `settle any needs-human record, add human-approved to PR #${state.pr}, merge it`, tier: 'R2' })
+      needs.push({ ...base, kind: own?.kind ?? 'approve', title: 'Approve the decisions', summary: own ? `${approved ? '' : 'settle any needs-human record, then '}PR #${state.pr}: ${own.what}` : `settle any needs-human record, add human-approved to PR #${state.pr}, merge it`, tier: 'R2' })
     }
     if (state?.status === 'escalated') {
       const out = Object.entries(state.strikes).filter(([, n]) => n >= 2).map(([t]) => t)
@@ -486,7 +495,7 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
         ticketState: ticket ? ticketEvents.get(String(i.number)) ?? label(i.labels, 'state:') : undefined, // as deriveItem: the event, else the label
         from: ticket ? label(i.labels, 'from:') : undefined,
         open: i.state === 'OPEN',
-        item: it ? { state: it.state, pr: it.pr?.number, prUrl: it.pr?.url } : undefined,
+        item: it ? { state: it.state, pr: it.pr?.number, prUrl: it.pr?.url, autoMerge: it.pr?.autoMerge } : undefined,
         dispatch,
         waitsFor,
       }
@@ -539,18 +548,18 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
     if (s.state === 'blocked') needs.push({ ...base, kind: 'waiting-input', title: `The ${s.tab} session is waiting for you`, summary: s.msg || 'a prompt or dialog in its Herdr tab' })
   }
 
-  const phases = phasesOf(cycle, features, gh.pulls)
+  const phases = phasesOf(cycle, features, gh.pulls, next)
   return { view: { rosterSource: inp.roster.source, rosterError, phases, cycle, features, teams, sessions: { available: inp.sessions.available } }, needs, notices, waits }
 }
 
 
 /** Where things are: the newest feature (on main, its PR to main, its integration round, its items),
  *  and beside it a planning cycle not yet dispatched. A feature already on main is shown only alone. */
-export function phasesOf(cycle: CycleView | undefined, features: FeatureView[], pulls: Pull[]): Phase[] {
+export function phasesOf(cycle: CycleView | undefined, features: FeatureView[], pulls: Pull[], next: (p: Pull) => ReturnType<typeof prNext> = (p) => prNext(p, 'R2', 'none')): Phase[] {
   const st = cycle?.state
   const planning = cycle && st?.status !== 'dispatched' && st?.status !== 'closed' ? cyclePhase(cycle) : undefined
   const f = features.find((x) => x.name === st?.feature) ?? features.at(-1)
-  const built = f ? featurePhase(f, pulls, cycle) : undefined
+  const built = f ? featurePhase(f, pulls, cycle, next) : undefined
   const out = [...(built && !(built.step === 'merged' && planning) ? [built] : []), ...(planning ? [planning] : [])]
   return out.length ? out : [{ step: 'no-cycle', label: 'No planning cycle yet', detail: 'In team mode work starts with a planning cycle: the teams agree decisions, you approve them, and dispatch turns them into items.', next: { who: 'orchestrator', what: 'open one with /plan', href: '/planning' } }]
 }
@@ -564,12 +573,12 @@ function cyclePhase(cycle: CycleView): Phase {
   return { step: 'planning', label: `Planning ${cycle.name}: ${roundWords(st.status)}`, next: owed(cycle.waiting[0]) ?? { who: 'orchestrator', what: 'close the round (round.sh next)', href: '/planning' } }
 }
 
-function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefined): Phase {
+function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefined, stepOf: (p: Pull) => ReturnType<typeof prNext>): Phase {
   const toMain = pulls.filter((p) => p.headRefName === `integrate/${f.name}`).sort((a, b) => b.number - a.number)[0]
   if (toMain?.state === 'MERGED') return { step: 'merged', label: `Merged: ${f.name} is on main`, detail: `PR #${toMain.number} merged.`, next: cycle && !cycle.active ? { who: 'orchestrator', what: 'the next planning cycle (/plan)', href: '/planning' } : undefined }
   if (toMain?.state === 'OPEN') {
-    const approved = toMain.labels.includes('human-approved')
-    return { step: 'pr-to-main', label: `Pull request to main: #${toMain.number}`, detail: `The feature passed integration; ${f.name} reaches main when this merges.`, next: { who: 'you', what: approved ? `merge PR #${toMain.number}` : `read PR #${toMain.number}, add human-approved, then merge`, href: toMain.url || '/planning' } }
+    const n = stepOf(toMain)
+    return { step: 'pr-to-main', label: `Pull request to main: #${toMain.number}`, detail: `The feature passed integration; ${f.name} reaches main when this merges.`, next: { who: n.who, what: n.kind === 'approve' ? `read PR #${toMain.number}, then ${n.what}` : `PR #${toMain.number}: ${n.what}`, href: toMain.url || '/planning' } }
   }
   const work = f.items.filter((i) => !i.ticket)
   const merged = work.filter((i) => i.item?.state === 'merged' || (!i.open && !i.item))
@@ -590,7 +599,13 @@ function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefine
   const next = blocked
     ? { who: 'you', what: `answer #${blocked.number} (it stopped with a question)`, href: `/items/${blocked.number}` }
     : yours.length
-      ? { who: 'you', what: yours.map((i) => `${i.item!.state === 'awaiting-approval' ? 'approve' : 'merge'} #${i.number}${i.item!.pr ? ` (PR #${i.item!.pr})` : ''}`).join(', '), href: `/items/${yours[0]!.number}` }
+      ? {
+          who: 'you',
+          what: yours
+            .map((i) => `#${i.number}${i.item!.pr ? ` (PR #${i.item!.pr})` : ''}: ${i.item!.state === 'awaiting-merge' ? 'merge it' : i.item!.autoMerge ? 'add human-approved; auto-merge then merges it once the checks pass' : 'add human-approved, wait for the checks to pass, then merge'}`)
+            .join('; '),
+          href: `/items/${yours[0]!.number}`,
+        }
     : running.length
       ? { who: [...new Set(running.map((i) => i.team ?? '?'))].join(', '), what: `finish ${running.map((i) => `#${i.number}`).join(', ')}`, href: '/board' }
       : ready.length

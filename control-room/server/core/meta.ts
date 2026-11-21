@@ -1,9 +1,9 @@
 // Views over the factory's own files (see sources/meta.ts): Memory, Improvement, Factory, Audits.
 // Pure, so tests/meta.test.ts can check them; nothing here infers meaning from prose.
 import { parseLessons, parsePolicy, parseReflection, splitFrontmatter } from './parse.ts'
-import type { NeedsEntry } from './derive.ts'
+import type { NeedsEntry, NeedsKind } from './derive.ts'
 import { classify, type RiskRule } from './risk.ts'
-import { checkState, maxTier, tierRank, type Notice, type Tier, type ObservationFile, type Parsed, type Pull, type Reflection, type ReflectionChange, type ReflectionResult } from './types.ts'
+import { checkState, maxTier, tierRank, type Check, type Notice, type Tier, type ObservationFile, type Parsed, type Pull, type Reflection, type ReflectionChange, type ReflectionResult } from './types.ts'
 
 export type Drift = 'same' | 'modified' | 'added' | 'deleted'
 export interface MetaFile {
@@ -98,6 +98,24 @@ export function pullTier(p: Pull, rules: RiskRule[]) {
   return { tier: maxTier(sources.map((x) => x.tier)), sources, files: files?.files ?? [] }
 }
 
+/** The one next action on an open pull request and who takes it. Needs you and Planning both say this.
+ *  R2 needs the human-approved label; risk-gate fails until then, and CI re-runs it on the label, so a
+ *  risk-gate failure counts only when it provably completed after the label (as derive.ts reads it). */
+export function prNext(p: Pull, tier: Tier | undefined, autoMergeMax: Tier | 'none'): { kind: NeedsKind; who: string; what: string; failing: string[]; approved: boolean } {
+  const r2 = !!tier && tierRank(tier) >= 2
+  const approved = p.labels.includes('human-approved')
+  const approvedAt = p.timeline.filter((x) => x.type === 'labeled' && x.label === 'human-approved').at(-1)?.at
+  const after = (c: Check) => approved && !!approvedAt && !!c.completedAt && Date.parse(c.completedAt) > Date.parse(approvedAt)
+  const failing = [...new Set(p.checks.filter((c) => checkState(c) === 'fail' && !(r2 && c.name === 'risk-gate' && !after(c))).map((c) => c.name))]
+  const pending = p.checks.some((c) => checkState(c) === 'pending')
+  const base = { failing, approved }
+  if (failing.length && approved) return { ...base, kind: 'failed', who: 'its author', what: `fix the failing check${failing.length > 1 ? 's' : ''}: ${failing.join(', ')}` }
+  if (r2 && !approved) return { ...base, kind: 'approve', who: 'you', what: p.autoMerge ? 'add human-approved; auto-merge then merges it once the checks pass' : 'add human-approved, wait for the checks to pass, then merge' }
+  if (p.autoMerge) return { ...base, kind: 'info', who: 'auto-merge', what: 'merging when CI is green' }
+  const below = !!tier && tierRank(tier) <= tierRank(autoMergeMax)
+  return { ...base, kind: 'merge', who: 'you', what: `merge it${pending ? ' once CI is green' : ''}${below && !approved ? ' (auto-merge is not on)' : ''}` }
+}
+
 /** Open pull requests that are not work items (an improvement, a planning fix, a factory change, the
  *  feature's PR to main) need you like any item's PR when above the auto-merge tier. `skip`: PRs shown
  *  elsewhere (work items, the planning cycle's own PR). `waits`: what waits on a PR (the planning cycle),
@@ -108,29 +126,20 @@ export function pullNeeds(pulls: Pull[], rules: RiskRule[], autoMergeMax: Tier |
     .flatMap((p): NeedsEntry[] => {
       const { tier } = pullTier(p, rules)
       const wait = waits.get(p.number)
-      const row = { id: `pr-${p.number}`, label: `PR #${p.number}`, title: p.title, tier, since: p.createdAt, href: p.url || '/' }
-      const tail = wait ? ` · ${wait}` : ''
-      if (!tier || tierRank(tier) <= tierRank(autoMergeMax)) {
-        return wait ? [{ ...row, kind: 'info', summary: `${p.headRefName} · ${p.autoMerge ? 'merges by itself when CI is green' : tier ? `${tier}, at or below the auto-merge tier` : 'no risk tier yet'}${tail}` }] : []
-      }
-      const r2 = tierRank(tier) >= 2
-      const failing = [...new Set(p.checks.filter((c) => checkState(c) === 'fail' && !(r2 && c.name === 'risk-gate')).map((c) => c.name))] // risk-gate fails until approved
-      const pending = p.checks.some((c) => checkState(c) === 'pending')
+      // at or below the auto-merge tier it is the factory's to merge, unless something waits on it
+      if ((!tier || tierRank(tier) <= tierRank(autoMergeMax)) && !wait) return []
+      const n = prNext(p, tier, autoMergeMax)
       const improvement = p.labels.includes('factory:improvement')
       // ponytail: the label counts as approval; GitHub's push times are not fetched, so a label older
       // than the last push shows only as risk-gate failing on the PR. Fetch push activity if that bites.
-      // Approved, it still waits until merged: on CI when auto-merge is on, on you otherwise; failing, nothing merges it.
-      if (r2 && p.labels.includes('human-approved')) {
-        const head = improvement ? 'factory:improvement' : p.headRefName
-        if (failing.length) return [{ ...row, kind: 'failed', summary: `${head} · approved, but failing: ${failing.join(', ')}${tail}` }]
-        return [{ ...row, kind: p.autoMerge ? 'info' : 'merge', summary: `${head} · ${p.autoMerge ? 'approved: merging when CI is green' : `approved: merge it${pending ? ' once CI is green' : ''}`} · ${tier}${tail}`, ...(improvement && { href: '/improvement' }) }]
-      }
-      const what = improvement ? 'factory:improvement' : `${p.headRefName} · ${r2 ? 'add human-approved, then merge' : 'merge it'}`
+      const head = improvement ? 'factory:improvement' : p.headRefName
+      const what = n.kind === 'failed' ? `${n.approved ? 'approved, but failing' : 'failing'}: ${n.failing.join(', ')}` : n.kind === 'approve' && improvement ? '' : `${n.approved ? 'approved: ' : ''}${n.what}`
+      const tail = n.kind === 'failed' ? '' : ` · ${tier ?? 'no risk tier yet'}${n.failing.length ? ` · failing: ${n.failing.join(', ')}` : ''}`
       return [{
-        ...row,
-        kind: r2 ? ('approve' as const) : ('merge' as const),
-        summary: `${what} · ${tier}${failing.length ? ` · failing: ${failing.join(', ')}` : ''}${tail}`,
-        href: improvement ? '/improvement' : row.href,
+        id: `pr-${p.number}`, label: `PR #${p.number}`, title: p.title, tier, since: p.createdAt,
+        kind: n.kind,
+        summary: `${[head, what].filter(Boolean).join(' · ')}${tail}${wait ? ` · ${wait}` : ''}`,
+        href: improvement ? '/improvement' : p.url || '/',
       }]
     })
 }

@@ -20,7 +20,7 @@ test('control room: team needs and the teams table', async ({ page }) => {
   await page.goto(TEAMS_URL + '/')
   const needs = page.getByRole('region', { name: /needs you/i })
   await expect(needs.getByRole('listitem')).toHaveCount(5)
-  await expect(needs).toContainText('integrate/f001-reading-list · add human-approved, then merge') // the feature's PR to main
+  await expect(needs).toContainText('integrate/f001-reading-list · add human-approved, wait for the checks to pass, then merge') // the feature's PR to main
   await expect(needs).toContainText('Should a shared list be readable by anyone with the link')
   await expect(needs).toContainText('Who may open a shared list')
   await expect(needs).toContainText('API rate limit: retrying in 20 minutes')
@@ -83,11 +83,11 @@ test('a newcomer: where things are, what clears each row, where an item sits, an
   const where = page.getByRole('region', { name: 'Where things are' })
   await expect(where.getByRole('listitem')).toHaveCount(2)
   await expect(where.getByRole('listitem').first()).toContainText('Pull request to main: #25')
-  await expect(where.getByRole('listitem').first()).toContainText('next: you read PR #25, add human-approved, then merge')
+  await expect(where.getByRole('listitem').first()).toContainText('next: you read PR #25, then add human-approved, wait for the checks to pass, then merge')
   await expect(where.getByRole('listitem').nth(1)).toContainText('Planning c002-share-links: decisions')
   await expect(where.getByRole('listitem').nth(1)).toContainText('next: backend accept or objection on draft 1')
   const hints = page.getByRole('note', { name: 'How to clear these rows' })
-  await expect(hints).toContainText('Pull request rows: read it on GitHub, add the human-approved label, then merge.')
+  await expect(hints).toContainText('Pull request rows: read it on GitHub, add the human-approved label, wait for its checks to pass, then merge it (with auto-merge on, it then merges itself).')
   await expect(hints).toContainText('Planning records marked needs-human')
   await expect(hints).toContainText('Session rows: a team')
   await expect(page.getByRole('region', { name: /teams/i }).getByRole('columnheader', { name: 'Holds' }).locator('abbr')).toHaveAttribute('title', /build slot/)

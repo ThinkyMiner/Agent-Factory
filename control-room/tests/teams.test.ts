@@ -60,7 +60,7 @@ describe('parsers', () => {
   test('the phase: an item held at your approval makes the next step yours', () => {
     const row = (number: number, state: ItemView['state'] | undefined, more: object = {}) => ({ number, title: `t${number}`, url: '', team: 'frontend', ticket: false, open: true, ...(state && { item: { state, pr: number + 4 } }), ...more })
     const f = { name: 'f001-first-card', refs: {}, docs: [], pulls: [], items: [row(7, 'merged'), row(8, 'awaiting-approval'), row(9, 'ready', { waitsFor: '#8 fit-layout (awaiting-approval)' })] }
-    expect(phasesOf(undefined, [f], [])).toEqual([{ step: 'building', label: 'Building f001-first-card: 1 of 3 items merged into its feature branch', detail: '1 in progress.', next: { who: 'you', what: 'approve #8 (PR #12)', href: '/items/8' } }])
+    expect(phasesOf(undefined, [f], [])).toEqual([{ step: 'building', label: 'Building f001-first-card: 1 of 3 items merged into its feature branch', detail: '1 in progress.', next: { who: 'you', what: '#8 (PR #12): add human-approved, wait for the checks to pass, then merge', href: '/items/8' } }])
   })
   test('who a round waits for, by its own rule', () => {
     const s = (status: string, draft = 0): CycleState => ({ status, teams: ['a', 'b'], draft, strikes: {}, unanswered: [], history: [] }) as CycleState
@@ -122,7 +122,7 @@ describe('a team-mode factory', () => {
     const team = s.needsYou.filter((n) => n.id !== '19').map((n) => [n.kind, n.id, n.summary])
     expect(team).toEqual([
       ['answer', 'decision-c002-D02', 'needs-human record in planning/c002-share-links/DECISIONS.md: decide it'],
-      ['approve', 'pr-25', 'integrate/f001-reading-list · add human-approved, then merge · R2'], // the feature's PR to main
+      ['approve', 'pr-25', 'integrate/f001-reading-list · add human-approved, wait for the checks to pass, then merge · R2'], // the feature's PR to main
       ['failed', 'session-frontend', 'API rate limit: retrying in 20 minutes'],
       ['waiting-input', 'session-research', 'Do you trust the files in this folder?'],
     ])
@@ -249,12 +249,21 @@ describe('missing and damaged inputs', () => {
     const c = s.teams!.cycle!
     expect(c).toMatchObject({ name: 'c001-reading-list', state: { status: 'approval' }, pr: { number: 9, state: 'MERGED' } })
     expect(c.blocking.map((b) => [b.number, b.why])).toEqual([[40, 'PR #40 must merge, then /dispatch']])
-    expect(c.waiting).toEqual([{ team: 'you', owes: 'PR #40 must merge, then /dispatch' }]) // not "orchestrator owes /dispatch"
+    expect(c.waiting).toEqual([{ team: 'you', owes: 'PR #40: merge it, then /dispatch' }]) // not "orchestrator owes /dispatch"
     expect(s.needsYou.find((n) => n.id === 'pr-40')).toMatchObject({ kind: 'merge', summary: 'planning/c001-reading-list · approved: merge it · R2 · planning c001-reading-list waits: PR #40 must merge, then /dispatch' })
     // with auto-merge on, it merges itself once CI is green: still shown, as information
     gh.data!.pulls.find((p) => p.number === 40)!.autoMerge = true
     s = await computeState(fx.repo, gh, { staleMinutes: 30 })
     expect(s.needsYou.find((n) => n.id === 'pr-40')).toMatchObject({ kind: 'info', summary: expect.stringMatching(/^planning\/c001-reading-list · approved: merging when CI is green · R2 · /) })
+    expect(s.teams!.cycle!.waiting).toEqual([{ team: 'auto-merge', owes: 'PR #40: merging when CI is green, then /dispatch' }]) // Planning says who merges as Needs you does
+    // not yet approved: the one next action, the same in both places
+    gh.data!.pulls.find((p) => p.number === 40)!.labels = ['risk:R2']
+    s = await computeState(fx.repo, gh, { staleMinutes: 30 })
+    expect(s.needsYou.find((n) => n.id === 'pr-40')).toMatchObject({ kind: 'approve', summary: expect.stringMatching(/^planning\/c001-reading-list · add human-approved; auto-merge then merges it once the checks pass · R2/) })
+    expect(s.teams!.cycle!.waiting).toEqual([{ team: 'you', owes: 'PR #40: add human-approved; auto-merge then merges it once the checks pass, then /dispatch' }])
+    gh.data!.pulls.find((p) => p.number === 40)!.autoMerge = false
+    s = await computeState(fx.repo, gh, { staleMinutes: 30 })
+    expect(s.teams!.cycle!.waiting).toEqual([{ team: 'you', owes: 'PR #40: add human-approved, wait for the checks to pass, then merge, then /dispatch' }])
     // merged: the orchestrator's turn again
     gh.data!.pulls.find((p) => p.number === 40)!.state = 'MERGED'
     s = await computeState(fx.repo, gh, { staleMinutes: 30 })
@@ -371,7 +380,7 @@ describe('missing and damaged inputs', () => {
     const brief = (st: Awaited<ReturnType<typeof computeState>>) => st.teams!.phases.map((p) => [p.step, p.label, p.next?.who, p.next?.what])
     let s = await computeState(fx.repo, gh, { staleMinutes: 30 })
     const planning = ['planning', 'Planning c002-share-links: decisions: the orchestrator drafts DECISIONS.md and each team accepts or objects', 'backend', 'accept or objection on draft 1']
-    expect(brief(s)).toEqual([['pr-to-main', 'Pull request to main: #25', 'you', 'read PR #25, add human-approved, then merge'], planning])
+    expect(brief(s)).toEqual([['pr-to-main', 'Pull request to main: #25', 'you', 'read PR #25, then add human-approved, wait for the checks to pass, then merge'], planning])
     gh.data!.pulls = gh.data!.pulls.filter((p) => p.number !== 25) // before the PR to main: the failed round and its open ticket
     s = await computeState(fx.repo, gh, { staleMinutes: 30 })
     expect(brief(s)).toEqual([['integration', 'Integration round 1 failed', 'backend', 'fix #23, then the next round runs'], planning]) // #26 was declined
@@ -472,8 +481,8 @@ describe('missing and damaged inputs', () => {
     const s = await computeState(fx.repo, gh, { staleMinutes: 30 })
     const prs = s.needsYou.filter((n) => n.id.startsWith('pr-')).map((n) => [n.kind, n.id, n.summary, n.href])
     expect(prs).toEqual([
-      ['approve', 'pr-25', 'integrate/f001-reading-list · add human-approved, then merge · R2', 'https://github.invalid/harbor/pull/25'],
-      ['approve', 'pr-31', 'planning/c002-share-links-fix · add human-approved, then merge · R2', 'https://github.invalid/harbor/pull/31'],
+      ['approve', 'pr-25', 'integrate/f001-reading-list · add human-approved, wait for the checks to pass, then merge · R2', 'https://github.invalid/harbor/pull/25'],
+      ['approve', 'pr-31', 'planning/c002-share-links-fix · add human-approved, wait for the checks to pass, then merge · R2', 'https://github.invalid/harbor/pull/31'],
       ['failed', 'pr-36', 'planning/fix · approved, but failing: ownership', 'https://github.invalid/harbor/pull/36'],
       ['merge', 'pr-32', 'factory/csp · approved: merge it · R2', 'https://github.invalid/harbor/pull/32'], // approved, not merged: it still waits on you
       ['merge', 'pr-35', 'sync/f001-reading-list · merge it · R1', 'https://github.invalid/harbor/pull/35'],
