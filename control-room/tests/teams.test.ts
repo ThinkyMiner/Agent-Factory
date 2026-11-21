@@ -4,7 +4,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { decisionRecords, parseAttribution, parseCycleState, parseDiscussion, parseRoster, waitingFor, type CycleState, type Message } from '../server/core/teams.ts'
+import { decisionRecords, parseAttribution, parseCycleState, parseDiscussion, parseRoster, phasesOf, waitingFor, type CycleState, type Message } from '../server/core/teams.ts'
+import type { ItemView } from '../server/core/derive.ts'
 import { herdrSessions } from '../server/sources/teams.ts'
 import { Factory } from '../server/factory.ts'
 import { PULLS, normalisePull } from '../server/sources/github.ts'
@@ -55,6 +56,11 @@ describe('parsers', () => {
     const a = parseAttribution(['# Attribution: f001-x', 'round: 2', '- test: tests/e2e/f001-x/ac8.spec.ts | criterion: AC8 | decision: c001-D06 | contract: contracts/api.md | team: backend | evidence: 500 on an empty week',
       '- test: a | criterion: AC9 | decision: c001-D06', 'free text <script>', '- test: b | criterion: AC9 | decision: c001-D06 | contract: none | team: frontend | evidence: a | b'].join('\n'))
     expect(a).toEqual({ round: 2, rows: [{ test: 'tests/e2e/f001-x/ac8.spec.ts', criterion: 'AC8', decision: 'c001-D06', contract: 'contracts/api.md', team: 'backend', evidence: '500 on an empty week' }] })
+  })
+  test('the phase: an item held at your approval makes the next step yours', () => {
+    const row = (number: number, state: ItemView['state'] | undefined, more: object = {}) => ({ number, title: `t${number}`, url: '', team: 'frontend', ticket: false, open: true, ...(state && { item: { state, pr: number + 4 } }), ...more })
+    const f = { name: 'f001-first-card', refs: {}, docs: [], pulls: [], items: [row(7, 'merged'), row(8, 'awaiting-approval'), row(9, 'ready', { waitsFor: '#8 fit-layout (awaiting-approval)' })] }
+    expect(phasesOf(undefined, [f], [])).toEqual([{ step: 'building', label: 'Building f001-first-card: 1 of 3 items merged into its feature branch', detail: '1 in progress.', next: { who: 'you', what: 'approve #8 (PR #12)', href: '/items/8' } }])
   })
   test('who a round waits for, by its own rule', () => {
     const s = (status: string, draft = 0): CycleState => ({ status, teams: ['a', 'b'], draft, strikes: {}, unanswered: [], history: [] }) as CycleState

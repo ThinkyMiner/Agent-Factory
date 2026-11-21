@@ -584,10 +584,13 @@ function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefine
       : { step: 'integration', label: `Integration round ${round ?? '?'} failed`, detail: `The end-to-end tests failed; ${tickets.length} ticket${tickets.length === 1 ? '' : 's'} open for the teams that own the failures.`, next: tickets.length ? { who: teams.join(', '), what: `fix ${tickets.map((t) => `#${t.number}`).join(', ')}, then the next round runs`, href: '/planning' } : { who: 'orchestrator', what: 'file tickets from attribution.md (integrate.sh tickets)', href: '/planning' } }
   }
   const blocked = work.find((i) => i.item?.state === 'blocked')
+  const yours = work.filter((i) => i.item?.state === 'awaiting-approval' || i.item?.state === 'awaiting-merge')
   const running = work.filter((i) => i.item && ['in-progress', 'pr-open', 'awaiting-approval', 'awaiting-merge'].includes(i.item.state))
   const ready = work.filter((i) => i.item?.state === 'ready' && i.waitsFor && !/^#/.test(i.waitsFor))
   const next = blocked
     ? { who: 'you', what: `answer #${blocked.number} (it stopped with a question)`, href: `/items/${blocked.number}` }
+    : yours.length
+      ? { who: 'you', what: yours.map((i) => `${i.item!.state === 'awaiting-approval' ? 'approve' : 'merge'} #${i.number}${i.item!.pr ? ` (PR #${i.item!.pr})` : ''}`).join(', '), href: `/items/${yours[0]!.number}` }
     : running.length
       ? { who: [...new Set(running.map((i) => i.team ?? '?'))].join(', '), what: `finish ${running.map((i) => `#${i.number}`).join(', ')}`, href: '/board' }
       : ready.length
