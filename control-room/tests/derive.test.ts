@@ -227,6 +227,11 @@ describe('merged and closed', () => {
     // approved, then auto-merge merged it: auto, not "merged by you"; GitHub's merger login is kept as said
     const approvedAuto = derive({ stageEvents: RUN_TO_PR(), pull: pull({ state: 'MERGED', mergedAt: ago(30), labels: ['risk:R2', 'human-approved'], autoMerge: true, merger: 'octo' }) })
     expect(approvedAuto).toMatchObject({ mergedBy: 'auto', merger: 'octo' })
+    // auto-merge enabled, then disabled before a manual merge: the last auto-merge event before the merge decides
+    const off = derive({ stageEvents: RUN_TO_PR(), pull: pull({ state: 'MERGED', mergedAt: ago(30), autoMerge: false, timeline: [{ type: 'auto_merge_enabled', at: ago(50) }, { type: 'auto_merge_disabled', at: ago(40) }] }) })
+    expect(off.mergedBy).toBeUndefined()
+    const reEnabled = derive({ stageEvents: RUN_TO_PR(), pull: pull({ state: 'MERGED', mergedAt: ago(30), autoMerge: false, timeline: [{ type: 'auto_merge_disabled', at: ago(50) }, { type: 'auto_merge_enabled', at: ago(40) }] }) })
+    expect(reEnabled.mergedBy).toBe('auto')
   })
 
   test('merged on a second attempt is not a first pass, though this attempt had no fix rounds', () => {

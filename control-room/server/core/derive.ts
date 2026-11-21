@@ -476,7 +476,9 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
   let mergedBy: ItemView['mergedBy']
   // Who merged is inferred: auto-merge evidence is auto (approved or not); else human-approved is you; else no one, since
   // agents push and merge with the same account. GitHub's merger login is kept beside it, as GitHub says it.
-  if (pr?.state === 'MERGED') mergedBy = pr.autoMerge || pr.timeline.some((x) => x.type === 'auto_merge_enabled') ? 'auto' : approved ? 'human' : undefined
+  // the last auto-merge event before the merge decides: enabled then disabled is a manual merge
+  const autoAtMerge = pr?.timeline.filter((x) => (x.type === 'auto_merge_enabled' || x.type === 'auto_merge_disabled') && (!pr.mergedAt || t(x.at) <= t(pr.mergedAt))).sort((a, b) => t(a.at) - t(b.at)).at(-1)
+  if (pr?.state === 'MERGED') mergedBy = pr.autoMerge || autoAtMerge?.type === 'auto_merge_enabled' ? 'auto' : approved ? 'human' : undefined
 
   // ---------- the state rules, first match wins (DESIGN.md §5) ----------
   let state: State
