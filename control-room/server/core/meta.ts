@@ -98,20 +98,24 @@ export function pullTier(p: Pull, rules: RiskRule[]) {
   return { tier: maxTier(sources.map((x) => x.tier)), sources, files: files?.files ?? [] }
 }
 
-/** The one next action on an open pull request and who takes it. Needs you and Planning both say this.
+/** The one next action on an open pull request and who takes it. Needs you, Planning and the strip all say this.
  *  R2 needs the human-approved label; risk-gate fails until then, and CI re-runs it on the label, so a
- *  risk-gate failure counts only when it provably completed after the label (as derive.ts reads it). */
+ *  risk-gate failure is stale only when it provably completed before the label (as derive.ts reads it).
+ *  Any other failing check comes first: auto-merge never merges a red pull request. */
 export function prNext(p: Pull, tier: Tier | undefined, autoMergeMax: Tier | 'none'): { kind: NeedsKind; who: string; what: string; failing: string[]; approved: boolean } {
   const r2 = !!tier && tierRank(tier) >= 2
   const approved = p.labels.includes('human-approved')
   const approvedAt = p.timeline.filter((x) => x.type === 'labeled' && x.label === 'human-approved').at(-1)?.at
-  const after = (c: Check) => approved && !!approvedAt && !!c.completedAt && Date.parse(c.completedAt) > Date.parse(approvedAt)
-  const failing = [...new Set(p.checks.filter((c) => checkState(c) === 'fail' && !(r2 && c.name === 'risk-gate' && !after(c))).map((c) => c.name))]
+  const stale = (c: Check) => r2 && c.name === 'risk-gate' && (!approved || (!!approvedAt && !!c.completedAt && Date.parse(c.completedAt) < Date.parse(approvedAt)))
+  // a check can run more than once on the head (risk-gate re-runs on the label): its newest run counts, and of undated runs a pass
+  const key = (c: Check) => (Date.parse(c.completedAt ?? '') || 0) * 2 + (checkState(c) === 'pass' ? 1 : 0)
+  const newest = [...Map.groupBy(p.checks, (c) => c.name).values()].map((runs) => runs.reduce((a, b) => (key(b) > key(a) ? b : a)))
+  const failing = newest.filter((c) => checkState(c) === 'fail' && !stale(c)).map((c) => c.name)
   const pending = p.checks.some((c) => checkState(c) === 'pending')
   const base = { failing, approved }
-  if (failing.length && approved) return { ...base, kind: 'failed', who: 'its author', what: `fix the failing check${failing.length > 1 ? 's' : ''}: ${failing.join(', ')}` }
+  if (failing.length) return { ...base, kind: 'failed', who: 'its author', what: `fix the failing check${failing.length > 1 ? 's' : ''}: ${failing.join(', ')}` }
   if (r2 && !approved) return { ...base, kind: 'approve', who: 'you', what: p.autoMerge ? 'add human-approved; auto-merge then merges it once the checks pass' : 'add human-approved, wait for the checks to pass, then merge' }
-  if (p.autoMerge) return { ...base, kind: 'info', who: 'auto-merge', what: 'merging when CI is green' }
+  if (p.autoMerge) return { ...base, kind: 'info', who: 'GitHub', what: 'auto-merge merges it when the checks pass' }
   const below = !!tier && tierRank(tier) <= tierRank(autoMergeMax)
   return { ...base, kind: 'merge', who: 'you', what: `merge it${pending ? ' once CI is green' : ''}${below && !approved ? ' (auto-merge is not on)' : ''}` }
 }

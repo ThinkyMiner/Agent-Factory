@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { generate } from '../demo/generate.ts'
 import { computeState, readDemoGitHub } from '../server/state.ts'
 import { loadMeta } from '../server/sources/meta.ts'
-import { auditsView, factoryView, pullNeeds, improvementView, memoryView, predictions } from '../server/core/meta.ts'
+import { auditsView, factoryView, prNext, pullNeeds, improvementView, memoryView, predictions } from '../server/core/meta.ts'
 import type { Reflection } from '../server/core/types.ts'
 
 const NOW = Date.parse('2026-11-13T10:00:00Z')
@@ -56,8 +56,9 @@ describe('over the demo', async () => {
   test('an improvement PR above the auto-merge tier needs you, like any item PR', () => {
     expect(s.needsYou.filter((n) => n.id === 'pr-141')).toEqual([expect.objectContaining({ kind: 'approve', tier: 'R2', label: 'PR #141', href: '/improvement', summary: 'factory:improvement · R2' })]) // its failing risk-gate is expected until approved
     const pr = gh.data!.pulls.find((p) => p.number === 141)!
-    expect(pullNeeds([{ ...pr, labels: [...pr.labels, 'human-approved'] }], s.snap.rules, 'R1')).toEqual([expect.objectContaining({ kind: 'merge', href: '/improvement', summary: 'factory:improvement · approved: merge it · R2' })]) // approved is not merged
-    const docs = { ...pr, labels: ['factory:improvement'], files: [{ path: 'docs/factory/MEMORY.md', additions: 1, deletions: 0 }] }
+    const approvedNow = { ...pr, labels: [...pr.labels, 'human-approved'], timeline: [...pr.timeline, { type: 'labeled', label: 'human-approved', at: new Date(NOW).toISOString() }] } // its risk-gate failed before the label
+    expect(pullNeeds([approvedNow], s.snap.rules, 'R1')).toEqual([expect.objectContaining({ kind: 'merge', href: '/improvement', summary: 'factory:improvement · approved: merge it · R2' })]) // approved is not merged
+    const docs = { ...pr, labels: ['factory:improvement'], files: [{ path: 'docs/factory/MEMORY.md', additions: 1, deletions: 0 }], checks: pr.checks.map((c) => ({ ...c, conclusion: 'SUCCESS' })) } // R0: risk-gate passes
     expect(pullNeeds([docs], s.snap.rules, 'R1')).toEqual([]) // R0, auto-merges
     expect(pullNeeds([docs], s.snap.rules, 'none')).toEqual([expect.objectContaining({ kind: 'merge', tier: 'R0' })])
   })
@@ -68,11 +69,21 @@ describe('over the demo', async () => {
     const gate = (m: number) => ({ ...approved, checks: [{ name: 'risk-gate', status: 'COMPLETED', conclusion: 'FAILURE', completedAt: at(m) }] })
     expect(pullNeeds([gate(10)], s.snap.rules, 'R1')).toEqual([expect.objectContaining({ kind: 'failed', summary: 'factory:improvement · approved, but failing: risk-gate' })]) // completed after the approval
     expect(pullNeeds([gate(40)], s.snap.rules, 'R1')).toEqual([expect.objectContaining({ kind: 'merge', summary: 'factory:improvement · approved: merge it · R2' })]) // before it: CI re-runs it on the label
+    // no completion time: it cannot be shown stale, so it is real
+    const undated = { ...approved, autoMerge: true, checks: [{ name: 'risk-gate', status: 'COMPLETED', conclusion: 'FAILURE' }] }
+    expect(prNext(undated, 'R2', 'R1')).toMatchObject({ kind: 'failed', who: 'its author', what: 'fix the failing check: risk-gate' })
     // not approved: the one next action, with or without auto-merge
     const open = { ...pr, labels: ['risk:R2'], headRefName: 'factory/x', checks: [] }
     expect(pullNeeds([open], s.snap.rules, 'R1')[0]!.summary).toBe('factory/x · add human-approved, wait for the checks to pass, then merge · R2')
     expect(pullNeeds([{ ...open, autoMerge: true }], s.snap.rules, 'R1')[0]!.summary).toBe('factory/x · add human-approved; auto-merge then merges it once the checks pass · R2')
   })
+  test('a failing check beats auto-merge: auto-merge never merges a red PR', () => {
+    const pr = gh.data!.pulls.find((p) => p.number === 141)!
+    const red = { ...pr, labels: ['risk:R1'], autoMerge: true, checks: [{ name: 'factory-tests', status: 'COMPLETED', conclusion: 'FAILURE' }, { name: 'risk-gate', status: 'COMPLETED', conclusion: 'SUCCESS' }] }
+    expect(prNext(red, 'R1', 'R1')).toMatchObject({ kind: 'failed', who: 'its author', what: 'fix the failing check: factory-tests' })
+    expect(prNext({ ...red, checks: [{ name: 'factory-tests', status: 'IN_PROGRESS' }] }, 'R1', 'R1')).toMatchObject({ kind: 'info', who: 'GitHub', what: 'auto-merge merges it when the checks pass' })
+  })
+
   test('audits newest first, text kept raw for the sanitising renderer', () => {
     const a = auditsView(s.meta)
     expect(a).toHaveLength(2)

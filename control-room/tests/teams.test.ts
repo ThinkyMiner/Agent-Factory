@@ -266,8 +266,8 @@ describe('missing and damaged inputs', () => {
     // with auto-merge on, it merges itself once CI is green: still shown, as information
     gh.data!.pulls.find((p) => p.number === 40)!.autoMerge = true
     s = await computeState(fx.repo, gh, { staleMinutes: 30 })
-    expect(s.needsYou.find((n) => n.id === 'pr-40')).toMatchObject({ kind: 'info', summary: expect.stringMatching(/^planning\/c001-reading-list · approved: merging when CI is green · R2 · /) })
-    expect(s.teams!.cycle!.waiting).toEqual([{ team: 'auto-merge', owes: 'PR #40: merging when CI is green, then /dispatch' }]) // Planning says who merges as Needs you does
+    expect(s.needsYou.find((n) => n.id === 'pr-40')).toMatchObject({ kind: 'info', summary: expect.stringMatching(/^planning\/c001-reading-list · approved: auto-merge merges it when the checks pass · R2 · /) })
+    expect(s.teams!.cycle!.waiting).toEqual([{ team: 'GitHub', owes: 'PR #40: auto-merge merges it when the checks pass, then /dispatch' }]) // Planning says who merges as Needs you does
     // not yet approved: the one next action, the same in both places
     gh.data!.pulls.find((p) => p.number === 40)!.labels = ['risk:R2']
     s = await computeState(fx.repo, gh, { staleMinutes: 30 })
