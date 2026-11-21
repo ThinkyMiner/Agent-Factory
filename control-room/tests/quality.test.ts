@@ -102,6 +102,16 @@ describe('quality over the demo', async () => {
     expect(m(none, 'lead-time').cannot).toBeUndefined()
   })
 
+  test('only the default branch counts as main; another base is its own bucket', () => {
+    const [a] = s.items.filter((i) => i.state === 'merged' && i.mergedAt)
+    const at = a!.mergedAt!
+    const q2 = quality({ items: [a!], now: NOW, weeks: 8, escapedIssues: [], tokensByItem: new Map(), main: 'master',
+      mergedPulls: [{ number: 1, id: a!.id, mergedAt: at, base: 'release/v1' }, { number: 2, id: a!.id, mergedAt: at, base: 'master' }, { number: 3, id: a!.id, mergedAt: at, base: 'main' }] })
+    const prs = q2.metrics.find((x) => x.key === 'merged-prs')!
+    expect(prs.series).toEqual(['into main', 'into a feature branch', 'into another branch', 'base unknown'])
+    expect(prs.points.find((p) => p.ids.length)!.parts!.map((x) => [x.key, x.value])).toEqual([['into another branch', 2], ['into main', 1]]) // master is this repo's main; main is just a branch here
+  })
+
   test('the throughput note never says main for a base it does not know', () => {
     const items = s.items.filter((i) => i.state === 'merged' && i.mergedAt).slice(0, 2).map((i) => ({ ...i, mergedInto: undefined }))
     const note = (xs: typeof s.items) => quality({ items: xs, now: NOW, weeks: 8, escapedIssues: [], tokensByItem: new Map() }).metrics.find((x) => x.key === 'throughput')!.note!

@@ -228,7 +228,7 @@ export class Factory {
       const id = /^work\/([A-Za-z0-9._]+)-/.exec(p.headRefName)?.[1]
       return id && p.state === 'MERGED' && p.mergedAt ? [{ number: p.number, id, mergedAt: p.mergedAt, base: p.baseRefName }] : []
     })
-    return quality({ items: this.state.items, tokensByItem, tokenRuns, mergedPulls, escapedIssues: this.state.snap.escapedIssues, now: Date.now(), weeks })
+    return quality({ items: this.state.items, tokensByItem, tokenRuns, mergedPulls, escapedIssues: this.state.snap.escapedIssues, now: Date.now(), weeks, main: this.state.snap.main?.replace(/^origin\//, '') ?? undefined })
   }
 
   memory = () => memoryView(this.state.meta, this.state.snap.observations)

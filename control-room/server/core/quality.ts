@@ -54,9 +54,10 @@ export interface QualityInput {
   escapedIssues: { number: number; createdAt: string }[]
   now: number
   weeks: number
+  main?: string // the repo's default branch (main when unknown)
 }
 
-export function quality({ items, tokensByItem, tokenRuns = new Map(), mergedPulls = [], escapedIssues, now, weeks }: QualityInput) {
+export function quality({ items, tokensByItem, tokenRuns = new Map(), mergedPulls = [], escapedIssues, now, weeks, main = 'main' }: QualityInput) {
   const first = weekStart(now) - (weeks - 1) * 7 * DAY
   const starts = Array.from({ length: weeks }, (_, i) => weekStart(first + i * 7 * DAY + DAY / 2)) // DST-safe
   const weekOf = (iso: string | undefined) => {
@@ -203,7 +204,7 @@ export function quality({ items, tokensByItem, tokenRuns = new Map(), mergedPull
     const w = weekOf(pr.mergedAt)
     if (!w || !prs.has(w)) continue
     const p = prs.get(w)!
-    add(p, !pr.base ? 'base unknown' : pr.base.startsWith('feature/') ? 'into a feature branch' : 'into main', pr.id)
+    add(p, !pr.base ? 'base unknown' : pr.base === main ? 'into main' : pr.base.startsWith('feature/') ? 'into a feature branch' : 'into another branch', pr.id)
     const n = (p.notes ??= {})
     n[pr.id] = n[pr.id] ? `${n[pr.id]}; PR #${pr.number}` : `PR #${pr.number}${pr.base ? ` into ${pr.base}` : ''}`
   }
@@ -211,7 +212,7 @@ export function quality({ items, tokensByItem, tokenRuns = new Map(), mergedPull
   const noBase = merged.filter((i) => !i.mergedInto).length
   const MERGED = intoFeature
     ? `Merged means the item's pull request merged into its base: main, or in team mode its feature branch (${intoFeature} of ${merged.length} here${noBase ? `; ${noBase} with no recorded base` : ''}), which reaches main later through the feature's integrate pull request.`
-    : merged.length && merged.every((i) => i.mergedInto === 'main')
+    : merged.length && merged.every((i) => i.mergedInto === main)
       ? "Merged means the item's pull request merged into main."
       : `Merged means the item's pull request merged into its base branch${noBase ? ` (${noBase} of ${merged.length} here with no recorded base)` : ''}.`
 
@@ -225,7 +226,7 @@ export function quality({ items, tokensByItem, tokenRuns = new Map(), mergedPull
     { key: 'merged-by', question: 'How much merged without me?', unit: 'count', kind: 'stacked', series: ['auto-merged', 'merged by you', 'unknown'], note: 'Inferred from the pull request: auto-merge enabled counts as auto-merged, approved or not; otherwise a human-approved label counts as merged by you; neither is unknown, since agents merge with the same GitHub account as you.', points: series(mergedBy) },
     { key: 'escaped', question: 'Did defects escape?', unit: 'count', kind: 'stacked', series: ['reverted', 'escaped-defect issue'], note: 'Reverted pull requests, plus issues labelled escaped-defect.', points: series(escaped) },
   ]
-  if (mergedPulls.length) metrics.splice(1, 0, { key: 'merged-prs', question: 'How many work pull requests merged each week? (every attempt)', unit: 'count', kind: 'stacked', series: ['into main', 'into a feature branch', 'base unknown'], note: 'Every merged pull request from a work/<id>-<slug> branch, so an item tried twice counts twice. Base unknown: GitHub did not report the branch it merged into.', points: series(prs) })
+  if (mergedPulls.length) metrics.splice(1, 0, { key: 'merged-prs', question: 'How many work pull requests merged each week? (every attempt)', unit: 'count', kind: 'stacked', series: ['into main', 'into a feature branch', 'into another branch', 'base unknown'], note: `Every merged pull request from a work/<id>-<slug> branch, so an item tried twice counts twice. Main is ${main}, the default branch. Base unknown: GitHub did not report the branch it merged into.`, points: series(prs) })
   if (tokensByItem.size) {
     const cover = total && read < total ? `Partial: ${read} of ${total} runs of these items had a readable transcript; the rest are not counted.${unread ? ` ${unread} merged item${unread === 1 ? '' : 's'} had none and ${unread === 1 ? 'is' : 'are'} not in the median.` : ''}` : 'Every run of these items had a readable transcript.'
     metrics.push({ key: 'tokens', question: 'How many tokens does a merged item cost? (median)', unit: 'tokens', kind: 'bars', note: `The agent runs and foreman sessions tied to the item, from their transcripts. ${total ? cover : ''}`.trim(), points: series(tokens) })
