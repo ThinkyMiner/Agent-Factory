@@ -2,7 +2,7 @@
 // the raw ItemInputs that core/derive.ts turns into state. All reads, no writes.
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { parseEvents, parseObservationFile, parsePolicy } from '../core/parse.ts'
+import { openFindings, parseEvents, parseObservationFile, parsePolicy, type SweepFinding } from '../core/parse.ts'
 import { parseRiskRules, type RiskRule } from '../core/risk.ts'
 import { WORK_FILES, type ItemInputs, type TestRef, type WorkFile, type WorkFileName } from '../core/derive.ts'
 import type { FactoryEvent, GitHubData, GitHubStatus, Issue, LifecycleEvent, Notice, ObservationFile, Pull, StageEvent, Tier } from '../core/types.ts'
@@ -23,6 +23,7 @@ export interface Snapshot {
   escapedIssues: { number: number; title: string; url: string; createdAt: string }[] // issues labelled escaped-defect
   github: GitHubStatus & { repo?: string }
   notices: Notice[]
+  findings: SweepFinding[] // the sweep's open findings (team mode); empty without a readable sweep.json
 }
 
 type Origin = WorkFile['origin']
@@ -149,9 +150,11 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
   // ---- events: the live stream plus every per-item events.jsonl, deduplicated by line ----
   const events: FactoryEvent[] = []
   const seen = new Set<string>()
+  // With the sweep's state, an escalation is a notice only while its finding is open (below).
+  const sweepText = await readText(join(repo, '.factory/sweep.json'))
   const addEvents = (text: string, source: string, partialTail: boolean) => {
     const r = parseEvents(text, source, { partialTail })
-    notices.push(...r.notices)
+    notices.push(...(sweepText === null ? r.notices : r.notices.filter((n) => !/^line \d+: escalation\b/.test(n.message))))
     for (const e of r.events) {
       if (seen.has(e.key)) continue
       seen.add(e.key)
@@ -162,6 +165,18 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
   if (live !== null) addEvents(live, '.factory/events.jsonl', true)
   for (const s of sources.filter((s) => s.path.endsWith('/events.jsonl')).sort((a, b) => ORDER[a.origin] - ORDER[b.origin])) {
     addEvents((await s.read()).text, `${s.path}${s.ref ? ` @${s.ref}` : ''}`, s.origin === 'worktree')
+  }
+  let findings: SweepFinding[] = []
+  if (sweepText !== null) {
+    const f = openFindings(sweepText, events)
+    if (f) findings = f
+    else {
+      notices.push({ level: 'warn', source: '.factory/sweep.json', message: 'not readable: showing every escalation ever written' })
+      events.forEach((e, i) => {
+        if (e.type === 'unknown' && /"type"\s*:\s*"escalation"/.test(e.raw)) notices.push(...parseEvents(e.raw, '.factory/events.jsonl').notices.map((n) => ({ ...n, message: n.message.replace(/^line 1:/, `event ${i + 1}:`) })))
+      })
+    }
+    for (const x of findings) notices.push({ level: 'warn', source: '.factory/sweep.json', message: `escalation (${x.reason}): ${x.detail}` })
   }
   const stageEvents = events.filter((e): e is StageEvent => e.type === 'stage')
   const lifecycle = events.filter((e): e is LifecycleEvent => e.type === 'lifecycle')
@@ -306,5 +321,6 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
     escapedIssues: (gh.data?.issues ?? []).filter((i) => i.labels.includes('escaped-defect')).map((i) => ({ number: i.number, title: i.title, url: i.url, createdAt: i.createdAt })),
     github: { ...gh.status, repo: gh.data?.repo },
     notices,
+    findings,
   }
 }

@@ -19,7 +19,8 @@ test('control room: team needs and the teams table', async ({ page }) => {
   const errors = watchErrors(page)
   await page.goto(TEAMS_URL + '/')
   const needs = page.getByRole('region', { name: /needs you/i })
-  await expect(needs.getByRole('listitem')).toHaveCount(4)
+  await expect(needs.getByRole('listitem')).toHaveCount(5)
+  await expect(needs).toContainText('integrate/f001-reading-list · add human-approved, then merge') // the feature's PR to main
   await expect(needs).toContainText('Should a shared list be readable by anyone with the link')
   await expect(needs).toContainText('Who may open a shared list')
   await expect(needs).toContainText('API rate limit: retrying in 20 minutes')

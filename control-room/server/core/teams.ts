@@ -250,6 +250,7 @@ function eventText(o: Record<string, unknown>): string {
     case 'position': return `position ${s('action')}`
     case 'contract': return `contract ${s('action')}: ${s('path')}`
     case 'dispatch': return `dispatched ${s('item')} to ${s('to')} (${s('feature')})`
+    case 'autostart': return `autostart typed ${s('detail')}`
     default: return String(o.type)
   }
 }
@@ -287,8 +288,9 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
       } catch {
         continue
       }
-      // messages are in the transcript itself
-      if (o && o.cycle === c.name && o.type !== 'message' && typeof o.ts === 'string') events.push({ ts: o.ts, type: String(o.type), team: typeof o.team === 'string' ? o.team : undefined, text: eventText(o) })
+      // messages are in the transcript itself; autostart names the cycle or its feature in what it typed
+      const typed = o?.type === 'autostart' && typeof o.detail === 'string' && (o.detail.endsWith(` ${c.name}`) || o.detail.endsWith(` f${c.name.slice(1)}`))
+      if (o && (o.cycle === c.name || typed) && o.type !== 'message' && typeof o.ts === 'string') events.push({ ts: o.ts, type: String(o.type), team: typeof o.team === 'string' ? o.team : undefined, text: eventText(o) })
     }
     cycle = {
       name: c.name,
@@ -368,11 +370,13 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
       session: tabs.find((s) => s.tab === t.name),
     }
   })
-  for (const s of tabs) if (!teams.some((t) => t.name === s.tab)) teams.push({ name: s.tab, owns: [], active: true, inRoster: false, session: s })
+  // the sweep's tab besides the roster; any other tab in the space is not the factory's to show
+  const ours = (tab: string) => tab === 'sweep' || teams.some((t) => t.name === tab)
+  for (const s of tabs) if (s.tab === 'sweep') teams.push({ name: s.tab, owns: [], active: true, inRoster: false, session: s })
   for (const co of inp.checkouts) {
     if (!co.exists && teams.some((t) => t.name === co.team)) notices.push({ level: 'warn', source: 'git worktree', message: `the ${co.team} worktree ${co.path} no longer exists (git worktree prune removes it)` })
   }
-  for (const s of tabs) {
+  for (const s of tabs.filter((x) => ours(x.tab))) {
     const base = { id: `session-${s.tab}`, label: `session ${s.tab}`, href: '/', since: s.since ?? '' }
     if (s.state === 'error') needs.push({ ...base, kind: 'failed', title: `The ${s.tab} session failed`, summary: s.msg || 'Herdr reports an error' })
     if (s.state === 'blocked') needs.push({ ...base, kind: 'waiting-input', title: `The ${s.tab} session is waiting for you`, summary: s.msg || 'a prompt or dialog in its Herdr tab' })

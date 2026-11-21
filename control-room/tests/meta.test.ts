@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { generate } from '../demo/generate.ts'
 import { computeState, readDemoGitHub } from '../server/state.ts'
 import { loadMeta } from '../server/sources/meta.ts'
-import { auditsView, factoryView, improvementNeeds, improvementView, memoryView, predictions } from '../server/core/meta.ts'
+import { auditsView, factoryView, pullNeeds, improvementView, memoryView, predictions } from '../server/core/meta.ts'
 import type { Reflection } from '../server/core/types.ts'
 
 const NOW = Date.parse('2026-11-13T10:00:00Z')
@@ -56,10 +56,10 @@ describe('over the demo', async () => {
   test('an improvement PR above the auto-merge tier needs you, like any item PR', () => {
     expect(s.needsYou.filter((n) => n.id === 'pr-141')).toEqual([expect.objectContaining({ kind: 'approve', tier: 'R2', label: 'PR #141', href: '/improvement', summary: 'factory:improvement · R2' })]) // its failing risk-gate is expected until approved
     const pr = gh.data!.pulls.find((p) => p.number === 141)!
-    expect(improvementNeeds([{ ...pr, labels: [...pr.labels, 'human-approved'] }], s.snap.rules, 'R1')).toEqual([])
+    expect(pullNeeds([{ ...pr, labels: [...pr.labels, 'human-approved'] }], s.snap.rules, 'R1')).toEqual([])
     const docs = { ...pr, labels: ['factory:improvement'], files: [{ path: 'docs/factory/MEMORY.md', additions: 1, deletions: 0 }] }
-    expect(improvementNeeds([docs], s.snap.rules, 'R1')).toEqual([]) // R0, auto-merges
-    expect(improvementNeeds([docs], s.snap.rules, 'none')).toEqual([expect.objectContaining({ kind: 'merge', tier: 'R0' })])
+    expect(pullNeeds([docs], s.snap.rules, 'R1')).toEqual([]) // R0, auto-merges
+    expect(pullNeeds([docs], s.snap.rules, 'none')).toEqual([expect.objectContaining({ kind: 'merge', tier: 'R0' })])
   })
   test('audits newest first, text kept raw for the sanitising renderer', () => {
     const a = auditsView(s.meta)

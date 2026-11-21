@@ -31,7 +31,7 @@ const lines = (s: string) => s.replace(/\r\n?/g, '\n').split('\n')
 
 /** Team mode's own events: planning (shown in the cycle view), slots, items, tickets, integration. Not
  *  notices. An escalation is the sweep asking for the human, so it stays one, with its words. */
-export const TEAM_EVENTS = new Set(['round', 'approval', 'position', 'message', 'contract', 'dispatch', 'item', 'slot', 'ticket', 'integration'])
+export const TEAM_EVENTS = new Set(['round', 'approval', 'position', 'message', 'contract', 'dispatch', 'item', 'slot', 'ticket', 'integration', 'autostart'])
 
 /**
  * Parse an events.jsonl file. Unknown event types are kept (as type "unknown") so they
@@ -84,6 +84,49 @@ export function parseEvents(text: string, source: string, opts: { partialTail?: 
     events.push(ev)
   })
   return { events, notices }
+}
+
+// ---------- .factory/sweep.json ----------
+
+export interface SweepFinding {
+  key: string
+  reason: string
+  refs: string
+  detail: string
+  since: string // when the sweep first saw it
+}
+
+/**
+ * The sweep's findings that are still open. sweep.json "seen" maps each open finding's key
+ * ("<reason>:<refs>[:...]", sweep.sh add) to the epoch second it was first seen; the newest
+ * escalation event with that reason and refs carries its words. An escalation whose finding has
+ * cleared is history. Null when sweep.json is not an object with a "seen" object.
+ */
+export function openFindings(sweepText: string, events: FactoryEvent[]): SweepFinding[] | null {
+  let seen: unknown
+  try {
+    seen = (JSON.parse(sweepText) as { seen?: unknown })?.seen
+  } catch {
+    return null
+  }
+  if (!seen || typeof seen !== 'object' || Array.isArray(seen)) return null
+  const esc: { ts: string; reason: string; refs: string; detail: string }[] = []
+  for (const e of events) {
+    if (e.type !== 'unknown') continue
+    try {
+      const o = JSON.parse(e.raw) as Record<string, unknown>
+      if (o?.type === 'escalation' && typeof o.reason === 'string') esc.push({ ts: typeof o.ts === 'string' ? o.ts : '', reason: o.reason, refs: typeof o.refs === 'string' ? o.refs : '', detail: typeof o.detail === 'string' ? o.detail : '' })
+    } catch {
+      /* not JSON: parseEvents already said so */
+    }
+  }
+  return Object.entries(seen as Record<string, unknown>).flatMap(([key, first]) => {
+    const [reason = '', refs = ''] = key.split(':')
+    if (!reason) return []
+    const e = esc.filter((x) => x.reason === reason && x.refs === refs).sort((a, b) => a.ts.localeCompare(b.ts)).at(-1)
+    const since = typeof first === 'number' && Number.isFinite(first) ? new Date(first * 1000).toISOString() : e?.ts ?? ''
+    return [{ key, reason, refs, detail: e?.detail || key, since }]
+  })
 }
 
 // ---------- markdown helpers ----------

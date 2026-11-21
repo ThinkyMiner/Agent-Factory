@@ -100,6 +100,7 @@ describe('a team-mode factory', () => {
     const team = s.needsYou.filter((n) => n.id !== '19').map((n) => [n.kind, n.id, n.summary])
     expect(team).toEqual([
       ['answer', 'decision-c002-D02', 'needs-human record in planning/c002-share-links/DECISIONS.md: decide it'],
+      ['approve', 'pr-25', 'integrate/f001-reading-list · add human-approved, then merge · R2'], // the feature's PR to main
       ['failed', 'session-frontend', 'API rate limit: retrying in 20 minutes'],
       ['waiting-input', 'session-research', 'Do you trust the files in this folder?'],
     ])
@@ -124,12 +125,12 @@ describe('a team-mode factory', () => {
 
   test('teams: roster, checkout, the item held, the session; a worktree whose folder is gone', () => {
     const rows = Object.fromEntries(s.teams!.teams.map((t) => [t.name, t]))
-    expect(Object.keys(rows)).toEqual(['orchestrator', 'backend', 'frontend', 'research', 'design', 'sweep', 'odd'])
+    expect(Object.keys(rows)).toEqual(['orchestrator', 'backend', 'frontend', 'research', 'design', 'sweep']) // the tab "odd" is not a team
     expect(rows.orchestrator!.checkout).toMatchObject({ branch: 'planning/c002-share-links', exists: true })
     expect(rows.research).toMatchObject({ review: 'evidence', checkout: { branch: 'work/19-acceptance' }, item: { id: '19', state: 'blocked' }, session: { state: 'blocked' } })
     expect(rows.design).toMatchObject({ active: false, checkout: { exists: false } })
     expect(rows.sweep).toMatchObject({ inRoster: false, session: { state: 'unknown' } })
-    expect(rows.odd!.session!.state).toBe('unknown') // a terminal id that is not one is never passed to hc
+    expect(rows.odd).toBeUndefined() // and its terminal id, which is not one, is never passed to hc (privacy test)
     expect(s.snap.notices.some((n) => /design worktree .* no longer exists/.test(n.message))).toBe(true)
   })
 
@@ -213,6 +214,74 @@ describe('missing and damaged inputs', () => {
     gh.data!.pulls[0]!.state = 'MERGED'
     s = await computeState(fx.repo, gh, { staleMinutes: 30 })
     expect(s.needsYou.find((n) => n.id === 'cycle-c002-share-links')).toBeUndefined()
+  })
+
+  test('the sweep: its open findings are notices and needs; cleared ones are history; an unreadable sweep.json shows them all', async () => {
+    const fx = makeTeamsFactory(join(root, 'five'))
+    process.env.PATH = `${fx.bin}:${PATH}`
+    const gh = await readDemoGitHub(fx.github)
+    const ago = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
+    const esc = (h: number, reason: string, refs: string, detail: string) => JSON.stringify({ ts: ago(h), type: 'escalation', work_id: '', branch: 'main', reason, refs, detail })
+    const evs = join(fx.repo, '.factory/events.jsonl')
+    writeFileSync(evs, readFileSync(evs, 'utf8') + [
+      esc(20, 'round', 'c002-share-links', 'planning c002-share-links has been in its discussion-1 round for 61 minutes: run /plan to close it'),
+      esc(3, 'down', 'frontend', 'the frontend session has ended (its Herdr tab t3 shows a shell): run factory team-up to start it again'), // cleared since
+      esc(1, 'down', 'backend', 'the backend session has ended (its Herdr tab t2 shows a shell): run factory team-up to start it again'),
+      esc(1, 'blocked', 'research', 'the research session has waited on a dialog for 12 minutes (Herdr tab research)'),
+      JSON.stringify({ ts: ago(0.5), type: 'autostart', work_id: '', branch: 'main', detail: '/dispatch c002-share-links' }),
+    ].join('\n') + '\n')
+    const sweep = (text: string) => writeFileSync(join(fx.repo, '.factory/sweep.json'), text)
+    const escNotices = (st: Awaited<ReturnType<typeof computeState>>) => st.snap.notices.filter((n) => /escalation \(/.test(n.message)).map((n) => n.message)
+    const t0 = Math.floor(Date.now() / 1000) - 3600
+    sweep(JSON.stringify({ seen: { 'down:backend:t2': t0, 'blocked:research:123': t0, 'budget:frontend:2026-11-21': t0 }, blocked: {}, working: {}, ring: false }))
+    let st = await computeState(fx.repo, gh, { staleMinutes: 30 })
+    expect(escNotices(st)).toEqual([
+      'escalation (down): the backend session has ended (its Herdr tab t2 shows a shell): run factory team-up to start it again',
+      'escalation (blocked): the research session has waited on a dialog for 12 minutes (Herdr tab research)',
+      'escalation (budget): budget:frontend:2026-11-21', // no event says it in words: the key does
+    ]) // the slot and the old round have cleared
+    const sweepNeeds = st.needsYou.filter((n) => n.id.startsWith('sweep-')).map((n) => [n.kind, n.id, n.title, n.since])
+    expect(sweepNeeds).toEqual([
+      ['failed', 'sweep-down:backend:t2', 'the backend session has ended (its Herdr tab t2 shows a shell): run factory team-up to start it again', new Date(t0 * 1000).toISOString()],
+      ['failed', 'sweep-budget:frontend:2026-11-21', 'budget:frontend:2026-11-21', new Date(t0 * 1000).toISOString()],
+    ]) // a session on a dialog is already its own need
+    expect(st.snap.notices.filter((n) => /unknown event type/.test(n.message))).toEqual([])
+    expect(st.teams!.cycle!.events.map((e) => e.text)).toContain('autostart typed /dispatch c002-share-links')
+    sweep(JSON.stringify({ seen: {} }))
+    st = await computeState(fx.repo, gh, { staleMinutes: 30 })
+    expect(escNotices(st)).toEqual([])
+    expect(st.needsYou.filter((n) => n.id.startsWith('sweep-'))).toEqual([])
+    for (const bad of ['{"seen": {', '{"seen": ["down:backend:t2"]}', 'null', '']) {
+      sweep(bad)
+      st = await computeState(fx.repo, gh, { staleMinutes: 30 })
+      expect(st.snap.notices.find((n) => n.source === '.factory/sweep.json')).toMatchObject({ level: 'warn', message: 'not readable: showing every escalation ever written' })
+      expect(escNotices(st)).toHaveLength(5) // the fixture's slot, the old round, both downs, blocked
+      expect(st.needsYou.filter((n) => n.id.startsWith('sweep-'))).toEqual([])
+    }
+  })
+
+  test('every open pull request that waits for your label needs you, whatever its branch; drafts, approved ones and the cycle\'s own are not repeated', async () => {
+    const fx = makeTeamsFactory(join(root, 'six'))
+    process.env.PATH = `${fx.bin}:${PATH}`
+    const gh = await readDemoGitHub(fx.github)
+    const base = gh.data!.pulls.find((p) => p.number === 25)!
+    const pr = (number: number, headRefName: string, labels: string[], files: string[], more: object = {}) =>
+      ({ ...base, number, headRefName, title: `PR ${number}`, labels, url: `https://github.invalid/harbor/pull/${number}`, files: files.map((path) => ({ path, additions: 1, deletions: 0 })), ...more })
+    gh.data!.pulls.push(
+      pr(31, 'planning/c002-share-links-fix', [], ['factory/teams.json']), // R2 by its path, no label at all
+      pr(32, 'factory/csp', ['human-approved'], ['factory/risk-rules.txt']), // approved
+      pr(33, 'inbox/note', [], [], {}), // no labels, no files: its tier is unknown
+      pr(34, 'factory/draft', [], ['factory/policy.env'], { isDraft: true }),
+      pr(35, 'sync/f001-reading-list', [], ['server/x.ts']), // R1: merge it, with AUTO_MERGE_MAX_TIER=none
+    )
+    Object.assign(gh.data!.pulls.find((p) => p.number === 12)!, { isDraft: false, labels: ['brief-approved', 'risk:R2'] })
+    const s = await computeState(fx.repo, gh, { staleMinutes: 30 })
+    const prs = s.needsYou.filter((n) => n.id.startsWith('pr-')).map((n) => [n.kind, n.id, n.summary, n.href])
+    expect(prs).toEqual([
+      ['approve', 'pr-25', 'integrate/f001-reading-list · add human-approved, then merge · R2', 'https://github.invalid/harbor/pull/25'],
+      ['approve', 'pr-31', 'planning/c002-share-links-fix · add human-approved, then merge · R2', 'https://github.invalid/harbor/pull/31'],
+      ['merge', 'pr-35', 'sync/f001-reading-list · merge it · R1', 'https://github.invalid/harbor/pull/35'],
+    ]) // #12 is the cycle's own PR: its row says what the round needs
   })
 
   test('a garbled or missing roster', async () => {

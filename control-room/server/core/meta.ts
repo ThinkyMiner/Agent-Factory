@@ -98,25 +98,31 @@ export function pullTier(p: Pull, rules: RiskRule[]) {
   return { tier: maxTier(sources.map((x) => x.tier)), sources, files: files?.files ?? [] }
 }
 
-/** Open improvement PRs above the auto-merge tier need you, like any item's PR. */
-export function improvementNeeds(pulls: Pull[], rules: RiskRule[], autoMergeMax: Tier | 'none'): NeedsEntry[] {
+/** Open pull requests that are not work items (an improvement, a planning fix, a factory change, the
+ *  feature's PR to main) need you like any item's PR when above the auto-merge tier. `skip`: PRs shown
+ *  elsewhere (work items, the planning cycle's own PR). */
+export function pullNeeds(pulls: Pull[], rules: RiskRule[], autoMergeMax: Tier | 'none', skip: Set<number> = new Set()): NeedsEntry[] {
   return pulls
-    .filter((p) => p.state === 'OPEN' && !p.isDraft && p.labels.includes('factory:improvement'))
+    .filter((p) => p.state === 'OPEN' && !p.isDraft && !skip.has(p.number))
     .flatMap((p) => {
       const { tier } = pullTier(p, rules)
       if (!tier || tierRank(tier) <= tierRank(autoMergeMax)) return []
       const r2 = tierRank(tier) >= 2
+      // ponytail: the label counts as approval; GitHub's push times are not fetched, so a label older
+      // than the last push shows only as risk-gate failing on the PR. Fetch push activity if that bites.
       if (r2 && p.labels.includes('human-approved')) return []
       const failing = p.checks.filter((c) => checkState(c) === 'fail' && !(r2 && c.name === 'risk-gate')).map((c) => c.name) // risk-gate fails until approved
+      const improvement = p.labels.includes('factory:improvement')
+      const what = improvement ? 'factory:improvement' : `${p.headRefName} · ${r2 ? 'add human-approved, then merge' : 'merge it'}`
       return [{
         kind: r2 ? ('approve' as const) : ('merge' as const),
         id: `pr-${p.number}`,
         label: `PR #${p.number}`,
         title: p.title,
         tier,
-        summary: `factory:improvement · ${tier}${failing.length ? ` · failing: ${failing.join(', ')}` : ''}`,
+        summary: `${what} · ${tier}${failing.length ? ` · failing: ${failing.join(', ')}` : ''}`,
         since: p.createdAt,
-        href: '/improvement',
+        href: improvement ? '/improvement' : p.url || '/',
       }]
     })
 }
