@@ -602,7 +602,7 @@ function ActivityTab({ item }: { item: ItemDetail }) {
                   <td className="px-3 py-1.5">{r.stage ?? '—'}</td>
                   <td className="px-3 py-1.5 text-muted" title={r.start}>{r.start ? `${ago(r.start, now)} ago` : '—'}</td>
                   <td className="px-3 py-1.5 text-right tabular text-muted">{r.start ? duration((r.end ? Date.parse(r.end) : now) - Date.parse(r.start)) : '—'}</td>
-                  <td className="px-3 py-1.5">{r.outcome === 'running' ? <Status status="running" /> : r.outcome === 'abandoned' ? <span className="text-fail">abandoned</span> : r.outcome === 'no-end' ? <span className="text-muted" title="Started, never recorded an end, nothing heard for the quiet threshold">no end recorded</span> : <span className="text-muted">finished</span>}</td>
+                  <td className="px-3 py-1.5">{r.outcome === 'running' ? <Status status="running" /> : r.outcome === 'abandoned' ? <span className="text-fail">abandoned</span> : r.outcome === 'no-end' ? <span className="text-muted" title="Started, never recorded an end, nothing heard for the quiet threshold">no end recorded</span> : r.outcome === 'idle' ? <span className="text-muted" title="The session is open at its prompt with nothing to do">idle</span> : <span className="text-muted">finished</span>}</td>
                   <td className="px-3 py-1.5" title={r.tokensNote}>{r.model ? <Mono className="text-muted">{r.model}</Mono> : <span className="text-faint">—</span>}</td>
                   {item.tokensAvailable && (
                     <td className="px-3 py-1.5 text-right tabular" title={r.tokens ? `input ${r.tokens.input}, output ${r.tokens.output}, cache write ${r.tokens.cacheWrite}, cache read ${r.tokens.cacheRead}` : r.tokensNote}>

@@ -78,7 +78,8 @@ export interface AgentRun {
   start?: string
   end?: string
   transcriptPath?: string
-  outcome: 'running' | 'finished' | 'abandoned' | 'no-end' // no-end: started, never ended, nothing heard for the quiet threshold
+  outcome: 'running' | 'finished' | 'abandoned' | 'no-end' | 'idle' // no-end: started, never ended, nothing heard for the quiet threshold; idle: a session open at its prompt with nothing to do
+  lastSeen?: string // no-end and idle: the last thing heard, where its clock stops
 }
 
 export interface Context {
@@ -265,9 +266,12 @@ export function indexLifecycle(events: LifecycleEvent[]): { sessions: Map<string
     // a running subagent's transcript is already being written next to the session's
     if (s?.transcriptPath && run.agentId) run.transcriptPath = s.transcriptPath.replace(/\.jsonl$/, `/subagents/agent-${run.agentId}.jsonl`)
   }
-  // the main session is the foreman's run
+  // the main session is the foreman's run. Its latest event a Stop or an idle-prompt notification, with no
+  // subagent of it still open: the session sits at its prompt, idle, not running.
+  const busy = new Set([...open.values()].filter((r) => r.outcome === 'running').map((r) => r.sessionId))
   for (const s of sessions.values()) {
-    runs.push({ agentId: `session:${s.id}`, agentType: 'foreman', sessionId: s.id, workId: s.workId ?? '', start: s.start, end: s.end, transcriptPath: s.transcriptPath, outcome: s.end ? 'finished' : 'running' })
+    const idle = !s.end && !busy.has(s.id) && (s.last.event === 'Stop' || (s.last.event === 'Notification' && s.last.reason === 'idle_prompt'))
+    runs.push({ agentId: `session:${s.id}`, agentType: 'foreman', sessionId: s.id, workId: s.workId ?? '', start: s.start, end: s.end, transcriptPath: s.transcriptPath, outcome: s.end ? 'finished' : idle ? 'idle' : 'running', ...(idle && { lastSeen: s.last.ts }) })
   }
   return { sessions, runs }
 }
@@ -279,7 +283,10 @@ export function expireRuns(runs: AgentRun[], sessions: Map<string, Session>, las
     if (r.outcome !== 'running') continue
     const s = r.sessionId ? sessions.get(r.sessionId) : undefined
     const heard = Math.max(...[t(r.start), r.workId ? lastByItem.get(r.workId) : t(s?.last.ts)].filter((x): x is number => x !== undefined && !Number.isNaN(x)), -Infinity)
-    if (now - heard > staleMinutes * 60000) r.outcome = 'no-end'
+    if (now - heard > staleMinutes * 60000) {
+      r.outcome = 'no-end'
+      r.lastSeen = new Date(heard).toISOString()
+    }
   }
   return runs
 }

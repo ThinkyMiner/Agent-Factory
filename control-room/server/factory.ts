@@ -196,7 +196,7 @@ export class Factory {
         return {
           ...r,
           title: this.state.byId.get(r.workId)?.title,
-          durationMs: r.start ? (r.end ? Date.parse(r.end) : now) - Date.parse(r.start) : undefined,
+          durationMs: r.start ? Date.parse(r.end ?? (r.outcome === 'running' ? new Date(now).toISOString() : r.lastSeen ?? new Date(now).toISOString())) - Date.parse(r.start) : undefined,
           stageResult: resultOf(r),
           model: t.ok ? t.model : undefined,
           tokens: t.ok ? t.tokens : undefined,

@@ -12,18 +12,23 @@ import { Empty, ErrorState, Loading } from '@/components/States'
 import { ItemId, LiveDot, Mono, STATUS, Status, StatusGlyph, Term } from '@/components/vocab'
 import { STAGE_WORDS } from '../../../server/core/words.ts'
 
-type RunState = 'running' | 'waiting' | 'no-end' | 'finished' | 'abandoned'
-const RUN_STATES: RunState[] = ['running', 'waiting', 'no-end', 'finished', 'abandoned']
-const STATE_LABEL: Record<RunState, string> = { running: 'running', waiting: 'waiting', 'no-end': 'no end recorded', finished: 'finished', abandoned: 'abandoned' }
+type RunState = 'running' | 'waiting' | 'idle' | 'no-end' | 'finished' | 'abandoned'
+const RUN_STATES: RunState[] = ['running', 'waiting', 'idle', 'no-end', 'finished', 'abandoned']
+const STATE_LABEL: Record<RunState, string> = { running: 'running', waiting: 'waiting', idle: 'idle', 'no-end': 'no end recorded', finished: 'finished', abandoned: 'abandoned' }
 
 function runState(r: RunRow, item: ItemSummary | undefined): RunState {
-  if (r.outcome !== 'running') return r.outcome
-  if (r.agentType === 'foreman' && item?.flags.includes('waiting-input')) return 'waiting'
-  return 'running'
+  if (r.agentType === 'foreman' && (r.outcome === 'running' || r.outcome === 'idle') && item?.flags.includes('waiting-input')) return 'waiting'
+  return r.outcome
 }
 
 function RunStatus({ s, item, now, staleMinutes }: { s: RunState; item?: ItemSummary; now: number; staleMinutes?: number }) {
   if (s === 'running') return <Status status="running" />
+  if (s === 'idle')
+    return (
+      <span className="text-muted" title="The session is open at its prompt with nothing to do: its last event was the end of a turn or an idle notification">
+        idle{item?.lastActivity ? ` · since ${ago(item.lastActivity, now)} ago` : ''}
+      </span>
+    )
   if (s === 'no-end')
     return (
       <span className="inline-flex items-center gap-1 text-muted" title={`It started and never recorded an end, and nothing was heard for over ${staleMinutes ?? 'the quiet threshold of'} min: it may have crashed or been closed without its hook firing`}>
@@ -74,7 +79,7 @@ export function Runs() {
     <>
       <PageHeader title="Runs">
         <span className="text-[12px] text-muted tabular">
-          {counts.running} running · {counts.waiting} waiting · {counts['no-end']} no end recorded · {all.length} total
+          {counts.running} running · {counts.waiting} waiting · {counts.idle} idle · {counts['no-end']} no end recorded · {all.length} total
         </span>
       </PageHeader>
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-2">
@@ -163,7 +168,7 @@ export function Runs() {
                             {r.start ? `${ago(r.start, now)} ago` : '—'}
                           </span>
                           <span role="cell" className="text-right text-muted tabular">
-                            {r.start ? duration((r.end ? Date.parse(r.end) : now) - Date.parse(r.start)) : '—'}
+                            {r.start ? duration((r.end ? Date.parse(r.end) : r.outcome === 'running' ? now : Date.parse(r.lastSeen ?? '') || now) - Date.parse(r.start)) : '—'}
                           </span>
                           <span role="cell">
                             <RunStatus s={s} item={item} now={now} staleMinutes={state?.factory.staleMinutes} />

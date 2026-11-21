@@ -318,6 +318,31 @@ describe('runs with no end', () => {
   })
 })
 
+describe('idle sessions', () => {
+  test('a session whose latest event is an idle prompt or a Stop is idle, not running; its run stops counting time', () => {
+    const lifecycle = [
+      le('SessionStart', 60, { session_id: 'a', work_id: '8' }), le('Notification', 20, { session_id: 'a', work_id: '8', reason: 'idle_prompt', message: 'Claude is waiting for your input' }),
+      le('SessionStart', 60, { session_id: 'b', work_id: '' }), le('Stop', 15, { session_id: 'b', work_id: '' }),
+      le('SessionStart', 10, { session_id: 'c', work_id: '9' }), le('Notification', 2, { session_id: 'c', work_id: '9', reason: 'permission_prompt', message: 'Claude needs your permission to use Bash' }),
+      le('SessionStart', 10, { session_id: 'd', work_id: '7' }), le('SubagentStart', 8, { session_id: 'd', work_id: '7', agent_id: 'x', agent_type: 'builder' }), le('Stop', 7, { session_id: 'd', work_id: '7' }),
+    ]
+    const { sessions, runs } = indexLifecycle(lifecycle)
+    expireRuns(runs, sessions, new Map([['8', Date.parse(ago(20))], ['9', Date.parse(ago(2))], ['7', Date.parse(ago(7))]]), NOW, 30)
+    const by = (id: string) => runs.find((r) => r.agentId === id)!
+    expect([by('session:a'), by('session:b'), by('session:c'), by('session:d')].map((r) => [r.outcome, r.lastSeen])).toEqual([
+      ['idle', ago(20)], ['idle', ago(15)], // waiting at its prompt with nothing to do
+      ['running', undefined], // a permission prompt is a question mid-run, not idle
+      ['running', undefined], // its builder is still open
+    ])
+    const out = deriveAll([], ctx([], { runs, sessions }))
+    expect(out.running.map((r) => [r.workId, r.agentType])).toEqual([['7', 'builder'], ['9', 'foreman'], ['7', 'foreman']])
+    // a run with no end stops its clock at the last thing heard
+    const { sessions: s2, runs: r2 } = indexLifecycle([le('SessionStart', 120, { session_id: 'e', work_id: '5' }), le('SubagentStart', 100, { session_id: 'e', work_id: '5', agent_id: 'y', agent_type: 'builder' })])
+    expireRuns(r2, s2, new Map([['5', Date.parse(ago(100))]]), NOW, 30)
+    expect(r2.find((r) => r.agentId === 'y')).toMatchObject({ outcome: 'no-end', lastSeen: ago(100) })
+  })
+})
+
 describe('deriveAll', () => {
   test('needs-you is ordered answer, approve, failed, waiting-input, quiet, merge; then oldest first', () => {
     const mk = (id: string, over: Partial<ItemInputs>): ItemInputs => ({ id, files: {}, lifecycle: [], notices: [], stageEvents: [], ...over })
