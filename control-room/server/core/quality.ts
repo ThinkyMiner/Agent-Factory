@@ -211,7 +211,9 @@ export function quality({ items, tokensByItem, tokenRuns = new Map(), mergedPull
   const noBase = merged.filter((i) => !i.mergedInto).length
   const MERGED = intoFeature
     ? `Merged means the item's pull request merged into its base: main, or in team mode its feature branch (${intoFeature} of ${merged.length} here${noBase ? `; ${noBase} with no recorded base` : ''}), which reaches main later through the feature's integrate pull request.`
-    : "Merged means the item's pull request merged into main."
+    : merged.length && merged.every((i) => i.mergedInto === 'main')
+      ? "Merged means the item's pull request merged into main."
+      : `Merged means the item's pull request merged into its base branch${noBase ? ` (${noBase} of ${merged.length} here with no recorded base)` : ''}.`
 
   const metrics: Metric[] = [
     { key: 'throughput', question: 'How many items are we merging each week?', unit: 'count', kind: 'bars', note: `${MERGED} Each item counts once, by its latest merged pull request.`, points: series(throughput) },
@@ -220,7 +222,7 @@ export function quality({ items, tokensByItem, tokenRuns = new Map(), mergedPull
     { key: 'fix-rounds', question: 'Where do fix rounds happen?', unit: 'count', kind: 'stacked', series: [...STAGES], note: 'Each failure that triggered a fix round, charged to the stage that failed.', points: series(fixes) },
     { key: 'stops', question: 'What share of runs stopped, and why?', unit: 'percent', kind: 'stacked', series: STOPS, note: 'Of the /work runs that ended that week. The drilldown says where each one stopped.', points: series(stops) },
     { key: 'tiers', question: 'What is the risk mix of what merged?', unit: 'count', kind: 'stacked', series: ['R0', 'R1', 'R2', 'R3', 'unknown'], points: series(tiers) },
-    { key: 'merged-by', question: 'How much merged without me?', unit: 'count', kind: 'stacked', series: ['auto-merged', 'merged by you', 'unknown'], note: 'Inferred from the pull request: a human-approved label counts as merged by you; otherwise auto-merge enabled counts as auto-merged; neither is unknown, since agents merge with the same GitHub account. Who pressed merge is not fetched from GitHub.', points: series(mergedBy) },
+    { key: 'merged-by', question: 'How much merged without me?', unit: 'count', kind: 'stacked', series: ['auto-merged', 'merged by you', 'unknown'], note: 'Inferred from the pull request: auto-merge enabled counts as auto-merged, approved or not; otherwise a human-approved label counts as merged by you; neither is unknown, since agents merge with the same GitHub account as you.', points: series(mergedBy) },
     { key: 'escaped', question: 'Did defects escape?', unit: 'count', kind: 'stacked', series: ['reverted', 'escaped-defect issue'], note: 'Reverted pull requests, plus issues labelled escaped-defect.', points: series(escaped) },
   ]
   if (mergedPulls.length) metrics.splice(1, 0, { key: 'merged-prs', question: 'How many work pull requests merged each week? (every attempt)', unit: 'count', kind: 'stacked', series: ['into main', 'into a feature branch', 'base unknown'], note: 'Every merged pull request from a work/<id>-<slug> branch, so an item tried twice counts twice. Base unknown: GitHub did not report the branch it merged into.', points: series(prs) })
