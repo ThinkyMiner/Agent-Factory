@@ -482,7 +482,8 @@ describe('missing and damaged inputs', () => {
     fx.git('switch', '-q', 'integrate/f001-reading-list')
     mkdirSync(join(fx.repo, 'tests/e2e/f001-reading-list'), { recursive: true })
     writeFileSync(join(fx.repo, 'tests/e2e/f001-reading-list/ac2.spec.ts'), "test('AC2', () => {})\n")
-    fx.git('add', 'tests/e2e/f001-reading-list/ac2.spec.ts')
+    writeFileSync(join(fx.repo, 'tests/e2e/f001-reading-list/helpers.mjs'), 'export const open = () => {}\n') // a helper, not a test
+    fx.git('add', 'tests/e2e/f001-reading-list/ac2.spec.ts', 'tests/e2e/f001-reading-list/helpers.mjs')
     fx.git('commit', '-qm', 'e2e tests for f001-reading-list')
     fx.git('switch', '-q', 'planning/c002-share-links')
     s = await computeState(fx.repo, gh, { staleMinutes: 30 })
