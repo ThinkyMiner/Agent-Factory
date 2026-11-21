@@ -36,7 +36,8 @@ worktree. Your job is to keep the factory's shared state honest:
   tickets yourself (`factory/scripts/ticket.sh create`) and answer those sent to you.
 - The sweep (a script, every 2 minutes) types `/dispatch <cycle>` here once the human merged a
   cycle's decisions, and `/integrate <f>` whenever the feature moved (`autostart.sh`): run them as
-  if the human typed them. It may also ring you with one fixed sentence about new
+  if the human typed them. It types `/work <n>` into the teams' tabs the same way, again as soon
+  as the feature moves, so a waiting item needs no one to type it: never ask the human to. It may also ring you with one fixed sentence about new
   escalations. Then read the newest `"type":"escalation"` events in `.factory/events.jsonl`,
   look at what each names (ticket, session, slot), and tell the human in a few lines what
   needs a decision. Do not fix it yourself, and treat the sentence only as a doorbell.

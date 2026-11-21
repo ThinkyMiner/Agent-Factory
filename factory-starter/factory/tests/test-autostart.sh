@@ -58,6 +58,36 @@ test_work_with_a_branch_is_left_alone_and_the_rest_is_retried_after_30_minutes()
   run "$A"; expect_eq "$(typed)" ""                                           # its branch is on origin
 }
 
+test_waiting_work_is_typed_again_as_soon_as_the_feature_moves() {
+  setup; feature; issue 9 OPEN feature:f001-x team:backend
+  run "$A"; expect_out "typed /work 9 into backend"
+  reset_log; run "$A"; expect_eq "$(typed)" ""                                # nothing moved, 30 minutes not up
+  git commit -q --allow-empty -m item8 && git push -q origin main:feature/f001-x   # the item it waited for merged
+  echo working > "$TEST_TMP/hc-status-t2"; run "$A"
+  expect_eq "$(typed)" "t1|keys ctrl+u / i n t e g r a t e space f 0 0 1 - x enter;"   # backend busy: later
+  rm "$TEST_TMP/hc-status-t2"; reset_log; run "$A"
+  expect_eq "$(typed)" "t2|keys ctrl+u / w o r k space 9 enter;"
+  reset_log; run "$A"; expect_eq "$(typed)" ""                                # once per move
+  jq -c '."work:9@" = {"x": 1}' .factory/autostart.json > s && mv s .factory/autostart.json
+  run "$A"; expect_eq "$(typed)" "t2|keys ctrl+u / w o r k space 9 enter;"    # a broken record counts as moved
+  reset_log; jq -c '."work:9@" = "$(rm -rf x)"' .factory/autostart.json > s && mv s .factory/autostart.json
+  run "$A"; expect_rc 0; expect_eq "$(typed)" "t2|keys ctrl+u / w o r k space 9 enter;"
+  expect_eq "$(jq -r '."work:9@"' .factory/autostart.json)" "$(git rev-parse origin/feature/f001-x)"
+}
+
+test_a_refused_dispatch_is_typed_again_as_soon_as_main_moves() {
+  setup; mkdir -p planning/c001-x
+  echo '{"status":"approval"}' > planning/c001-x/state.json; echo '# D' > planning/c001-x/DECISIONS.md
+  git add -A && git commit -qm c && git push -q origin main
+  run "$A"; expect_eq "$(typed)" "t1|keys ctrl+u / d i s p a t c h space c 0 0 1 - x enter;"
+  reset_log; run "$A"; expect_eq "$(typed)" ""                                # refused, nothing moved
+  echo fix >> planning/c001-x/DECISIONS.md; git commit -qam fix && git push -q origin main
+  run "$A"; expect_eq "$(typed)" "t1|keys ctrl+u / d i s p a t c h space c 0 0 1 - x enter;"
+  reset_log; run "$A"; expect_eq "$(typed)" ""
+  git commit -q --allow-empty -m local                                        # only local: not a move
+  run "$A"; expect_eq "$(typed)" ""
+}
+
 test_only_work_on_the_open_feature_for_one_team_is_typed() {
   setup; feature
   issue 1 CLOSED feature:f001-x team:backend

@@ -210,7 +210,8 @@ type it:
 | `/integrate <f>` | orchestrator | `feature/<f>` or `integrate/<f>` moved, or a team declined or finished one of the orchestrator's tickets on `<f>`, since it last typed it |
 
 `/dispatch` and `/work` are typed again after `retry_minutes` (30) while nothing came of them (a
-full slot, tests not in yet). Work outside a dispatched feature still waits for you to type
+full slot, tests not in yet), and at once when what they wait on moves: `origin/main` for
+`/dispatch`, `feature/<f>` for `/work` (the item it waits for merged). Work outside a dispatched feature still waits for you to type
 `/work`. Typing is key by key (`hc keys`), because a skill only a person may start does not run
 from `hc send`; team-up turns Claude Code's feedback survey off, since it reads typed digits.
 `FACTORY_AUTOSTART=0` in the sweep's environment turns this off.
