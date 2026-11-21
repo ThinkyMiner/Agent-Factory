@@ -31,7 +31,7 @@ export function Planning() {
               </Section>
             )}
             <Section title="Features" count={data.features.length} id="features">
-              {data.features.length ? <div className="space-y-3">{data.features.map((f) => <Feature key={f.name} f={f} />)}</div> : <Empty title="No feature dispatched yet" />}
+              {data.features.length ? <div className="space-y-3">{data.features.map((f) => <Feature key={f.name} f={f} records={new Set(data.cycle?.records.map((r) => r.id))} />)}</div> : <Empty title="No feature dispatched yet" />}
             </Section>
             {data.cycle && <Transcript c={data.cycle} />}
           </>
@@ -135,16 +135,25 @@ function Cycle({ c }: { c: CycleView }) {
             <thead className="text-muted">
               <tr className="border-b border-border">
                 <th className="px-3 py-2">Record</th>
-                <th className="px-3 py-2">Title</th>
+                <th className="px-3 py-2">Title <span className="font-normal text-faint">· open one for its text</span></th>
                 <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">Built by</th>
               </tr>
             </thead>
             <tbody>
               {c.records.map((r) => (
-                <tr key={r.id} id={`decision-${r.id}`} className="border-b border-border last:border-b-0 target:bg-surface-2">
+                <tr key={r.id} id={`decision-${r.id}`} className="border-b border-border align-top last:border-b-0 target:bg-surface-2">
                   <td className="px-3 py-1.5"><Mono>{r.id}</Mono></td>
-                  <td className="px-3 py-1.5">{r.title}</td>
+                  <td className="px-3 py-1.5">
+                    <details>
+                      <summary className="cursor-pointer">{r.title || r.id}</summary>
+                      {r.text ? <Md text={r.text} className="mt-2 border-l-2 border-border pl-3" /> : <p className="mt-1 text-muted">The record has no text below its heading.</p>}
+                    </details>
+                  </td>
                   <td className={cn('px-3 py-1.5', r.status === 'needs-human' && 'font-medium text-block')}>{r.status ?? '—'}</td>
+                  <td className="px-3 py-1.5">
+                    {r.implementedBy?.length ? r.implementedBy.map((n, k) => <span key={n}>{k > 0 && ', '}<ItemId id={String(n)} /></span>) : <span className="text-faint">—</span>}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -223,12 +232,15 @@ function ticketWhere(state: string | undefined, team: string | undefined) {
 }
 const ExtIssue = ({ url, n }: { url: string; n: number }) =>
   url ? <a href={url} target="_blank" rel="noopener noreferrer" className="font-mono text-[12px] text-muted underline underline-offset-2">#{n}</a> : <Mono className="text-muted">#{n}</Mono>
-/** A decision record id, linked to its row in the table above. */
-export const DecisionLink = ({ id }: { id: string }) => (
-  <a href={`#decision-${id}`} className="font-mono text-[12px] underline underline-offset-2">{id}</a>
-)
+/** A decision record id, linked to its row in the table above; an earlier cycle's record is not on this page. */
+export const DecisionLink = ({ id, records }: { id: string; records?: Set<string> }) =>
+  !records || records.has(id) ? (
+    <a href={`#decision-${id}`} className="font-mono text-[12px] underline underline-offset-2">{id}</a>
+  ) : (
+    <span className="font-mono text-[12px]" title={`a record of an earlier cycle: planning/c${id.slice(1, 4)}-*/DECISIONS.md on main`}>{id}</span>
+  )
 
-function Feature({ f }: { f: FeatureView }) {
+function Feature({ f, records }: { f: FeatureView; records: Set<string> }) {
   return (
     <article aria-label={`Feature ${f.name}`} className="panel px-4 py-3">
       <h3 className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -258,7 +270,7 @@ function Feature({ f }: { f: FeatureView }) {
                     {i.dispatch && (
                       <span className="block text-[11.5px] text-muted">
                         item <Mono>{i.dispatch.item}</Mono>
-                        {i.dispatch.decisions.length > 0 && <> · {i.dispatch.decisions.map((d, k) => <span key={d}>{k > 0 && ', '}<DecisionLink id={d} /></span>)}</>}
+                        {i.dispatch.decisions.length > 0 && <> · {i.dispatch.decisions.map((d, k) => <span key={d}>{k > 0 && ', '}<DecisionLink id={d} records={records} /></span>)}</>}
                       </span>
                     )}
                   </td>
@@ -291,6 +303,36 @@ function Feature({ f }: { f: FeatureView }) {
           ))}
         </ul>
       )}
+      {f.attribution && f.attribution.rows.length > 0 && (
+        <div className="mt-2 overflow-x-auto">
+          <table aria-label={`Failing tests of ${f.name}, attributed`} className="w-full text-left text-[12.5px]">
+            <caption className="label pb-1 text-left">Why round {f.attribution.round ?? '?'} failed · attribution.md on <Mono>{f.attribution.ref}</Mono></caption>
+            <thead className="text-muted">
+              <tr className="border-b border-border">
+                <th className="py-1 pr-3">Test</th>
+                <th className="py-1 pr-3">Criterion</th>
+                <th className="py-1 pr-3">Decision</th>
+                <th className="py-1 pr-3">Contract</th>
+                <th className="py-1 pr-3">Team</th>
+                <th className="py-1 pr-3">Evidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* written by an agent: plain text, never markup */}
+              {f.attribution.rows.map((a, k) => (
+                <tr key={k} className="border-b border-border align-top last:border-b-0">
+                  <td className="py-1 pr-3 break-all"><Mono>{a.test}</Mono></td>
+                  <td className="py-1 pr-3"><Mono>{a.criterion}</Mono></td>
+                  <td className="py-1 pr-3">{/^[a-z0-9]+-D\d+$/i.test(a.decision) ? <DecisionLink id={a.decision} records={records} /> : <Mono>{a.decision}</Mono>}</td>
+                  <td className="py-1 pr-3 break-all"><Mono>{a.contract}</Mono></td>
+                  <td className="py-1 pr-3"><Mono>{a.team}</Mono></td>
+                  <td className="py-1 pr-3 break-words">{a.evidence}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       <div className="mt-2 space-y-1">
         {f.docs.length ? (
           f.docs.map((d) => (
@@ -302,7 +344,7 @@ function Feature({ f }: { f: FeatureView }) {
             </details>
           ))
         ) : (
-          <p className="text-[12.5px] text-muted">No acceptance criteria, e2e report or acceptance review on its branches yet.</p>
+          <p className="text-[12.5px] text-muted">No acceptance criteria, e2e report, attribution or acceptance review on its branches yet: research writes the criteria after dispatch; the orchestrator's integration round writes the rest.</p>
         )}
       </div>
     </article>

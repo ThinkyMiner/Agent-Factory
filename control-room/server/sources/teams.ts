@@ -84,7 +84,8 @@ export async function loadTeams(snap: Snapshot): Promise<TeamsInput | null> {
     const ir = integrateBranches.get(f) ?? []
     const docs: TeamsInput['features'][number]['docs'] = []
     // the criteria and their review are written on the feature branch, the e2e report on integrate
-    for (const [file, refs] of [['acceptance.md', [...fr, ...ir]], ['e2e-report.md', [...ir, ...fr]], ['acceptance-review.md', [...fr, ...ir]]] as const) {
+    // the attribution of a failed round is integration-qa's, on integrate
+    for (const [file, refs] of [['acceptance.md', [...fr, ...ir]], ['e2e-report.md', [...ir, ...fr]], ['attribution.md', [...ir, ...fr]], ['acceptance-review.md', [...fr, ...ir]]] as const) {
       for (const ref of refs) {
         const text = await show(repo, ref, `features/${f}/${file}`)
         if (text === null) continue

@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { decisionRecords, parseCycleState, parseDiscussion, parseRoster, waitingFor, type CycleState, type Message } from '../server/core/teams.ts'
+import { decisionRecords, parseAttribution, parseCycleState, parseDiscussion, parseRoster, waitingFor, type CycleState, type Message } from '../server/core/teams.ts'
 import { herdrSessions } from '../server/sources/teams.ts'
 import { Factory } from '../server/factory.ts'
 import { PULLS, normalisePull } from '../server/sources/github.ts'
@@ -48,7 +48,13 @@ describe('parsers', () => {
   })
   test('decision records: the status field only, not text in a section or the work breakdown', () => {
     const recs = decisionRecords('## c1-D01: One\n- status: decided\n### Decision\n- status: needs-human\n## c1-D02: Two\n- owner: a\n- status: needs-human\n## Work breakdown\n| x |\n')
-    expect(recs).toEqual([{ id: 'c1-D01', title: 'One', status: 'decided' }, { id: 'c1-D02', title: 'Two', status: 'needs-human' }])
+    // each record also keeps its text, to expand in Planning
+    expect(recs).toEqual([{ id: 'c1-D01', title: 'One', status: 'decided', text: '- status: decided\n### Decision\n- status: needs-human' }, { id: 'c1-D02', title: 'Two', status: 'needs-human', text: '- owner: a\n- status: needs-human' }])
+  })
+  test('attribution.md: one row per failing test with its six fields; anything else is skipped', () => {
+    const a = parseAttribution(['# Attribution: f001-x', 'round: 2', '- test: tests/e2e/f001-x/ac8.spec.ts | criterion: AC8 | decision: c001-D06 | contract: contracts/api.md | team: backend | evidence: 500 on an empty week',
+      '- test: a | criterion: AC9 | decision: c001-D06', 'free text <script>', '- test: b | criterion: AC9 | decision: c001-D06 | contract: none | team: frontend | evidence: a | b'].join('\n'))
+    expect(a).toEqual({ round: 2, rows: [{ test: 'tests/e2e/f001-x/ac8.spec.ts', criterion: 'AC8', decision: 'c001-D06', contract: 'contracts/api.md', team: 'backend', evidence: '500 on an empty week' }] })
   })
   test('who a round waits for, by its own rule', () => {
     const s = (status: string, draft = 0): CycleState => ({ status, teams: ['a', 'b'], draft, strikes: {}, unanswered: [], history: [] }) as CycleState
@@ -143,8 +149,10 @@ describe('a team-mode factory', () => {
     expect(f!.docs.map((d) => [d.file, d.ref, d.headline])).toEqual([
       ['acceptance.md', 'feature/f001-reading-list', '2 criteria'],
       ['e2e-report.md', 'integrate/f001-reading-list', 'E2E: fail, round: 1'],
+      ['attribution.md', 'integrate/f001-reading-list', '1 failing test attributed, round 1 (frontend)'], // beside the e2e report it explains
       ['acceptance-review.md', 'feature/f001-reading-list', 'VERDICT: reject'],
     ])
+    expect(f!.attribution).toMatchObject({ ref: 'integrate/f001-reading-list', round: 1, rows: [{ criterion: 'AC2', decision: 'c001-D01', team: 'frontend', evidence: HOSTILE }] })
     expect(f!.pulls.map((p) => p.number)).toEqual([25])
   })
 
@@ -338,6 +346,16 @@ describe('missing and damaged inputs', () => {
     } finally {
       f.stop()
     }
+  })
+
+  test('a dispatched cycle: each decision keeps its text and names the issues that build it', async () => {
+    const fx = makeTeamsFactory(join(root, 'records'))
+    process.env.PATH = `${fx.bin}:${PATH}`
+    rmSync(join(fx.repo, '.factory/planning/active'))
+    fx.git('switch', '-q', 'main')
+    fx.git('branch', '-q', '-D', 'planning/c002-share-links')
+    const s = await computeState(fx.repo, await readDemoGitHub(fx.github), { staleMinutes: 30 })
+    expect(s.teams!.cycle!.records).toEqual([{ id: 'c001-D01', title: 'The list API', status: 'decided', text: '- owner: backend\n- affects: frontend\n- status: decided\n\n### Decision\nGET /api/list.', implementedBy: [19, 20, 21] }]) // #24's row names no decision
   })
 
   test('the brief and the approval rounds need you while their pull request is open', async () => {

@@ -115,6 +115,8 @@ export interface DecisionRecord {
   id: string
   title: string
   status?: string // decided | needs-human | superseded
+  text: string // the record as written, below its heading (markdown, shown through the sanitising renderer)
+  implementedBy?: number[] // issues whose work-breakdown row names it
 }
 
 /** The `## c001-D02: Title` records of DECISIONS.md and their `- status:` lines (decisions.sh's format). */
@@ -126,15 +128,18 @@ export function decisionRecords(text: string): DecisionRecord[] {
     const h = /^## (\S+?):\s*(.*)$/.exec(line)
     if (/^##\s+Work breakdown\s*$/i.test(line) || (!h && line.startsWith('## '))) cur = undefined
     else if (h) {
-      cur = { id: h[1]!, title: h[2]!.trim() }
+      cur = { id: h[1]!, title: h[2]!.trim(), text: '' }
       recs.push(cur)
       inSection = false
+      continue
     } else if (cur && line.startsWith('### ')) inSection = true
     else if (cur && !inSection) {
       const s = /^- status:\s*(\S+)/.exec(line)
       if (s) cur.status = s[1]
     }
+    if (cur) cur.text += `${line}\n`
   }
+  for (const r of recs) r.text = r.text.trim()
   return recs
 }
 
@@ -266,6 +271,7 @@ export interface FeatureView {
     waitsFor?: string
   }[]
   docs: { file: string; ref: string; headline: string; text: string }[]
+  attribution?: { ref: string; round?: number; rows: AttributionRow[] } // the failed round's tests, each tied to a criterion, decision, contract and team
   pulls: { number: number; url: string; title: string; state: Pull['state']; head: string }[]
 }
 
@@ -289,7 +295,37 @@ export interface TeamsView {
   sessions: { available: boolean }
 }
 
+export interface AttributionRow {
+  test: string
+  criterion: string
+  decision: string
+  contract: string
+  team: string
+  evidence: string
+}
+/** attribution.md (integration-qa, checked by integrate.sh tickets): one line per failing test,
+ *  "- test: ... | criterion: ... | decision: ... | contract: ... | team: ... | evidence: ...". Other lines are skipped. */
+export function parseAttribution(text: string): { round?: number; rows: AttributionRow[] } {
+  const keys = ['test', 'criterion', 'decision', 'contract', 'team', 'evidence'] as const
+  const rows: AttributionRow[] = []
+  let round: number | undefined
+  for (const l of text.replace(/\r\n?/g, '\n').split('\n')) {
+    const r = /^round: ([0-9]{1,4})$/.exec(l)
+    if (r) round = Number(r[1])
+    if (!l.startsWith('- test:')) continue
+    const f = l.slice(2).split(' | ')
+    if (f.length !== 6) continue
+    const v = f.map((x, i) => new RegExp(`^${keys[i]}:\\s*(.*?)\\s*$`).exec(x)?.[1])
+    if (v.every((x) => x !== undefined)) rows.push(Object.fromEntries(keys.map((k, i) => [k, v[i]!])) as unknown as AttributionRow)
+  }
+  return { round, rows }
+}
+
 const DOC_HEADLINE: Record<string, (t: string) => string> = {
+  'attribution.md': (t) => {
+    const a = parseAttribution(t)
+    return `${a.rows.length} failing test${a.rows.length === 1 ? '' : 's'} attributed${a.round ? `, round ${a.round}` : ''}${a.rows.length ? ` (${[...new Set(a.rows.map((r) => r.team))].join(', ')})` : ''}`
+  },
   'acceptance.md': (t) => `${(t.match(/^## AC\d+\b/gm) ?? []).length} criteria`,
   'e2e-report.md': (t) => [/^E2E: .*$/m.exec(t)?.[0], /^round: .*$/m.exec(t)?.[0]].filter(Boolean).join(', ') || 'no E2E line',
   'acceptance-review.md': (t) => /^VERDICT: .*$/m.exec(t)?.[0] ?? 'no VERDICT line',
@@ -450,11 +486,23 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
       refs: f?.refs ?? {},
       items: list,
       docs: (f?.docs ?? []).map((d) => ({ ...d, headline: DOC_HEADLINE[d.file]?.(d.text) ?? '' })),
+      attribution: (() => {
+        const d = f?.docs.find((x) => x.file === 'attribution.md')
+        return d ? { ref: d.ref, ...parseAttribution(d.text) } : undefined
+      })(),
       pulls: gh.pulls
         .filter((p) => p.headRefName === `integrate/${name}` || p.headRefName === `sync/${name}`)
         .map((p) => ({ number: p.number, url: p.url, title: p.title, state: p.state, head: p.headRefName })),
     }
   })
+
+  // a decision links to the issues that build it: those whose work-breakdown row names it
+  if (cycle) {
+    for (const r of cycle.records) {
+      const ns = features.flatMap((f) => f.items.filter((i) => i.dispatch?.decisions.includes(r.id)).map((i) => i.number))
+      if (ns.length) r.implementedBy = [...new Set(ns)].sort((a, b) => a - b)
+    }
+  }
 
   // teams: roster, checkout, the item it holds, its session
   const tabs = inp.sessions.tabs

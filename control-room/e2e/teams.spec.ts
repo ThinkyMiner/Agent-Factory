@@ -52,7 +52,16 @@ test('planning: the cycle, its transcript as plain text, the feature and its rec
   await expect(feature.getByRole('row', { name: /#26/ })).toContainText('declined by frontend')
   await expect(feature.getByRole('row', { name: /#26/ }).getByRole('link', { name: '#26' })).toHaveAttribute('href', 'https://github.invalid/harbor/issues/26')
   await expect(feature.getByRole('row', { name: /#24/ })).toContainText('waits for #21 list-page (ready)')
-  await expect(feature.getByRole('row', { name: /#24/ }).getByRole('link', { name: 'c001-D01' })).toHaveAttribute('href', '#decision-c001-D01')
+  await expect(feature.getByRole('row', { name: /^#21 / })).toContainText('c001-D01')
+  await expect(feature.getByRole('row', { name: /^#21 / }).getByRole('link', { name: 'c001-D01' })).toHaveCount(0) // an earlier cycle's record: not on this page
+  const why = feature.getByRole('table', { name: /Failing tests of f001-reading-list/ })
+  await expect(why).toContainText('AC2')
+  await expect(why).toContainText('<script>alert("x")</script>')
+  expect(await why.locator('script, img, strong, a[href^="javascript"]').count()).toBe(0)
+  const d02 = cycle.getByRole('row', { name: /c002-D02/ })
+  await d02.getByText('Who may open a shared list').click()
+  await expect(d02).toContainText('frontend: members only.')
+  await expect(cycle.getByRole('link', { name: 'c002-D02' })).toHaveAttribute('href', '#decision-c002-D02') // the needs-human line links its record
   expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight)).toBe(true)
   await feature.getByText('acceptance.md', { exact: true }).click()
   await expect(feature).toContainText('Saving a link')
