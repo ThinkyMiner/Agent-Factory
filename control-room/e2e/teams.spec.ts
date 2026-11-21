@@ -80,6 +80,7 @@ test('board: dispatched items not started are Ready, with what they wait for', a
   const ready = page.getByRole('region', { name: 'Ready' })
   await expect(ready.getByRole('listitem')).toHaveCount(3) // #21, #23 (an accepted ticket), #24
   await expect(ready.getByRole('link', { name: /#24/ })).toContainText('waits for #21 list-page (ready)')
+  await expect(page.getByRole('heading', { name: /Stopped/ })).toHaveAttribute('title', /red check on its open pull request/) // not only "before a pull request"
   expect(errors).toEqual([])
 })
 
@@ -103,6 +104,23 @@ test('a newcomer: where things are, what clears each row, where an item sits, an
   await expect(page.getByText(/builds c001-D01/)).toBeVisible()
   await page.goto(TEAMS_URL + '/planning')
   await expect(page.getByRole('region', { name: /planning cycle/i }).getByRole('list', { name: 'Rounds' }).getByRole('listitem').first()).toHaveAttribute('title', /^the brief: what this cycle is for/)
+  expect(errors).toEqual([])
+})
+
+test('where things are: each owner of a next step gets its own line and its own link', async ({ page }) => {
+  const errors = watchErrors(page)
+  // two owners at once (as the server gives them); the fixture's phase is reused with a second owner added
+  await page.route('**/api/teams', async (route) => {
+    const res = await route.fetch()
+    const body = await res.json()
+    body.phases[0].more = [{ who: 'backend', what: 'finish #20', href: '/items/20' }]
+    await route.fulfill({ response: res, json: body })
+  })
+  await page.goto(TEAMS_URL + '/')
+  const first = page.getByRole('region', { name: 'Where things are' }).getByRole('listitem').first()
+  await expect(first).toContainText('next: you read PR #25')
+  await expect(first).toContainText('and: backend finish #20')
+  await expect(first.getByRole('link', { name: 'finish #20' })).toHaveAttribute('href', '/items/20')
   expect(errors).toEqual([])
 })
 

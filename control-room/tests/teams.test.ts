@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { decisionRecords, parseAttribution, parseCycleState, parseDiscussion, parseRoster, phasesOf, waitingFor, type CycleState, type Message } from '../server/core/teams.ts'
+import { decisionRecords, parseAttribution, parseCycleState, parseDiscussion, parseRoster, phasesOf, waitingFor, type CycleState, type FeatureView, type Message } from '../server/core/teams.ts'
 import type { ItemView } from '../server/core/derive.ts'
 import { herdrSessions } from '../server/sources/teams.ts'
 import { Factory } from '../server/factory.ts'
@@ -84,8 +84,25 @@ describe('parsers', () => {
     // a failing check: the item's team fixes it; an agent at work on another item is "in progress"
     const red = { ...pr17, checks: [{ name: 'factory-tests', status: 'COMPLETED', conclusion: 'FAILURE' }] } as Pull
     const [q] = phasesOf(undefined, [{ ...f, items: [...items, row(11, 'in-progress', { team: 'backend', item: { state: 'in-progress' } })] }], [red])
-    expect(q!.next).toEqual({ who: 'frontend, backend', what: '#8 (PR #17): fix the failing check: factory-tests; finish #11', href: '/items/8' })
+    // one line per owner, each with its own link
+    expect(q!.next).toEqual({ who: 'frontend', what: '#8 (PR #17): fix the failing check: factory-tests', href: '/items/8' })
+    expect(q!.more).toEqual([{ who: 'backend', what: 'finish #11', href: '/items/11' }])
     expect(q!.detail).toMatch(/^1 in progress\. 1 pull request with failing checks\. /)
+    // the item derive calls failed for its red PR still takes the PR's step
+    const [r] = phasesOf(undefined, [{ ...f, items: [row(8, 'failed')] }], [red])
+    expect(r!.next).toEqual({ who: 'frontend', what: '#8 (PR #17): fix the failing check: factory-tests', href: '/items/8' })
+    expect(r!.detail).toMatch(/^1 pull request with failing checks\. /)
+  })
+
+  test('the phase: an item in progress with no agent active is quiet, not running; a stop logged while agents run is said as such', () => {
+    const row = (number: number, item: NonNullable<FeatureView['items'][number]['item']>) => ({ number, title: `t${number}`, url: '', team: 'frontend', ticket: false, open: true, item })
+    const f = { name: 'f001-first-card', refs: {}, docs: [], pulls: [] }
+    const [quiet] = phasesOf(undefined, [{ ...f, items: [row(9, { state: 'in-progress', needs: { kind: 'quiet', summary: 'no event for 42 min during build' } })] }], [])
+    expect(quiet!.next).toEqual({ who: 'frontend', what: '#9 in progress, no agent active (no event for 42 min during build); check its tab', href: '/items/9' })
+    expect(quiet!.detail).toMatch(/^1 quiet \(no agent active\)\. /)
+    const [logged] = phasesOf(undefined, [{ ...f, items: [row(9, { state: 'in-progress', live: true, needs: { kind: 'info', summary: 'logged a stop at build 20:41 UTC while its agents are still running; check its tab' } })] }], [])
+    expect(logged!.next).toEqual({ who: 'you', what: '#9 logged a stop at build 20:41 UTC while its agents are still running; check its tab', href: '/items/9' })
+    expect(logged!.detail).toMatch(/^1 in progress\. /) // its agents are at work
   })
   test('who a round waits for, by its own rule', () => {
     const s = (status: string, draft = 0): CycleState => ({ status, teams: ['a', 'b'], draft, strikes: {}, unanswered: [], history: [] }) as CycleState

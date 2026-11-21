@@ -169,15 +169,19 @@ function Where() {
             </span>
             {p.next && (
               <span className="text-[12.5px]">
-                <span className="text-muted">next: </span>
-                <Mono className={cn(p.next.who === 'you' ? 'font-semibold text-attention' : 'text-fg')}>{p.next.who}</Mono>{' '}
-                {p.next.href?.startsWith('http') ? (
-                  <a href={p.next.href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">{p.next.what}</a>
-                ) : p.next.href ? (
-                  <Link to={p.next.href} className="underline underline-offset-2">{p.next.what}</Link>
-                ) : (
-                  p.next.what
-                )}
+                {[p.next, ...(p.more ?? [])].map((n, k) => (
+                  <span key={k} className="block">
+                    <span className="text-muted">{k ? 'and: ' : 'next: '}</span>
+                    <Mono className={cn(n.who === 'you' ? 'font-semibold text-attention' : 'text-fg')}>{n.who}</Mono>{' '}
+                    {n.href?.startsWith('http') ? (
+                      <a href={n.href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">{n.what}</a>
+                    ) : n.href ? (
+                      <Link to={n.href} className="underline underline-offset-2">{n.what}</Link>
+                    ) : (
+                      n.what
+                    )}
+                  </span>
+                ))}
               </span>
             )}
           </li>
