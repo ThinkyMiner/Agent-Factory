@@ -259,15 +259,17 @@ function Teams() {
   )
 }
 
+const idleWords = (n: number) => (n ? `${n} session${n === 1 ? '' : 's'} open, ${n === 1 ? 'idle at its prompt' : 'all idle at their prompts'}; nothing is running.` : 'No agent run or session is open.')
+
 function Running({ data }: { data: ApiState }) {
   const now = useNow()
   return (
     <Section title="Running now" count={data.running.length} id="running">
       {data.running.length === 0 ? (
         data.factory.teams ? (
-          <Empty title="Nothing is running">No agent run or session is open. In team mode the sweep types <Mono>/work</Mono> into a team's session when it is free and a dispatched item is ready; the strip at the top says what comes next.</Empty>
+          <Empty title="Nothing is running">{idleWords(data.idleSessions)} In team mode the sweep types <Mono>/work</Mono> into a team's session when it is free and a dispatched item is ready; the strip at the top says what comes next.</Empty>
         ) : (
-          <Empty title="Nothing is running">Start an item with <CopyCommand cmd="/work <id>" /> in a Claude Code session in the factory repo.</Empty>
+          <Empty title="Nothing is running">{data.idleSessions > 0 && <>{idleWords(data.idleSessions)} </>}Start an item with <CopyCommand cmd="/work <id>" /> in a Claude Code session in the factory repo.</Empty>
         )
       ) : (
         <table className="panel w-full text-left">

@@ -22,6 +22,7 @@ export interface ApiState {
   items: ItemSummary[]
   needsYou: NeedsEntry[]
   running: RunningEntry[]
+  idleSessions: number // sessions open but idle at their prompt: not running
   notices: Notice[]
   now: number
 }

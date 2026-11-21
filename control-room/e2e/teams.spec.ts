@@ -30,6 +30,7 @@ test('control room: team needs and the teams table', async ({ page }) => {
   await expect(teams.getByRole('row', { name: /research/ })).toContainText('work/19-acceptance')
   await expect(teams.getByRole('row', { name: /research/ })).toContainText('Blocked')
   await expect(teams.getByRole('row', { name: /design/ })).toContainText('worktree missing')
+  await expect(page.getByRole('region', { name: /running now/i })).toContainText('1 session open, idle at its prompt; nothing is running.') // the orchestrator's
   await expect(page.getByText('unknown event type')).toHaveCount(0)
   await expect(page.getByRole('link', { name: 'Planning', exact: true })).toBeVisible()
   expect(errors).toEqual([])

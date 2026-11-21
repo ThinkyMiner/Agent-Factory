@@ -187,7 +187,7 @@ export async function startServer(factory: Factory, opts: ServerOptions): Promis
   }
 }
 
-function apiState(f: Factory, opts: ServerOptions): ApiState {
+export function apiState(f: Factory, opts: Pick<ServerOptions, 'demo' | 'actions'>): ApiState {
   const s = f.state
   return {
     version: f.version,
@@ -196,6 +196,7 @@ function apiState(f: Factory, opts: ServerOptions): ApiState {
     items: s.items.map(summary),
     needsYou: s.needsYou,
     running: s.running,
+    idleSessions: s.runs.filter((r) => r.outcome === 'idle').length,
     notices: [...s.snap.notices, ...(f.watchError ? [{ level: 'warn' as const, source: 'watcher', message: f.watchError }] : [])],
     now: s.ctx.now,
   }

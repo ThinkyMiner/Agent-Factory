@@ -8,6 +8,7 @@ import { decisionRecords, parseAttribution, parseCycleState, parseDiscussion, pa
 import type { ItemView } from '../server/core/derive.ts'
 import { herdrSessions } from '../server/sources/teams.ts'
 import { Factory } from '../server/factory.ts'
+import { apiState } from '../server/http.ts'
 import { PULLS, normalisePull } from '../server/sources/github.ts'
 import type { GitHubData, Pull } from '../server/core/types.ts'
 import { computeState, readDemoGitHub } from '../server/state.ts'
@@ -187,6 +188,18 @@ describe('a team-mode factory', () => {
     expect(f!.attribution!.rows[0]).toMatchObject({ ticket: { number: 26, url: 'https://github.invalid/harbor/issues/26', state: 'declined' }, criterionUrl: 'https://github.com/example/harbor/blob/feature/f001-reading-list/features/f001-reading-list/acceptance.md#ac2-sharing' })
     expect(f!.attribution!.rows[0]!.contractUrl).toBeUndefined() // contract: none
     expect(f!.pulls.map((p) => p.number)).toEqual([25])
+  })
+
+  test('an open session idle at its prompt is not running, and the API counts it', async () => {
+    expect(s.runs.filter((r) => r.outcome === 'idle').map((r) => [r.workId, r.agentType])).toEqual([['', 'foreman']])
+    expect(s.running).toEqual([])
+    const f = new Factory({ repo: fx.repo, dataDir: join(fx.root, 'data-idle'), staleMinutes: 30, github: { kind: 'demo', path: fx.github }, transcriptsRoot: join(fx.root, 'none') })
+    await f.start()
+    try {
+      expect(apiState(f, { demo: false, actions: false }).idleSessions).toBe(1)
+    } finally {
+      f.stop()
+    }
   })
 
   test('teams: roster, checkout, the item held, the session; a worktree whose folder is gone', () => {

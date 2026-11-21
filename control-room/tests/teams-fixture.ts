@@ -126,6 +126,9 @@ export function makeTeamsFactory(root: string, now = Date.now()) {
     { ts: at(4.9), type: 'slot', work_id: '19', branch: 'work/19-acceptance', action: 'acquire', team: 'research' },
     { ts: at(2), type: 'escalation', work_id: '', branch: 'main', reason: 'slot', refs: 'research', detail: 'research has held a build slot for 3 hours' },
     { ts: at(1.5), type: 'ticket', work_id: '', branch: 'team/backend', number: '23', action: 'accept', from: 'orchestrator', to: 'backend', state: 'accepted', team: 'backend' }, // GitHub's labels lag
+    // the orchestrator's session: open, idle at its prompt (no item)
+    { ts: at(0.6), type: 'lifecycle', work_id: '', branch: 'main', event: 'SessionStart', session_id: 'orch-1', team: 'orchestrator' },
+    { ts: at(0.5), type: 'lifecycle', work_id: '', branch: 'main', event: 'Notification', session_id: 'orch-1', reason: 'idle_prompt', message: 'Claude is waiting for your input', team: 'orchestrator' },
   ]))
 
   // ---- team worktrees: research on its item with an uncommitted BLOCKED.md; design's folder is gone ----
