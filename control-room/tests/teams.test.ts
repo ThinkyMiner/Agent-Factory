@@ -168,6 +168,9 @@ describe('a team-mode factory', () => {
       ['acceptance-review.md', 'feature/f001-reading-list', 'VERDICT: reject'],
     ])
     expect(f!.attribution).toMatchObject({ ref: 'integrate/f001-reading-list', round: 1, rows: [{ criterion: 'AC2', decision: 'c001-D01', team: 'frontend', evidence: HOSTILE }] })
+    // each row links the ticket integrate.sh filed for it, and its criterion in acceptance.md
+    expect(f!.attribution!.rows[0]).toMatchObject({ ticket: { number: 26, url: 'https://github.invalid/harbor/issues/26', state: 'declined' }, criterionUrl: 'https://github.com/example/harbor/blob/feature/f001-reading-list/features/f001-reading-list/acceptance.md#ac2-sharing' })
+    expect(f!.attribution!.rows[0]!.contractUrl).toBeUndefined() // contract: none
     expect(f!.pulls.map((p) => p.number)).toEqual([25])
   })
 

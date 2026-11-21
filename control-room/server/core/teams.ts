@@ -314,6 +314,9 @@ export interface AttributionRow {
   contract: string
   team: string
   evidence: string
+  ticket?: { number: number; url: string; state?: string } // the bug ticket integrate.sh filed for it: the team's, naming this test
+  criterionUrl?: string // the criterion in acceptance.md on GitHub
+  contractUrl?: string
 }
 /** attribution.md (integration-qa, checked by integrate.sh tickets): one line per failing test,
  *  "- test: ... | criterion: ... | decision: ... | contract: ... | team: ... | evidence: ...". Other lines are skipped. */
@@ -359,7 +362,7 @@ function eventText(o: Record<string, unknown>): string {
 
 /** `next`: a pull request's one next action and who takes it (state.ts passes the risk rules in), the same
  *  function Needs you uses, so the two never disagree. Without it a planning PR is taken as R2. */
-export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[] }, items: Map<string, ItemView>, next: (p: Pull, floor?: 'R2') => ReturnType<typeof prNext> = (p) => prNext(p, 'R2', 'none')): { view: TeamsView; needs: NeedsEntry[]; notices: Notice[]; waits: Map<string, string> } {
+export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[]; repo?: string }, items: Map<string, ItemView>, next: (p: Pull, floor?: 'R2') => ReturnType<typeof prNext> = (p) => prNext(p, 'R2', 'none')): { view: TeamsView; needs: NeedsEntry[]; notices: Notice[]; waits: Map<string, string> } {
   const notices: Notice[] = []
   const needs: NeedsEntry[] = []
 
@@ -509,7 +512,27 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
       docs: (f?.docs ?? []).map((d) => ({ ...d, headline: DOC_HEADLINE[d.file]?.(d.text) ?? '' })),
       attribution: (() => {
         const d = f?.docs.find((x) => x.file === 'attribution.md')
-        return d ? { ref: d.ref, ...parseAttribution(d.text) } : undefined
+        if (!d) return undefined
+        const a = parseAttribution(d.text)
+        const acc = f?.docs.find((x) => x.file === 'acceptance.md')
+        const blob = (ref: string | undefined, path: string) => (gh.repo && ref ? `https://github.com/${gh.repo}/blob/${ref.replace(/^origin\//, '')}/${encodeURI(path)}` : undefined)
+        const crit = acc && blob(acc.ref, `features/${name}/acceptance.md`)
+        const body = (n: number) => issues.find((x) => x.number === n)?.body ?? ''
+        const rows = a.rows.map((r) => {
+          // integrate.sh tickets: one bug ticket per team, from the orchestrator, its needs naming the round and each test
+          const t = list.filter((i) => i.ticket && i.from === 'orchestrator' && i.team === r.team && body(i.number).includes(r.test) && (a.round === undefined || body(i.number).includes(`round ${a.round} of`))).at(-1)
+          // the criterion's heading, as GitHub anchors it: lower case, punctuation dropped, spaces to hyphens
+          const heading = acc?.text.split('\n').find((l) => l.startsWith(`## ${r.criterion}:`))?.slice(3)
+          const hash = heading?.toLowerCase().replace(/[^\p{L}\p{N} _-]/gu, '').replace(/ /g, '-')
+          const [path, frag] = r.contract.split('#')
+          return {
+            ...r,
+            ticket: t && { number: t.number, url: t.url, state: t.ticketState },
+            criterionUrl: crit && (hash ? `${crit}#${hash}` : crit),
+            contractUrl: path?.startsWith('contracts/') ? blob(f?.refs.feature, path)?.concat(frag ? `#${encodeURI(frag)}` : '') : undefined,
+          }
+        })
+        return { ref: d.ref, round: a.round, rows }
       })(),
       pulls: gh.pulls
         .filter((p) => p.headRefName === `integrate/${name}` || p.headRefName === `sync/${name}`)

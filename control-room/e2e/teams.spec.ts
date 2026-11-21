@@ -49,14 +49,19 @@ test('planning: the cycle, its transcript as plain text, the feature and its rec
   await expect(feature).toContainText('E2E: fail, round: 1')
   await expect(feature).toContainText('VERDICT: reject')
   await expect(feature.getByRole('row', { name: /#23/ })).toContainText('ticket')
-  await expect(feature.getByRole('row', { name: /#26/ })).toContainText('declined by frontend')
-  await expect(feature.getByRole('row', { name: /#26/ }).getByRole('link', { name: '#26' })).toHaveAttribute('href', 'https://github.invalid/harbor/issues/26')
+  await expect(feature.getByRole('row', { name: /#23/ })).toContainText('Ready') // the item's state, and beside it the ticket's
+  await expect(feature.getByRole('row', { name: /#23/ })).toContainText('ticket accepted')
+  const issues = feature.getByRole('table', { name: 'Items of f001-reading-list' }) // #26 is also linked from the attribution table below
+  await expect(issues.getByRole('row', { name: /#26/ })).toContainText('declined by frontend')
+  await expect(issues.getByRole('row', { name: /#26/ }).getByRole('link', { name: '#26' })).toHaveAttribute('href', 'https://github.invalid/harbor/issues/26')
   await expect(feature.getByRole('row', { name: /#24/ })).toContainText('waits for #21 list-page (ready)')
   await expect(feature.getByRole('row', { name: /^#21 / })).toContainText('c001-D01')
   await expect(feature.getByRole('row', { name: /^#21 / }).getByRole('link', { name: 'c001-D01' })).toHaveCount(0) // an earlier cycle's record: not on this page
   const why = feature.getByRole('table', { name: /Failing tests of f001-reading-list/ })
   await expect(why).toContainText('AC2')
   await expect(why).toContainText('<script>alert("x")</script>')
+  await expect(why.getByRole('link', { name: '#26' })).toHaveAttribute('href', 'https://github.invalid/harbor/issues/26') // the ticket integrate.sh filed for the row
+  await expect(why.getByRole('link', { name: 'AC2' })).toHaveAttribute('href', 'https://github.com/example/harbor/blob/feature/f001-reading-list/features/f001-reading-list/acceptance.md#ac2-sharing')
   expect(await why.locator('script, img, strong, a[href^="javascript"]').count()).toBe(0)
   const d02 = cycle.getByRole('row', { name: /c002-D02/ })
   await d02.getByText('Who may open a shared list').click()

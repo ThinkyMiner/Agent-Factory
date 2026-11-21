@@ -149,7 +149,8 @@ export function makeTeamsFactory(root: string, now = Date.now()) {
       issue(21, 'Reading list page', ['team:frontend', 'feature:f001-reading-list'], 'OPEN', item('list-page', 'list-api')),
       issue(23, 'The list API answers 500 for an empty list', ['feature:f001-reading-list', 'team:backend', 'ticket', 'type:bug']),
       issue(24, 'Copy a share link', ['feature:f001-reading-list', 'team:frontend'], 'OPEN', item('share-copy', 'list-page')),
-      issue(26, 'The list page shows a raw date', ['feature:f001-reading-list', 'ticket', 'type:bug', 'from:orchestrator', 'to:frontend', 'state:declined']),
+      issue(26, 'The list page shows a raw date', ['feature:f001-reading-list', 'ticket', 'type:bug', 'from:orchestrator', 'to:frontend', 'state:declined'], 'OPEN',
+        '## Needs\nIntegration round 1 of f001-reading-list failed these e2e tests, attributed to frontend: tests/e2e/f001-reading-list/ac2.spec.ts. The evidence is in features/f001-reading-list/attribution.md and features/f001-reading-list/e2e-report.md on branch integrate/f001-reading-list.\n'), // as integrate.sh tickets files it
     ],
     pulls: [
       pull(12, 'Planning c002-share-links', c2, 'OPEN', ['brief-approved'], true),

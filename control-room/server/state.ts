@@ -33,7 +33,7 @@ export async function computeState(repo: string, gh: GitHubInput, opts: { now?: 
   // team mode: the cycle, features, teams and sessions, and what in them needs you
   const teamsIn = await loadTeams(snap)
   const next = (p: Parameters<typeof prNext>[0], floor?: 'R2') => prNext(p, maxTier([pullTier(p, snap.rules).tier, floor].filter((x) => x !== undefined)), snap.autoMergeMax)
-  const t = teamsIn ? deriveTeams(teamsIn, { issues: gh.data?.issues ?? [], pulls: gh.data?.pulls ?? [] }, d.byId, next) : null
+  const t = teamsIn ? deriveTeams(teamsIn, { issues: gh.data?.issues ?? [], pulls: gh.data?.pulls ?? [], repo: gh.data?.repo }, d.byId, next) : null
   if (t) snap.notices.push(...t.notices)
   for (const [id, w] of t?.waits ?? []) {
     const i = d.byId.get(id)

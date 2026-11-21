@@ -289,6 +289,7 @@ function Feature({ f, records }: { f: FeatureView; records: Set<string> }) {
                     {i.item ? (
                       <span className="whitespace-nowrap">
                         <StateBadge state={i.item.state} />
+                        {i.ticket && <span className="ml-1.5 text-[11.5px] text-muted">ticket {i.ticketState ?? 'state unknown'}</span>}
                         {i.item.pr && (i.item.prUrl ? <a href={i.item.prUrl} target="_blank" rel="noopener noreferrer" className="ml-1.5 font-mono text-[12px] text-muted underline underline-offset-2">PR #{i.item.pr}</a> : <Mono className="ml-1.5 text-muted">PR #{i.item.pr}</Mono>)}
                       </span>
                     ) : (
@@ -324,6 +325,7 @@ function Feature({ f, records }: { f: FeatureView; records: Set<string> }) {
                 <th className="py-1 pr-3">Decision</th>
                 <th className="py-1 pr-3">Contract</th>
                 <th className="py-1 pr-3">Team</th>
+                <th className="py-1 pr-3">Ticket</th>
                 <th className="py-1 pr-3">Evidence</th>
               </tr>
             </thead>
@@ -332,10 +334,11 @@ function Feature({ f, records }: { f: FeatureView; records: Set<string> }) {
               {f.attribution.rows.map((a, k) => (
                 <tr key={k} className="border-b border-border align-top last:border-b-0">
                   <td className="py-1 pr-3 break-all"><Mono>{a.test}</Mono></td>
-                  <td className="py-1 pr-3"><Mono>{a.criterion}</Mono></td>
+                  <td className="py-1 pr-3">{a.criterionUrl ? <a href={a.criterionUrl} target="_blank" rel="noopener noreferrer" className="font-mono text-[12px] underline underline-offset-2">{a.criterion}</a> : <Mono>{a.criterion}</Mono>}</td>
                   <td className="py-1 pr-3">{/^[a-z0-9]+-D\d+$/i.test(a.decision) ? <DecisionLink id={a.decision} records={records} /> : <Mono>{a.decision}</Mono>}</td>
-                  <td className="py-1 pr-3 break-all"><Mono>{a.contract}</Mono></td>
+                  <td className="py-1 pr-3 break-all">{a.contractUrl ? <a href={a.contractUrl} target="_blank" rel="noopener noreferrer" className="font-mono text-[12px] underline underline-offset-2">{a.contract}</a> : <Mono>{a.contract}</Mono>}</td>
                   <td className="py-1 pr-3"><Mono>{a.team}</Mono></td>
+                  <td className="py-1 pr-3 whitespace-nowrap">{a.ticket ? <><ExtIssue url={a.ticket.url} n={a.ticket.number} /> <span className="text-muted">{a.ticket.state ?? ''}</span></> : <span className="text-muted">none filed</span>}</td>
                   <td className="py-1 pr-3 break-words">{a.evidence}</td>
                 </tr>
               ))}
