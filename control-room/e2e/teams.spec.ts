@@ -124,6 +124,21 @@ test('where things are: each owner of a next step gets its own line and its own 
   expect(errors).toEqual([])
 })
 
+test('a merge with only GitHub\'s merger login names that login on Home and Board alike', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.route('**/api/state', async (route) => {
+    const res = await route.fetch()
+    const body = await res.json()
+    Object.assign(body.items.find((i: { id: string }) => i.id === '20'), { mergedAt: new Date().toISOString(), mergedBy: undefined, merger: 'octo' })
+    await route.fulfill({ response: res, json: body })
+  })
+  await page.goto(TEAMS_URL + '/')
+  await expect(page.getByRole('link', { name: /#20/ }).locator('[title^="merged by"]')).toHaveAttribute('title', 'merged by octo (GitHub account)')
+  await page.goto(TEAMS_URL + '/board')
+  await expect(page.getByRole('region', { name: 'Merged' })).toContainText('merged by octo')
+  expect(errors).toEqual([])
+})
+
 test('quality: an empty chart says whether nothing happened or it cannot be measured', async ({ page }) => {
   const errors = watchErrors(page)
   await page.goto(TEAMS_URL + '/quality')
