@@ -17,6 +17,7 @@
 # Every action comments with a machine-readable line, sets the state: label and writes a ticket
 # event. States: open -> accepted | declined; accepted -> done; done -> verified (closed) |
 # disputed; declined -> disputed; disputed -> accepted | declined; any but done -> withdrawn (closed).
+# Declining or finishing a ticket rings the team that asked (not the orchestrator: autostart).
 # Accepting a contract-change ticket writes <main checkout>/.factory/grants/contract-<n>.json,
 # which lets the receiving team write contracts/ (guard.sh); every other action removes it.
 set -euo pipefail
@@ -150,6 +151,9 @@ $(clean_text "$reason")"
   fi
   event number="$n" action="$cmd" from="$from" to="$to" state="$new"
   echo "ticket #$n: $state → $new"
+  # A declined or finished ticket is the asking team's to dispute or verify: ring it. The
+  # orchestrator's tickets are a feature's, and autostart types /integrate when they change.
+  case "$cmd" in decline|done) [ "$from" = orchestrator ] || ring_team "$(factory_home "$top")" "$from" "Something is waiting for you: run /inbox." || true ;; esac
   ;;
 
 *) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1 ;;

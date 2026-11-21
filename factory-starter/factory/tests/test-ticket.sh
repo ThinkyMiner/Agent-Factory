@@ -198,4 +198,16 @@ test_a_new_ticket_rings_the_team_it_is_for() {
   expect_rc 0; [ ! -e "$MAIN/.factory/rings" ] || fail "kept a ring without Herdr"
 }
 
+test_a_declined_or_finished_ticket_rings_the_team_that_asked() {
+  setup; fake_herdr; ask frontend backend; rm "$TEST_TMP/hd/hc.log"
+  as backend accept 1; expect_rc 0; [ ! -s "$TEST_TMP/hd/hc.log" ] || fail "accept rang someone: $(cat "$TEST_TMP/hd/hc.log")"
+  as backend done 1 --pr 5; expect_rc 0; expect_eq "$(cat "$TEST_TMP/hd/hc.log")" "t3|Something is waiting for you: run /inbox."
+  rm "$TEST_TMP/hd/hc.log"; ask frontend backend; rm "$TEST_TMP/hd/hc.log"
+  as backend decline 2 --reason "The endpoint exists already as GET /api/notes?id=, see server/routes.js"; expect_rc 0
+  expect_eq "$(cat "$TEST_TMP/hd/hc.log")" "t3|Something is waiting for you: run /inbox."
+  rm "$TEST_TMP/hd/hc.log"; as orchestrator create --to backend --type bug --needs "$NEEDS" --why "$WHY" --blocks "feature f001" --done "$DONE"
+  rm "$TEST_TMP/hd/hc.log"; as backend decline 3 --reason "The e2e test checks a field the criterion never names, line 12"; expect_rc 0
+  [ ! -s "$TEST_TMP/hd/hc.log" ] || fail "rang the orchestrator, which autostart serves: $(cat "$TEST_TMP/hd/hc.log")"
+}
+
 run_tests

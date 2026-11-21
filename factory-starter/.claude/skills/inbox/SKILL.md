@@ -1,6 +1,6 @@
 ---
 name: inbox
-description: A team lead's inbox in a team-mode factory - what planning needs from this team, items dispatched to it, and tickets sent to it. Invoke when rung ("run /inbox") or at the start of a session.
+description: A team lead's inbox in a team-mode factory - what planning needs from this team, items dispatched to it, tickets sent to it, and its own tickets that came back. Invoke when rung ("run /inbox") or at the start of a session.
 ---
 
 # /inbox: what this team owes
@@ -62,5 +62,13 @@ report beside it (`e2e-report.md`) and the failing tests under `tests/e2e/<featu
   --feature <feature> --decision <record> ...`), and decline the bug ticket naming that ticket.
 A bug ticket that names conflicting paths instead is a merge conflict between the feature and
 main, not a test failure: its text says what is needed.
+
+## 4. Tickets you sent
+`gh issue list --label ticket --label from:<your team> --state open`, for each in `state:done` or
+`state:declined`:
+- Done: check its pull request does what you asked (merged, or merge-ready). It does:
+  `ticket.sh verify <n>`. It does not: `ticket.sh dispute <n> --reason "..."`, once.
+- Declined: weigh the reason as evidence. Still needed and the reason does not hold:
+  `ticket.sh dispute <n> --reason "..."`, once. Otherwise `ticket.sh withdraw <n> --reason "..."`.
 
 Finish with a few lines: what you sent, what you are waiting for, what the human should run.

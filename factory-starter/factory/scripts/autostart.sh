@@ -8,7 +8,9 @@
 #   /work <n>             team <t>: an open issue labelled feature:<f> for the open feature branch,
 #   /research-work <n>    and team:<t> (an item from dispatch) or ticket, to:<t> and state:accepted;
 #                         with no work/<n>-* branch yet. The research team gets /research-work.
-#   /integrate <f>        orchestrator: feature/<f> or integrate/<f> moved since it was last typed
+#   /integrate <f>        orchestrator: feature/<f> or integrate/<f> moved, or one of its open
+#                         tickets on <f> changed state (a team declined or finished it), since it
+#                         was last typed: nothing else tells the orchestrator a ticket came back
 # Only into a tab of this factory's Herdr space that waits for input, one command per tab per pass,
 # lowest issue first. /dispatch and /work are typed again after retry_minutes [30] while nothing
 # came of them. Work outside a dispatched feature (an item for main, a ticket without feature:<f>)
@@ -80,8 +82,14 @@ else
   # ---- integrate: whenever the feature moved ----
   # ponytail: the orchestrator's own pushes to integrate/<f> also count as a move, so it may be
   # typed once more and find nothing to do; key on merged pull requests if that ever costs.
-  key="$(git -C "$home" rev-parse -q --verify "refs/remotes/origin/feature/$f") $(git -C "$home" rev-parse -q --verify "refs/remotes/origin/integrate/$f")"
-  if [ "$(jq -r --arg k "integrate:$f" '.[$k] // "" | strings' <<<"$state")" != "$key" ] && type_into orchestrator "/integrate $f"; then
+  was=$(jq -r --arg k "integrate:$f" '.[$k] // "" | strings' <<<"$state")
+  # Its tickets as "<n>:<state>,..."; when GitHub cannot be read, the last ones seen.
+  if jq -e 'type == "array"' <<<"${items:-}" >/dev/null 2>&1; then
+    tk=$(jq -r '[.[] | [.labels[]?.name | strings] as $l | select(($l | index("ticket")) and ($l | index("from:orchestrator")))
+      | "\(.number):\([$l[] | select(startswith("state:")) | ltrimstr("state:")] | join("+"))"] | sort | join(",")' <<<"$items")
+  else tk=${was#* }; tk=${tk#* }; fi     # the third field; the second may be empty
+  key="$(git -C "$home" rev-parse -q --verify "refs/remotes/origin/feature/$f") $(git -C "$home" rev-parse -q --verify "refs/remotes/origin/integrate/$f") $tk"
+  if [ "$was" != "$key" ] && type_into orchestrator "/integrate $f"; then
     mark "integrate:$f" "$(jq -n --arg v "$key" '$v')"
   fi
 fi

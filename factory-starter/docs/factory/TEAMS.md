@@ -207,7 +207,7 @@ type it:
 |---|---|---|
 | `/dispatch <cycle>` | orchestrator | the cycle's state on `origin/main` is `approval`, its `DECISIONS.md` is there, and no feature branch is open |
 | `/work <n>` (research: `/research-work <n>`) | the team's tab | issue `<n>` is open on the open feature (`feature:<f>`), labelled `team:<team>` (an item from dispatch) or a ticket `to:<team>` in `state:accepted`, and has no `work/<n>-*` branch |
-| `/integrate <f>` | orchestrator | `feature/<f>` or `integrate/<f>` moved since it last typed it |
+| `/integrate <f>` | orchestrator | `feature/<f>` or `integrate/<f>` moved, or a team declined or finished one of the orchestrator's tickets on `<f>`, since it last typed it |
 
 `/dispatch` and `/work` are typed again after `retry_minutes` (30) while nothing came of them (a
 full slot, tests not in yet). Work outside a dispatched feature still waits for you to type
@@ -215,7 +215,8 @@ full slot, tests not in yet). Work outside a dispatched feature still waits for 
 from `hc send`; team-up turns Claude Code's feedback survey off, since it reads typed digits.
 `FACTORY_AUTOSTART=0` in the sweep's environment turns this off.
 
-Next it rings doorbells that waited. A ticket rings the team it is for, a planning question rings
+Next it rings doorbells that waited. A ticket rings the team it is for, a declined or finished one
+rings the team that asked (`/inbox` then verifies, disputes or withdraws it), a planning question rings
 the team it asks (`--to all`: every team in the cycle but the asker), and dispatch and the rounds
 ring the teams they name. A tab that is busy or closed cannot be rung, so the ring is kept as an
 empty file, `.factory/rings/<team>`, and each pass tries again with its own fixed sentence ("run

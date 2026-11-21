@@ -111,6 +111,19 @@ test_integrate_is_typed_again_when_the_feature_moves() {
   run "$A"; expect_eq "$(typed)" "t1|keys ctrl+u / i n t e g r a t e space f 0 0 1 - x enter;"
 }
 
+test_integrate_is_typed_again_when_a_team_answers_the_orchestrators_ticket() {
+  setup; feature; issue 34 OPEN ticket feature:f001-x from:orchestrator to:frontend type:bug state:open
+  issue 40 OPEN ticket feature:f001-x from:backend to:frontend type:request state:open
+  run "$A"; reset_log; run "$A"; expect_eq "$(typed)" ""
+  jq 'map(if .number == 40 then .labels |= map(if .name == "state:open" then {name: "state:declined"} else . end) else . end)' "$FAKE_GH/issues.json" > i && mv i "$FAKE_GH/issues.json"
+  run "$A"; expect_eq "$(typed)" ""                                   # not the orchestrator's ticket
+  jq 'map(if .number == 34 then .labels |= map(if .name == "state:open" then {name: "state:declined"} else . end) else . end)' "$FAKE_GH/issues.json" > i && mv i "$FAKE_GH/issues.json"
+  run "$A"; expect_eq "$(typed)" "t1|keys ctrl+u / i n t e g r a t e space f 0 0 1 - x enter;"
+  reset_log; run "$A"; expect_eq "$(typed)" ""
+  echo 'issue list' > "$FAKE_GH/fail"; run "$A"; expect_eq "$(typed)" ""   # GitHub down: not a change
+  rm "$FAKE_GH/fail"; run "$A"; expect_eq "$(typed)" ""
+}
+
 test_off_without_herdr_without_origin_or_when_turned_off() {
   setup; feature; issue 7 OPEN feature:f001-x team:backend
   FACTORY_AUTOSTART=0 run "$A"; expect_rc 0; expect_eq "$(typed)" ""
