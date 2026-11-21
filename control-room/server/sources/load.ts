@@ -256,6 +256,17 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
   // an item tried more than once (work/<id>-<slug>, then work/<id>-<slug>-2): the newest attempt is the item
   const attempt = (name: string) => Number(/-(\d+)$/.exec(name)?.[1] ?? 1)
 
+  // a branch name to a ref to read: origin's copy first (teams push there; a local branch may lag)
+  const resolved = new Map<string, string | null>()
+  const resolve = async (name: string) => {
+    if (!isGit) return null
+    if (!resolved.has(name)) {
+      let ref: string | null = null
+      for (const r of [`origin/${name}`, name]) if (!ref && (await g.git(repo, ['rev-parse', '--verify', '-q', `refs/${r.startsWith('origin/') ? 'remotes' : 'heads'}/${r}`]).catch(() => null))) ref = r
+      resolved.set(name, ref)
+    }
+    return resolved.get(name)!
+  }
   const inputs: ItemInputs[] = []
   for (const id of ids) {
     const itemNotices: Notice[] = []
@@ -300,10 +311,13 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
       })
     }
 
+    // what the change is measured against: the PR's base, else the feature branch it was dispatched on, else main
+    const feature = issues.get(id)?.labels.find((l) => l.startsWith('feature:'))?.slice(8)
+    const base = (pull?.baseRefName && (await resolve(pull.baseRefName))) || (feature && (await resolve(`feature/${feature}`))) || main
     const om = folder ? onMain.get(folder) ?? names.map((n) => onMain.get(n)).find(Boolean) : undefined
     let changed: string[] | undefined
     if (pull?.files.length) changed = pull.files.map((f) => f.path)
-    else if (branch && main && !om) changed = await g.changedFiles(repo, main, branch.ref)
+    else if (branch && base && !om) changed = await g.changedFiles(repo, base, branch.ref)
     else if (om) changed = om.files
 
     inputs.push({
@@ -317,6 +331,7 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
       branch: branch?.name,
       onMain: om ? { at: om.at, sha: om.sha } : undefined,
       changedFiles: changed,
+      base: base ?? undefined,
       testRefs,
       tickets: (ticketsById.get(id) ?? []).map(({ ts, what }) => ({ ts, what })),
       revertedBy: (pull && revertedPr.get(pull.number)) ?? (om ? revertedSha.get(om.sha) : undefined),

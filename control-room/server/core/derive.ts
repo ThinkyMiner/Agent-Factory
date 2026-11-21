@@ -52,7 +52,8 @@ export interface ItemInputs {
   pull?: Pull
   branch?: string // work/<id>-<slug> if it exists locally or on origin
   onMain?: { at: string; sha?: string } // the work folder is in main's tree (merged)
-  changedFiles?: string[] // vs main: branch diff, PR files or the squash commit
+  changedFiles?: string[] // vs base: PR files, the branch diff or the squash commit
+  base?: string // the ref the item's change is measured against: the PR's base, else its open feature branch, else main
   testRefs?: TestRef[]
   tickets?: { ts: string; what: string }[] // ticket.sh transitions of the ticket this item does
   revertedBy?: { at: string; ref: string; title: string }

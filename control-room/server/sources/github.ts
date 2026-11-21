@@ -35,7 +35,7 @@ export const PULLS = `query($owner: String!, $name: String!, $endCursor: String)
     pullRequests(first: 30, after: $endCursor, orderBy: {field: UPDATED_AT, direction: DESC}) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        number title state isDraft headRefName headRefOid createdAt mergedAt closedAt url body ${LABELS}
+        number title state isDraft headRefName baseRefName headRefOid createdAt mergedAt closedAt url body ${LABELS}
         autoMergeRequest { enabledAt }
         files(first: 100) { nodes { path additions deletions } }
         commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 50) { nodes {
@@ -80,7 +80,7 @@ export function normaliseIssue(n: Node): Issue {
 export function normalisePull(n: Node): Pull {
   const contexts: Node[] = n.commits?.nodes?.[0]?.commit?.statusCheckRollup?.contexts?.nodes ?? []
   return {
-    number: n.number, title: n.title, state: n.state, isDraft: !!n.isDraft, headRefName: n.headRefName, headSha: n.headRefOid ?? '',
+    number: n.number, title: n.title, state: n.state, isDraft: !!n.isDraft, headRefName: n.headRefName, baseRefName: n.baseRefName ?? undefined, headSha: n.headRefOid ?? '',
     labels: (n.labels?.nodes ?? []).map((l: Node) => l.name), createdAt: n.createdAt, mergedAt: n.mergedAt ?? undefined, closedAt: n.closedAt ?? undefined,
     url: n.url, body: n.body ?? '', autoMerge: !!n.autoMergeRequest,
     files: (n.files?.nodes ?? []).map((f: Node) => ({ path: f.path, additions: f.additions ?? 0, deletions: f.deletions ?? 0 })),

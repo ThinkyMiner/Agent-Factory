@@ -243,8 +243,9 @@ export class Factory {
     if (snap.isGit && snap.main) {
       const ref = inp.branch && !inp.onMain ? (await g.workBranches(this.repo)).find((b) => b.name === inp.branch)?.ref : undefined
       if (ref) {
-        commits = await g.branchCommits(this.repo, `${snap.main}..${ref}`)
-        numstat = await g.numstat(this.repo, [`${snap.main}...${ref}`])
+        const base = inp.base ?? snap.main
+        commits = await g.branchCommits(this.repo, `${base}..${ref}`)
+        numstat = await g.numstat(this.repo, [`${base}...${ref}`])
       } else if (inp.onMain?.sha) {
         commits = await g.branchCommits(this.repo, `-1`, inp.onMain.sha)
         numstat = await g.numstat(this.repo, [`${inp.onMain.sha}^!`])
@@ -276,7 +277,7 @@ export class Factory {
     if (!item || !inp || !item.riskFiles.some((f) => f.path === file) || !snap.isGit || !snap.main) return null
     if (inp.branch && !inp.onMain) {
       const ref = (await g.workBranches(this.repo)).find((b) => b.name === inp.branch)?.ref
-      if (ref) return g.git(this.repo, ['diff', '--no-color', '--no-ext-diff', `${snap.main}...${ref}`, '--', file]).catch(() => null)
+      if (ref) return g.git(this.repo, ['diff', '--no-color', '--no-ext-diff', `${inp.base ?? snap.main}...${ref}`, '--', file]).catch(() => null)
     }
     if (inp.onMain?.sha) return g.git(this.repo, ['show', '--no-color', '--no-ext-diff', '--format=', inp.onMain.sha, '--', file]).catch(() => null)
     return null

@@ -226,6 +226,7 @@ export const PullSchema = z.object({
   state: z.enum(['OPEN', 'MERGED', 'CLOSED']),
   isDraft: z.boolean().default(false),
   headRefName: z.string(),
+  baseRefName: z.string().optional(), // the branch it merges into: main, or feature/<f> in team mode
   headSha: z.string().default(''),
   labels: z.array(z.string()).default([]),
   createdAt: timestamp,

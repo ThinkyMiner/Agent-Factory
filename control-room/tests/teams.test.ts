@@ -6,6 +6,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { decisionRecords, parseCycleState, parseDiscussion, parseRoster, waitingFor, type CycleState, type Message } from '../server/core/teams.ts'
 import { herdrSessions } from '../server/sources/teams.ts'
+import { Factory } from '../server/factory.ts'
+import { PULLS, normalisePull } from '../server/sources/github.ts'
+import type { GitHubData } from '../server/core/types.ts'
 import { computeState, readDemoGitHub } from '../server/state.ts'
 import { HOSTILE, PRIVATE, QUESTION, SEALED, makeTeamsFactory } from './teams-fixture.ts'
 
@@ -58,6 +61,13 @@ describe('parsers', () => {
     expect(waitingFor(s('decisions', 2), said, [])).toEqual([{ team: 'b', owes: 'accept or objection on draft 2' }])
     expect(waitingFor(s('dispatched'), qs, [])).toEqual([])
   })
+})
+
+test('a pull request keeps the branch it merges into (GitHub\'s baseRefName); without it, none', () => {
+  const n = { number: 1, title: 't', state: 'OPEN', headRefName: 'work/1-x', createdAt: '2026-11-01T00:00:00Z', url: 'u' }
+  expect(normalisePull({ ...n, baseRefName: 'feature/f001-x' }).baseRefName).toBe('feature/f001-x')
+  expect(normalisePull(n).baseRefName).toBeUndefined()
+  expect(PULLS).toContain('baseRefName')
 })
 
 describe('a team-mode factory', () => {
@@ -281,6 +291,38 @@ describe('missing and damaged inputs', () => {
     expect(i.reviews.map((r) => [r.file, r.review.ok && r.review.value.verdict])).toEqual([['evidence-review.md', 'pass'], ['db-review.md', 'pass']])
     expect(i.review).toMatchObject({ ok: true, value: { verdict: 'pass' } })
     expect(i.notVerified.map((n) => [n.text, n.source])).toEqual([['load under many users', 'evidence-review.md'], ['the migration on a full table', 'db-review.md']]) // and not "no review.md"
+  })
+
+  test('a change is measured against its PR\'s base or its feature branch, not main', async () => {
+    const fx = makeTeamsFactory(join(root, 'base'))
+    process.env.PATH = `${fx.bin}:${PATH}`
+    const gh = JSON.parse(readFileSync(fx.github, 'utf8')) as GitHubData
+    fx.git('branch', 'work/33-instant-format', 'feature/f001-reading-list') // a ticket's branch at its feature's tip: nothing of its own yet
+    fx.git('switch', '-q', '-c', 'work/34-page-copy', 'feature/f001-reading-list')
+    mkdirSync(join(fx.repo, 'web'), { recursive: true })
+    writeFileSync(join(fx.repo, 'web/copy.ts'), 'export const copy = "Saved"\n')
+    fx.git('add', 'web/copy.ts')
+    fx.git('commit', '-qm', 'work 34: copy')
+    fx.git('switch', '-q', 'planning/c002-share-links')
+    gh.issues.push({ ...gh.issues[0]!, number: 33, title: 'Times in the instant format', labels: ['feature:f001-reading-list', 'team:frontend', 'ticket'] })
+    const base = gh.pulls.find((p) => p.number === 22)!
+    gh.pulls.push({ ...base, number: 36, title: 'Page copy', headRefName: 'work/34-page-copy', baseRefName: 'feature/f001-reading-list', state: 'OPEN', mergedAt: undefined, files: [] }) // GitHub gave no file list
+    writeFileSync(fx.github, JSON.stringify(gh))
+    const f = new Factory({ repo: fx.repo, dataDir: join(fx.root, 'data'), staleMinutes: 30, github: { kind: 'demo', path: fx.github }, transcriptsRoot: join(fx.root, 'none') })
+    await f.start()
+    try {
+      const t33 = f.state.byId.get('33')!
+      expect(t33).toMatchObject({ branch: 'work/33-instant-format', riskFiles: [] })
+      expect((await f.itemDetail('33'))!.commits).toEqual([])
+      const t34 = f.state.byId.get('34')!
+      expect(t34.riskFiles.map((x) => x.path)).toEqual(['web/copy.ts'])
+      const d = (await f.itemDetail('34'))!
+      expect(d.commits.map((c) => c.subject)).toEqual(['work 34: copy'])
+      expect(d.changes).toEqual([expect.objectContaining({ path: 'web/copy.ts', additions: 1, deletions: 0 })])
+      expect(await f.diff('34', 'web/copy.ts')).toContain('+export const copy = "Saved"')
+    } finally {
+      f.stop()
+    }
   })
 
   test('the brief and the approval rounds need you while their pull request is open', async () => {
