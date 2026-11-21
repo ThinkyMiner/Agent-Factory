@@ -203,6 +203,12 @@ describe('merged and closed', () => {
     expect(derive({ stageEvents: RUN_TO_PR(), pull: pull({ state: 'MERGED', mergedAt: ago(30), baseRefName: 'feature/f001-x' }) })).toMatchObject({ state: 'merged', mergedInto: 'feature/f001-x' })
     expect(derive({ onMain: { at: ago(30) } })).toMatchObject({ state: 'merged', mergedInto: 'main' })
   })
+  test('a draft pull request waits for its author, not for auto-merge or you', () => {
+    const r = derive({ stageEvents: RUN_TO_PR(), pull: pull({ isDraft: true, autoMerge: false, labels: ['risk:R1', 'human-approved'] }) })
+    expect(r).toMatchObject({ state: 'pr-open', reason: 'PR #101 is a draft: its author marks it ready for review' })
+    expect(r.needs).toBeUndefined()
+  })
+
   test('a CI re-run on the same head: only each check\'s current run counts (a running re-run is newer than any result)', () => {
     const run = (conclusion: string | undefined, min?: number) => ({ name: 'factory-tests', status: conclusion ? 'COMPLETED' : 'IN_PROGRESS', conclusion, completedAt: min === undefined ? undefined : ago(min) })
     const green = derive({ stageEvents: RUN_TO_PR(), pull: pull({ autoMerge: false, checks: [run('FAILURE', 20), run('SUCCESS', 5)] }) })

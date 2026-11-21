@@ -510,6 +510,7 @@ describe('missing and damaged inputs', () => {
     expect(s.needsYou.find((n) => n.id === 'cycle-c002-share-links')).toMatchObject({ kind: 'approve', summary: 'read BRIEF.md, then add the label brief-approved to PR #12', href: '/planning' })
     expect(s.teams!.cycle!.waiting).toEqual([{ team: 'you', owes: 'the label brief-approved on PR #12' }])
     save({ status: 'approval', teams: ['backend'], pr: 12, history: [{ status: 'approval', at }] })
+    gh.data!.pulls[0]!.isDraft = false // round.sh marks the pull request ready with the move to approval
     s = await computeState(fx.repo, gh, { staleMinutes: 30 })
     expect(s.needsYou.find((n) => n.id === 'cycle-c002-share-links')).toMatchObject({ kind: 'approve', tier: 'R2' })
     gh.data!.pulls[0]!.state = 'MERGED'

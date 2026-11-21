@@ -112,6 +112,7 @@ export function prNext(p: Pull, tier: Tier | undefined, autoMergeMax: Tier | 'no
   const pending = checks.some((c) => checkState(c) === 'pending')
   const base = { failing, approved }
   if (failing.length) return { ...base, kind: 'failed', who: 'its author', what: `fix the failing check${failing.length > 1 ? 's' : ''}: ${failing.join(', ')}` }
+  if (p.isDraft) return { ...base, kind: 'info', who: 'its author', what: 'mark it ready for review' }
   if (r2 && !approved) return { ...base, kind: 'approve', who: 'you', what: p.autoMerge ? 'add human-approved; auto-merge then merges it once the checks pass' : 'add human-approved, wait for the checks to pass, then merge' }
   if (p.autoMerge) return { ...base, kind: 'info', who: 'GitHub', what: 'auto-merge merges it when the checks pass' }
   const below = !!tier && tierRank(tier) <= tierRank(autoMergeMax)

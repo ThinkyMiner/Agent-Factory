@@ -520,6 +520,11 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
     since = pr.createdAt
     reason = `CI check${failingChecks.length > 1 ? 's' : ''} failing on PR #${pr.number}`
     needs = { kind: 'failed', summary: `CI failing: ${failingChecks.map((c) => c.name).join(', ')}`, since }
+  } else if (pr?.state === 'OPEN' && pr.isDraft) {
+    // a draft merges for no one: its author marks it ready for review first
+    state = 'pr-open'
+    since = pr.createdAt
+    reason = `PR #${pr.number} is a draft: its author marks it ready for review`
   } else if (pr?.state === 'OPEN' && tierRank(tier ?? 'R0') >= 2 && !approved) {
     state = 'awaiting-approval'
     since = pr.createdAt
@@ -531,7 +536,7 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
       (high.find((s) => s.source === 'review') ? `reviewer: ${high.find((s) => s.source === 'review')!.why ?? 'assessed ' + tier}` : 'PR label')
     const verdict = review?.ok ? `review: ${review.value.verdict}` : review ? `${reviews[0]!.file} unparseable` : 'no review.md'
     needs = { kind: 'approve', summary: `${tier} · ${why} · ${verdict}`, since }
-  } else if (pr?.state === 'OPEN' && !pr.isDraft && !pr.autoMerge) {
+  } else if (pr?.state === 'OPEN' && !pr.autoMerge) {
     // Without auto-merge nothing will merge it but you. The policy only explains why.
     state = 'awaiting-merge'
     since = pr.createdAt

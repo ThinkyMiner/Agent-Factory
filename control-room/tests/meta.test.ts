@@ -87,6 +87,13 @@ describe('over the demo', async () => {
     expect(prNext(rerun, 'R1', 'R1')).toMatchObject({ kind: 'info', who: 'GitHub', failing: [] })
   })
 
+  test('a draft pull request cannot merge: its author marks it ready for review', () => {
+    const pr = gh.data!.pulls.find((p) => p.number === 141)!
+    const draft = { ...pr, isDraft: true, autoMerge: false, labels: ['risk:R2', 'human-approved'], timeline: [{ type: 'labeled', label: 'human-approved', at: new Date(NOW).toISOString() }], checks: [{ name: 'factory-tests', status: 'COMPLETED', conclusion: 'SUCCESS' }] }
+    expect(prNext(draft, 'R2', 'R1')).toMatchObject({ kind: 'info', who: 'its author', what: 'mark it ready for review' })
+    expect(prNext({ ...draft, labels: ['risk:R1'] }, 'R1', 'none')).toMatchObject({ who: 'its author', what: 'mark it ready for review' }) // not "merge it"
+  })
+
   test('audits newest first, text kept raw for the sanitising renderer', () => {
     const a = auditsView(s.meta)
     expect(a).toHaveLength(2)
