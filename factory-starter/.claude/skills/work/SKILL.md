@@ -30,8 +30,9 @@ control room and the audit can read the run without parsing prose:
 
 Stage names: intake, spec, design, tests, build, gate, review, ui-review, security,
 db-review, pr, observe.
-Statuses: started, passed, failed, blocked, skipped. Use `round` for fix rounds
-(0 for the first attempt). On the pr stage add `tier=<R0..R3>` and `pr=<number>`.
+Statuses: started, passed, failed, blocked, skipped. `blocked` means the item stopped for the
+human (`BLOCKED.md` or an escalation); the control room asks the human to answer it, so never use
+it for something the team settles itself. Use `round` for fix rounds (0 for the first attempt). On the pr stage add `tier=<R0..R3>` and `pr=<number>`.
 
 ## 0. Intake
 - If the argument is a number, read it with `gh issue view <n> --json number,title,body,labels`.
@@ -85,8 +86,9 @@ Statuses: started, passed, failed, blocked, skipped. Use `round` for fix rounds
 
 ## 3. Build
 - Delegate to `builder` with the spec path.
-- If it wrote `disputes.md`, send the dispute to a new `test-author` once. If they still
-  disagree, stop and escalate to the human with both positions.
+- If it wrote `disputes.md`, send the dispute to a new `test-author` once (record it as
+  `build failed` with the next `round`, not `blocked`). If they still disagree, stop and
+  escalate to the human with both positions.
 - In team mode, a write the guard blocks because another team owns the path is not
   something to work around: stop, write `BLOCKED.md` naming the paths and their team, and
   ask that team with a ticket: `factory/scripts/ticket.sh create --to <team> --type request
