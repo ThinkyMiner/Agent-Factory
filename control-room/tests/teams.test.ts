@@ -119,12 +119,27 @@ describe('a team-mode factory', () => {
   test('the feature: its branches, its issues and where each is, and its records', () => {
     const [f] = s.teams!.features
     expect(f).toMatchObject({ name: 'f001-reading-list', refs: { feature: 'feature/f001-reading-list', integrate: 'integrate/f001-reading-list' } })
-    expect(f!.items.map((i) => [i.number, i.team, i.ticket, i.open, i.item?.state])).toEqual([
-      [19, 'research', false, true, 'blocked'],
-      [20, 'backend', false, false, 'merged'],
-      [21, 'frontend', false, true, undefined],
-      [23, 'backend', true, true, undefined],
+    // dispatched and not started is Ready, like an accepted ticket; a declined ticket is not work. A ticket's team is where it went.
+    expect(f!.items.map((i) => [i.number, i.team, i.ticket, i.ticketState, i.open, i.item?.state])).toEqual([
+      [19, 'research', false, undefined, true, 'blocked'],
+      [20, 'backend', false, undefined, false, 'merged'],
+      [21, 'frontend', false, undefined, true, 'ready'],
+      [23, 'backend', true, 'accepted', true, 'ready'], // its label lags: ticket.sh's event says accepted
+      [24, 'frontend', false, undefined, true, 'ready'],
+      [26, 'frontend', true, 'declined', true, undefined],
     ])
+    // what each dispatched item waits for, from the work breakdown's "after" column
+    expect(f!.items.map((i) => [i.number, i.dispatch?.item, i.waitsFor])).toEqual([
+      [19, 'acceptance', undefined],
+      [20, 'list-api', undefined],
+      [21, 'list-page', 'frontend to start it: the sweep types the command when that session is free, lowest number first'], // list-api merged
+      [23, undefined, undefined],
+      [24, 'share-copy', '#21 list-page (ready)'],
+      [26, undefined, undefined],
+    ])
+    expect(s.byId.get('24')).toMatchObject({ state: 'ready', column: 'ready', feature: 'f001-reading-list', reason: 'dispatched to frontend in feature f001-reading-list', waitsFor: '#21 list-page (ready)' })
+    expect(s.byId.get('23')).toMatchObject({ state: 'ready', reason: 'ticket accepted by backend (feature f001-reading-list)' })
+    expect(s.byId.has('26')).toBe(false)
     expect(f!.docs.map((d) => [d.file, d.ref, d.headline])).toEqual([
       ['acceptance.md', 'feature/f001-reading-list', '2 criteria'],
       ['e2e-report.md', 'integrate/f001-reading-list', 'E2E: fail, round: 1'],

@@ -219,7 +219,8 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
   }
   for (const b of branches) ids.add(FOLDER.exec(b.name.slice(5))![1]!)
   for (const e of events) if ((e.type === 'stage' || e.type === 'lifecycle') && e.work_id) ids.add(e.work_id)
-  for (const [id, i] of issues) if (i.labels.some((l) => l.startsWith('factory:') && l !== 'factory:improvement')) ids.add(id)
+  // factory issues, and in team mode the items dispatch made (feature:<f>); deriveItem decides which are items
+  for (const [id, i] of issues) if (i.labels.some((l) => (l.startsWith('factory:') && l !== 'factory:improvement') || l.startsWith('feature:'))) ids.add(id)
   for (const id of pulls.keys()) ids.add(id)
 
   // index once: a per-item scan of every file and event is O(items x events)
@@ -246,7 +247,8 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
       if (e.type !== 'unknown' || !e.ts || !e.raw.includes('"ticket"')) return []
       try {
         const o = JSON.parse(e.raw) as Record<string, unknown>
-        return o.type === 'ticket' && (typeof o.number === 'string' || typeof o.number === 'number') ? [{ id: String(o.number), ts: e.ts, what: `ticket ${String(o.action ?? '?')}${typeof o.state === 'string' ? ` (${o.state})` : ''}` }] : []
+        const state = typeof o.state === 'string' ? o.state : undefined
+        return o.type === 'ticket' && (typeof o.number === 'string' || typeof o.number === 'number') ? [{ id: String(o.number), ts: e.ts, what: `ticket ${String(o.action ?? '?')}${state ? ` (${state})` : ''}`, state }] : []
       } catch {
         return []
       }
@@ -333,7 +335,7 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
       changedFiles: changed,
       base: base ?? undefined,
       testRefs,
-      tickets: (ticketsById.get(id) ?? []).map(({ ts, what }) => ({ ts, what })),
+      tickets: (ticketsById.get(id) ?? []).map(({ ts, what, state }) => ({ ts, what, state })),
       revertedBy: (pull && revertedPr.get(pull.number)) ?? (om ? revertedSha.get(om.sha) : undefined),
       notices: itemNotices,
     })

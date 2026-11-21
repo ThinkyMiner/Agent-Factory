@@ -49,9 +49,22 @@ test('planning: the cycle, its transcript as plain text, the feature and its rec
   await expect(feature).toContainText('E2E: fail, round: 1')
   await expect(feature).toContainText('VERDICT: reject')
   await expect(feature.getByRole('row', { name: /#23/ })).toContainText('ticket')
+  await expect(feature.getByRole('row', { name: /#26/ })).toContainText('declined by frontend')
+  await expect(feature.getByRole('row', { name: /#26/ }).getByRole('link', { name: '#26' })).toHaveAttribute('href', 'https://github.invalid/harbor/issues/26')
+  await expect(feature.getByRole('row', { name: /#24/ })).toContainText('waits for #21 list-page (ready)')
+  await expect(feature.getByRole('row', { name: /#24/ }).getByRole('link', { name: 'c001-D01' })).toHaveAttribute('href', '#decision-c001-D01')
   expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight)).toBe(true)
   await feature.getByText('acceptance.md', { exact: true }).click()
   await expect(feature).toContainText('Saving a link')
+  expect(errors).toEqual([])
+})
+
+test('board: dispatched items not started are Ready, with what they wait for', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto(TEAMS_URL + '/board')
+  const ready = page.getByRole('region', { name: 'Ready' })
+  await expect(ready.getByRole('listitem')).toHaveCount(3) // #21, #23 (an accepted ticket), #24
+  await expect(ready.getByRole('link', { name: /#24/ })).toContainText('waits for #21 list-page (ready)')
   expect(errors).toEqual([])
 })
 

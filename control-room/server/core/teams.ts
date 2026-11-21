@@ -165,6 +165,8 @@ export function waitingFor(s: CycleState, messages: Message[], submitted: string
   return []
 }
 
+const sortByTs = <T extends { ts?: string }>(xs: T[]) => [...xs].sort((a, b) => Date.parse(a.ts ?? '') - Date.parse(b.ts ?? ''))
+
 // ---------- the whole view ----------
 
 export interface SessionTab {
@@ -187,7 +189,7 @@ export interface TeamsInput {
     decisions: string | null
     submitted: string[] // teams with a sealed position (existence only)
   }
-  features: { name: string; refs: { feature?: string; integrate?: string }; docs: { file: string; ref: string; text: string }[] }[]
+  features: { name: string; refs: { feature?: string; integrate?: string }; docs: { file: string; ref: string; text: string }[]; dispatch: string | null }[]
   checkouts: { team: string; path: string; branch: string | null; exists: boolean }[] // the orchestrator's is the main checkout
   sessions: { available: boolean; tabs: SessionTab[] }
   events: FactoryEvent[]
@@ -209,10 +211,60 @@ export interface CycleView {
   blocking: { number: number; url: string; title: string; head: string; labels: string[]; why: string }[]
 }
 
+export interface DispatchRow {
+  item: string
+  team: string
+  after: string[]
+  decisions: string[]
+  contract?: string
+  delivers?: string
+}
+
+/** dispatch.jsonl (dispatch.sh): one work-breakdown row per line. A bad line is skipped. */
+export function parseDispatch(text: string): DispatchRow[] {
+  const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
+  return text.split('\n').flatMap((line) => {
+    try {
+      const o = JSON.parse(line) as Record<string, unknown>
+      if (!o || typeof o.item !== 'string' || typeof o.team !== 'string') return []
+      return [{ item: o.item, team: o.team, after: strs(o.after), decisions: strs(o.decisions), contract: typeof o.contract === 'string' && o.contract ? o.contract : undefined, delivers: typeof o.delivers === 'string' ? o.delivers : undefined }]
+    } catch {
+      return []
+    }
+  })
+}
+
+/** Which work-breakdown row an issue is: item.sh's issue names its item ("Item page-preview of ...")
+ *  before anything it waits for, so the row whose name comes first in the title and body, among its team's. */
+export function dispatchRowOf(issue: Pick<Issue, 'title' | 'body'>, rows: DispatchRow[], team?: string): DispatchRow | undefined {
+  const text = `${issue.title}\n${issue.body.slice(0, 600)}`.toLowerCase()
+  const at = (name: string) => {
+    const m = new RegExp(`(^|[^a-z0-9-])${name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![a-z0-9-])`).exec(text)
+    return m ? m.index : Infinity
+  }
+  return rows
+    .filter((r) => !team || r.team === team)
+    .map((r) => ({ r, i: at(r.item) }))
+    .filter((x) => x.i < Infinity)
+    .sort((a, b) => a.i - b.i)[0]?.r
+}
+
 export interface FeatureView {
   name: string
   refs: { feature?: string; integrate?: string }
-  items: { number: number; title: string; url: string; team?: string; ticket: boolean; open: boolean; item?: { state: ItemView['state']; pr?: number } }[]
+  items: {
+    number: number
+    title: string
+    url: string
+    team?: string // team:<t>, or for a ticket the team it went to (to:<t>)
+    ticket: boolean
+    ticketState?: string // open | accepted | declined | done | verified: its state: label, else its last ticket event
+    from?: string // a ticket's sender
+    open: boolean
+    item?: { state: ItemView['state']; pr?: number; prUrl?: string }
+    dispatch?: DispatchRow
+    waitsFor?: string
+  }[]
   docs: { file: string; ref: string; headline: string; text: string }[]
   pulls: { number: number; url: string; title: string; state: Pull['state']; head: string }[]
 }
@@ -257,7 +309,7 @@ function eventText(o: Record<string, unknown>): string {
   }
 }
 
-export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[] }, items: Map<string, ItemView>): { view: TeamsView; needs: NeedsEntry[]; notices: Notice[] } {
+export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[] }, items: Map<string, ItemView>): { view: TeamsView; needs: NeedsEntry[]; notices: Notice[]; waits: Map<string, string> } {
   const notices: Notice[] = []
   const needs: NeedsEntry[] = []
 
@@ -349,22 +401,54 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
 
   // features: their issues (feature:<f>, team:<t>, ticket) and where each is
   const featureOf = (labels: string[]) => labels.find((l) => l.startsWith('feature:'))?.slice(8)
+  const label = (labels: string[], prefix: string) => labels.find((l) => l.startsWith(prefix))?.slice(prefix.length)
+  // ticket.sh's events, newest last: a ticket's state when GitHub's labels are not there
+  const ticketEvents = new Map<string, string>()
+  for (const e of sortByTs(inp.events.filter((x): x is Extract<FactoryEvent, { type: 'unknown' }> => x.type === 'unknown' && x.raw.includes('"ticket"')))) {
+    try {
+      const o = JSON.parse(e.raw) as Record<string, unknown>
+      if (o.type === 'ticket' && typeof o.state === 'string' && (typeof o.number === 'string' || typeof o.number === 'number')) ticketEvents.set(String(o.number), o.state)
+    } catch {
+      /* not JSON: already a notice */
+    }
+  }
+  const waits = new Map<string, string>()
   const names = new Set([...inp.features.map((f) => f.name), ...gh.issues.map((i) => featureOf(i.labels)).filter((x): x is string => !!x)])
   const features: FeatureView[] = [...names].sort().map((name) => {
     const f = inp.features.find((x) => x.name === name)
+    const rows = f?.dispatch ? parseDispatch(f.dispatch) : []
+    const issues = gh.issues.filter((i) => featureOf(i.labels) === name).sort((a, b) => a.number - b.number)
+    const rowOf = new Map(issues.filter((i) => !i.labels.includes('ticket')).map((i) => [i.number, dispatchRowOf(i, rows, label(i.labels, 'team:'))]))
+    const done = (n: number) => ['merged', 'closed'].includes(items.get(String(n))?.state ?? '') || issues.find((i) => i.number === n)?.state === 'CLOSED'
+    const list = issues.map((i) => {
+      const it = items.get(String(i.number))
+      const ticket = i.labels.includes('ticket')
+      const team = label(i.labels, 'team:') ?? (ticket ? label(i.labels, 'to:') : undefined)
+      const dispatch = rowOf.get(i.number)
+      // what a dispatched item waits for: the rows in its "after" column not merged yet
+      let waitsFor: string | undefined
+      if (dispatch && !it?.pr && (!it || it.state === 'ready')) {
+        const before = dispatch.after.map((a) => ({ a, n: [...rowOf].find(([, r]) => r?.item === a)?.[0] }))
+        const open = before.filter((b) => b.n === undefined || !done(b.n))
+        waitsFor = open.length
+          ? open.map((b) => (b.n === undefined ? `${b.a} (no issue yet)` : `#${b.n} ${b.a} (${items.get(String(b.n))?.state ?? 'not started'})`)).join(', ')
+          : `${team ?? 'its team'} to start it: the sweep types the command when that session is free, lowest number first`
+        waits.set(String(i.number), waitsFor)
+      }
+      return {
+        number: i.number, title: i.title, url: i.url, team, ticket,
+        ticketState: ticket ? ticketEvents.get(String(i.number)) ?? label(i.labels, 'state:') : undefined, // as deriveItem: the event, else the label
+        from: ticket ? label(i.labels, 'from:') : undefined,
+        open: i.state === 'OPEN',
+        item: it ? { state: it.state, pr: it.pr?.number, prUrl: it.pr?.url } : undefined,
+        dispatch,
+        waitsFor,
+      }
+    })
     return {
       name,
       refs: f?.refs ?? {},
-      items: gh.issues
-        .filter((i) => featureOf(i.labels) === name)
-        .sort((a, b) => a.number - b.number)
-        .map((i) => {
-          const it = items.get(String(i.number))
-          return {
-            number: i.number, title: i.title, url: i.url, team: i.labels.find((l) => l.startsWith('team:'))?.slice(5), ticket: i.labels.includes('ticket'), open: i.state === 'OPEN',
-            item: it ? { state: it.state, pr: it.pr?.number } : undefined,
-          }
-        }),
+      items: list,
       docs: (f?.docs ?? []).map((d) => ({ ...d, headline: DOC_HEADLINE[d.file]?.(d.text) ?? '' })),
       pulls: gh.pulls
         .filter((p) => p.headRefName === `integrate/${name}` || p.headRefName === `sync/${name}`)
@@ -397,5 +481,5 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
     if (s.state === 'blocked') needs.push({ ...base, kind: 'waiting-input', title: `The ${s.tab} session is waiting for you`, summary: s.msg || 'a prompt or dialog in its Herdr tab' })
   }
 
-  return { view: { rosterSource: inp.roster.source, rosterError, cycle, features, teams, sessions: { available: inp.sessions.available } }, needs, notices }
+  return { view: { rosterSource: inp.roster.source, rosterError, cycle, features, teams, sessions: { available: inp.sessions.available } }, needs, notices, waits }
 }

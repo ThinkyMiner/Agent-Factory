@@ -24,6 +24,10 @@ export async function computeState(repo: string, gh: GitHubInput, opts: { now?: 
   const teamsIn = await loadTeams(snap)
   const t = teamsIn ? deriveTeams(teamsIn, { issues: gh.data?.issues ?? [], pulls: gh.data?.pulls ?? [] }, d.byId) : null
   if (t) snap.notices.push(...t.notices)
+  for (const [id, w] of t?.waits ?? []) {
+    const i = d.byId.get(id)
+    if (i) i.waitsFor = w
+  }
   // every open PR that waits for you and is not an item's or the planning cycle's (those say it themselves)
   const shown = new Set([...d.items.flatMap((i) => (i.pr ? [i.pr.number] : [])), ...(t?.view.cycle?.pr ? [t.view.cycle.pr.number] : [])])
   const waits = new Map((t?.view.cycle?.blocking ?? []).map((b) => [b.number, `planning ${t!.view.cycle!.name} waits: ${b.why}`]))

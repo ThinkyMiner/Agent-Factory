@@ -10,7 +10,7 @@ import { ItemId, LiveDot, NEEDS, NeedsTag, StageDots, StageLabel, StateBadge, Ti
 
 const COLUMNS: { key: Column; label: string; hint: string }[] = [
   { key: 'proposed', label: 'Proposed', hint: 'Issues labelled factory:proposed' },
-  { key: 'ready', label: 'Ready', hint: 'Labelled factory:ready, not started' },
+  { key: 'ready', label: 'Ready', hint: 'Labelled factory:ready, or dispatched to a team (team mode); not started' },
   { key: 'in-progress', label: 'In progress', hint: 'A run is moving through the stages' },
   { key: 'pr-open', label: 'Pull request open', hint: 'Open with auto-merge; CI decides' },
   { key: 'waiting', label: 'Waiting for me', hint: 'A pull request held at the human gate' },
@@ -149,6 +149,7 @@ function Card({ i }: { i: ItemSummary }) {
         <div className="mt-1 leading-snug font-medium">{i.title}</div>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted">
           {i.column === 'in-progress' && <StageLabel stage={i.stage} round={i.round} status={i.stageStatus} />}
+          {i.column === 'ready' && i.waitsFor && <span className="w-full text-[11.5px]">waits for {i.waitsFor}</span>}
           {(i.column === 'waiting' || i.column === 'stopped') && !i.needs && <StateBadge state={i.state} className="px-1.5 py-0 text-[11.5px]" />}
           {i.column === 'pr-open' && i.pr && <span>PR #{i.pr.number}</span>}
           {i.column === 'merged' && <span>{i.mergedBy === 'auto' ? 'auto-merged' : i.mergedBy === 'human' ? 'merged by you' : 'merged'}</span>}

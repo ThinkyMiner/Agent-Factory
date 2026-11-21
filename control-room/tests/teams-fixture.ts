@@ -68,6 +68,8 @@ export function makeTeamsFactory(root: string, now = Date.now()) {
   write(`${c1}/state.json`, state({ cycle: 'c001-reading-list', status: 'dispatched', feature: 'f001-reading-list', teams: ['backend', 'frontend', 'research'], pr: 9, draft: 1, round_started_at: at(65), history: [...c1history, { status: 'dispatched', at: at(60) }] }))
   write(`${f}/acceptance.md`, '# Acceptance: f001-reading-list\n\n## AC1: Saving a link\n- decisions: c001-D01\n- check: POST then GET lists it\n\n## AC2: Sharing\n- decisions: c001-D01\n- check: a shared list opens\n')
   write(`${f}/acceptance-review.md`, 'VERDICT: reject\ne2e-commit: 0123456789abcdef0123456789abcdef01234567\n- AC2: the test opens the list as its owner\n')
+  const row = (item: string, team: string, after: string[]) => ({ ts: at(60), cycle: 'c001-reading-list', feature: 'f001-reading-list', item, team, delivers: `the ${item}`, after, contract: '', decisions: ['c001-D01'] })
+  write(`${c1}/dispatch.jsonl`, jsonl([row('acceptance', 'research', []), row('list-api', 'backend', ['acceptance']), row('list-page', 'frontend', ['list-api']), row('share-copy', 'frontend', ['list-page'])]) + 'not json\n')
   commit('dispatch c001-reading-list as f001-reading-list', 60)
   git('switch', '-q', '-c', 'integrate/f001-reading-list')
   write(`${f}/e2e-report.md`, '# E2E report: f001-reading-list\nE2E: fail\nround: 1\ncommit: 0123456789abcdef0123456789abcdef01234567\n\n## Output (last 200 lines)\n    AC2 failed\n')
@@ -122,6 +124,7 @@ export function makeTeamsFactory(root: string, now = Date.now()) {
     stage(3, 'evidence-review', 'blocked', 1, 'reviews disagree; see BLOCKED.md'),
     { ts: at(4.9), type: 'slot', work_id: '19', branch: 'work/19-acceptance', action: 'acquire', team: 'research' },
     { ts: at(2), type: 'escalation', work_id: '', branch: 'main', reason: 'slot', refs: 'research', detail: 'research has held a build slot for 3 hours' },
+    { ts: at(1.5), type: 'ticket', work_id: '', branch: 'team/backend', number: '23', action: 'accept', from: 'orchestrator', to: 'backend', state: 'accepted', team: 'backend' }, // GitHub's labels lag
   ]))
 
   // ---- team worktrees: research on its item with an uncommitted BLOCKED.md; design's folder is gone ----
@@ -132,17 +135,20 @@ export function makeTeamsFactory(root: string, now = Date.now()) {
   rmSync(join(teamsDir, 'design'), { recursive: true, force: true })
 
   // ---- GitHub, as the control room normalises it ----
-  const issue = (number: number, title: string, labels: string[], state: 'OPEN' | 'CLOSED' = 'OPEN') =>
-    ({ number, title, state, labels, createdAt: at(59), url: `https://github.invalid/harbor/issues/${number}`, body: '', labelEvents: [] })
+  const issue = (number: number, title: string, labels: string[], state: 'OPEN' | 'CLOSED' = 'OPEN', body = '') =>
+    ({ number, title, state, labels, createdAt: at(59), url: `https://github.invalid/harbor/issues/${number}`, body, labelEvents: [] })
+  const item = (name: string, after: string) => `Item ${name} of f001-reading-list (cycle c001-reading-list). Waits for: ${after}.\nDelivers: the ${name}.`
   const pull = (number: number, title: string, headRefName: string, state: 'OPEN' | 'MERGED', labels: string[], isDraft = false) =>
     ({ number, title, state, isDraft, headRefName, headSha: 'f'.repeat(40), labels, createdAt: at(50), mergedAt: state === 'MERGED' ? at(40) : undefined, url: `https://github.invalid/harbor/pull/${number}`, body: '', autoMerge: false, checks: [], files: [], timeline: [] })
   const github: GitHubData = {
     repo: 'example/harbor',
     issues: [
-      issue(19, 'Acceptance criteria for the reading list', ['feature:f001-reading-list', 'team:research']),
-      issue(20, 'Reading list API', ['feature:f001-reading-list', 'team:backend'], 'CLOSED'),
-      issue(21, 'Reading list page', ['team:frontend', 'feature:f001-reading-list']),
+      issue(19, 'Acceptance criteria for the reading list', ['feature:f001-reading-list', 'team:research'], 'OPEN', 'Item `acceptance` of cycle c001-reading-list (team research). Waits for nothing.'),
+      issue(20, 'Reading list API', ['feature:f001-reading-list', 'team:backend'], 'CLOSED', item('list-api', 'acceptance')),
+      issue(21, 'Reading list page', ['team:frontend', 'feature:f001-reading-list'], 'OPEN', item('list-page', 'list-api')),
       issue(23, 'The list API answers 500 for an empty list', ['feature:f001-reading-list', 'team:backend', 'ticket', 'type:bug']),
+      issue(24, 'Copy a share link', ['feature:f001-reading-list', 'team:frontend'], 'OPEN', item('share-copy', 'list-page')),
+      issue(26, 'The list page shows a raw date', ['feature:f001-reading-list', 'ticket', 'type:bug', 'from:orchestrator', 'to:frontend', 'state:declined']),
     ],
     pulls: [
       pull(12, 'Planning c002-share-links', c2, 'OPEN', ['brief-approved'], true),

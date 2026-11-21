@@ -55,7 +55,7 @@ export interface ItemInputs {
   changedFiles?: string[] // vs base: PR files, the branch diff or the squash commit
   base?: string // the ref the item's change is measured against: the PR's base, else its open feature branch, else main
   testRefs?: TestRef[]
-  tickets?: { ts: string; what: string }[] // ticket.sh transitions of the ticket this item does
+  tickets?: { ts: string; what: string; state?: string }[] // ticket.sh transitions of the ticket this item does, oldest first
   revertedBy?: { at: string; ref: string; title: string }
   notices: Notice[]
 }
@@ -178,6 +178,8 @@ export interface ItemView {
   issue?: { number: number; url: string; state: Issue['state'] }
   branch?: string
   live?: { agentType: string; since?: string }
+  feature?: string // team mode: the feature it was dispatched in
+  waitsFor?: string // team mode, ready: what it waits for (the dispatch "after" column), set with the teams view
   mergedAt?: string
   readyAt?: string
   mergedBy?: 'auto' | 'human'
@@ -366,7 +368,14 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
   const lifecycle = sortEvents(inp.lifecycle)
   const issue = inp.issue
   const pr = inp.pull
-  const isFactoryIssue = !!issue?.labels.some((l) => l === 'factory:proposed' || l === 'factory:ready')
+  // team mode: an issue dispatch made for a team (feature:<f>), or a ticket its team accepted, is ready work
+  const feature = issue?.labels.find((l) => l.startsWith('feature:'))?.slice(8)
+  const ticket = !!issue?.labels.includes('ticket')
+  const labelled = (prefix: string) => issue?.labels.find((l) => l.startsWith(prefix))?.slice(prefix.length)
+  // ticket.sh's last event is the newest word (GitHub's labels arrive with the next fetch); else its label
+  const ticketState = ticket ? (sortEvents(inp.tickets ?? []).filter((x) => x.state).at(-1)?.state ?? labelled('state:')) : undefined
+  const dispatched = !!feature && (!ticket || ticketState === 'accepted')
+  const isFactoryIssue = !!issue?.labels.some((l) => l === 'factory:proposed' || l === 'factory:ready') || dispatched
   const hasWork = events.length > 0 || lifecycle.length > 0 || !!inp.branch || !!inp.onMain || Object.keys(inp.files).length > 0 || !!pr
   if (!isFactoryIssue && !hasWork) return null
 
@@ -439,7 +448,7 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
   const approvedAt = pr?.timeline.filter((x) => x.type === 'labeled' && x.label === 'human-approved').at(-1)?.at
   const gateRerun = (c: Check) => c.name === 'risk-gate' && tierRank(tier ?? 'R0') >= 2 && (!approved || (!!approvedAt && !!c.completedAt && t(c.completedAt) < t(approvedAt)))
   const failingChecks = (pr?.checks ?? []).filter((c) => checkState(c) === 'fail' && !gateRerun(c))
-  const readyAt = issue?.labelEvents.filter((e) => e.label === 'factory:ready' && e.action === 'added').at(0)?.at ?? events.find((e) => e.stage === 'intake')?.ts
+  const readyAt = issue?.labelEvents.filter((e) => (e.label === 'factory:ready' || (dispatched && e.label === 'feature:' + feature)) && e.action === 'added').at(0)?.at ?? events.find((e) => e.stage === 'intake')?.ts
   let mergedBy: ItemView['mergedBy']
   if (pr?.state === 'MERGED') mergedBy = approved || !pr.timeline.some((x) => x.type === 'auto_merge_enabled') ? 'human' : 'auto'
 
@@ -536,10 +545,10 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
       flags.push('quiet')
       needs = { kind: 'quiet', summary: `no event for ${fmtMin(idleMs)} during ${stageName}${liveRun ? ` (${liveRun.agentType} still open)` : ''}`, since: new Date(lastActivity ?? ctx.now).toISOString() }
     }
-  } else if (issue?.labels.includes('factory:ready')) {
+  } else if (issue?.labels.includes('factory:ready') || dispatched) {
     state = 'ready'
-    since = readyAt ?? issue.createdAt
-    reason = 'issue labelled factory:ready'
+    since = readyAt ?? issue!.createdAt
+    reason = issue!.labels.includes('factory:ready') ? 'issue labelled factory:ready' : ticket ? `ticket accepted by ${labelled('to:') ?? labelled('team:') ?? 'its team'} (feature ${feature})` : `dispatched to ${labelled('team:') ?? 'a team'} in feature ${feature}`
   } else {
     state = 'proposed'
     since = issue?.labelEvents.find((e) => e.label === 'factory:proposed')?.at ?? issue?.createdAt
@@ -602,6 +611,7 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
     pr: pr ? { number: pr.number, url: pr.url, state: pr.state, approved, autoMerge: pr.autoMerge } : undefined,
     issue: issue ? { number: issue.number, url: issue.url, state: issue.state } : undefined,
     branch: inp.branch,
+    feature,
     live: liveRun && flags.includes('live') ? { agentType: liveRun.agentType, since: liveRun.start } : undefined,
     mergedAt: state === 'merged' ? since : undefined,
     readyAt,

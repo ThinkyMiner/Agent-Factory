@@ -92,7 +92,13 @@ export async function loadTeams(snap: Snapshot): Promise<TeamsInput | null> {
         break
       }
     }
-    features.push({ name: f, refs: { feature: fr[0], integrate: ir[0] }, docs })
+    // the work breakdown dispatch.sh wrote for it, on the feature branch (cycle c<NNN> for feature f<NNN>)
+    let dispatch: string | null = null
+    for (const ref of fr) {
+      const p = (await g.lsTree(repo, ref, ['planning/'])).find((e) => e.path.startsWith(`planning/c${f.slice(1, 4)}-`) && e.path.endsWith('/dispatch.jsonl'))?.path
+      if (p && (dispatch = await show(repo, ref, p)) !== null) break
+    }
+    features.push({ name: f, refs: { feature: fr[0], integrate: ir[0] }, docs, dispatch })
   }
 
   // ---- checkouts: the orchestrator's is the main one ----

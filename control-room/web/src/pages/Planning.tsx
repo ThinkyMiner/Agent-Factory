@@ -124,7 +124,7 @@ function Cycle({ c }: { c: CycleView }) {
         )}
         {needsHuman.length > 0 && (
           <p className="text-block">
-            {needsHuman.length} needs-human record{needsHuman.length > 1 ? 's' : ''} to decide: {needsHuman.map((r) => r.id).join(', ')}
+            {needsHuman.length} needs-human record{needsHuman.length > 1 ? 's' : ''} to decide: {needsHuman.map((r, k) => <span key={r.id}>{k > 0 && ', '}<DecisionLink id={r.id} /></span>)}
           </p>
         )}
       </div>
@@ -141,7 +141,7 @@ function Cycle({ c }: { c: CycleView }) {
             </thead>
             <tbody>
               {c.records.map((r) => (
-                <tr key={r.id} className="border-b border-border last:border-b-0">
+                <tr key={r.id} id={`decision-${r.id}`} className="border-b border-border last:border-b-0 target:bg-surface-2">
                   <td className="px-3 py-1.5"><Mono>{r.id}</Mono></td>
                   <td className="px-3 py-1.5">{r.title}</td>
                   <td className={cn('px-3 py-1.5', r.status === 'needs-human' && 'font-medium text-block')}>{r.status ?? '—'}</td>
@@ -209,6 +209,25 @@ function Transcript({ c }: { c: CycleView }) {
   )
 }
 
+/** A ticket's state (ticket.sh) in words: who has it and what they did. */
+function ticketWhere(state: string | undefined, team: string | undefined) {
+  const who = team ?? 'its team'
+  switch (state) {
+    case 'open': return `waiting for ${who} to accept or decline`
+    case 'accepted': return `accepted by ${who}, not started`
+    case 'declined': return `declined by ${who}`
+    case 'done': return `done by ${who}, waiting for the sender to verify`
+    case 'verified': return 'verified and closed'
+    default: return state ? state : 'no state label or event yet'
+  }
+}
+const ExtIssue = ({ url, n }: { url: string; n: number }) =>
+  url ? <a href={url} target="_blank" rel="noopener noreferrer" className="font-mono text-[12px] text-muted underline underline-offset-2">#{n}</a> : <Mono className="text-muted">#{n}</Mono>
+/** A decision record id, linked to its row in the table above. */
+export const DecisionLink = ({ id }: { id: string }) => (
+  <a href={`#decision-${id}`} className="font-mono text-[12px] underline underline-offset-2">{id}</a>
+)
+
 function Feature({ f }: { f: FeatureView }) {
   return (
     <article aria-label={`Feature ${f.name}`} className="panel px-4 py-3">
@@ -231,21 +250,29 @@ function Feature({ f }: { f: FeatureView }) {
             </thead>
             <tbody>
               {f.items.map((i) => (
-                <tr key={i.number} className="border-b border-border last:border-b-0">
+                <tr key={i.number} className="border-b border-border align-top last:border-b-0">
                   <td className="py-1.5 pr-3">
-                    {i.item ? <ItemId id={String(i.number)} /> : <Mono className="text-muted">#{i.number}</Mono>} {i.title}
-                    {i.ticket && <Mono className="ml-1.5 text-muted">ticket</Mono>}
+                    {i.item ? <ItemId id={String(i.number)} /> : <ExtIssue url={i.url} n={i.number} />} {i.title}
+                    {i.item && <> <a href={i.url} target="_blank" rel="noopener noreferrer" className="text-[11.5px] text-muted underline underline-offset-2" aria-label={`issue #${i.number} on GitHub`}>issue</a></>}
+                    {i.ticket && <Mono className="ml-1.5 text-muted" >ticket{i.from ? ` from ${i.from}` : ''}</Mono>}
+                    {i.dispatch && (
+                      <span className="block text-[11.5px] text-muted">
+                        item <Mono>{i.dispatch.item}</Mono>
+                        {i.dispatch.decisions.length > 0 && <> · {i.dispatch.decisions.map((d, k) => <span key={d}>{k > 0 && ', '}<DecisionLink id={d} /></span>)}</>}
+                      </span>
+                    )}
                   </td>
                   <td className="py-1.5 pr-3"><Mono>{i.team ?? '—'}</Mono></td>
-                  <td className="py-1.5 pr-3 whitespace-nowrap">
+                  <td className="py-1.5 pr-3">
                     {i.item ? (
-                      <>
+                      <span className="whitespace-nowrap">
                         <StateBadge state={i.item.state} />
-                        {i.item.pr && <Mono className="ml-1.5 text-muted">PR #{i.item.pr}</Mono>}
-                      </>
+                        {i.item.pr && (i.item.prUrl ? <a href={i.item.prUrl} target="_blank" rel="noopener noreferrer" className="ml-1.5 font-mono text-[12px] text-muted underline underline-offset-2">PR #{i.item.pr}</a> : <Mono className="ml-1.5 text-muted">PR #{i.item.pr}</Mono>)}
+                      </span>
                     ) : (
-                      <span className="text-muted">{i.open ? 'open, not started' : 'closed'}</span>
+                      <span className="text-muted">{i.ticket ? ticketWhere(i.ticketState, i.team) : i.open ? 'open, not started' : 'closed'}</span>
                     )}
+                    {i.waitsFor && <span className="block text-[11.5px] text-muted">waits for {i.waitsFor}</span>}
                   </td>
                 </tr>
               ))}
