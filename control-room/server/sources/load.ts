@@ -319,7 +319,10 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
     const om = folder ? onMain.get(folder) ?? names.map((n) => onMain.get(n)).find(Boolean) : undefined
     let changed: string[] | undefined
     if (pull?.files.length) changed = pull.files.map((f) => f.path)
-    else if (branch && base && !om) changed = await g.changedFiles(repo, base, branch.ref)
+    else if (branch && base && !om) {
+      const r = await g.workRange(repo, base, branch.ref, pull)
+      changed = await g.changedFiles(repo, r.from, r.to)
+    }
     else if (om) changed = om.files
 
     // events of another attempt (its own work/<id>-* branch) are not this attempt's

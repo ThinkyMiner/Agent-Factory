@@ -371,6 +371,41 @@ describe('missing and damaged inputs', () => {
     }
   })
 
+  test('a merged PR bounds the item\'s commits, files and diff by its head: later commits on the branch are not its', async () => {
+    const fx = makeTeamsFactory(join(root, 'bounded'))
+    process.env.PATH = `${fx.bin}:${PATH}`
+    const gh = JSON.parse(readFileSync(fx.github, 'utf8')) as GitHubData
+    const put = (rel: string, text: string) => {
+      mkdirSync(join(fx.repo, rel, '..'), { recursive: true })
+      writeFileSync(join(fx.repo, rel), text)
+      fx.git('add', rel)
+    }
+    fx.git('switch', '-q', '-c', 'work/35-share-copy', 'feature/f001-reading-list')
+    put('web/share.ts', 'export const share = 1\n')
+    fx.git('commit', '-qm', 'work 35: copy button')
+    const head = fx.git('rev-parse', 'HEAD').trim()
+    fx.git('switch', '-q', 'feature/f001-reading-list')
+    fx.git('merge', '-q', '--no-ff', '-m', 'Merge pull request #37', 'work/35-share-copy') // GitHub's merge commit
+    fx.git('switch', '-q', 'work/35-share-copy')
+    put('web/late.ts', 'export const late = 1\n')
+    fx.git('commit', '-qm', 'work 35: after the merge')
+    fx.git('switch', '-q', 'planning/c002-share-links')
+    gh.issues.push({ ...gh.issues[0]!, number: 35, title: 'Copy button', labels: ['feature:f001-reading-list', 'team:frontend'] })
+    const base = gh.pulls.find((p) => p.number === 22)!
+    gh.pulls.push({ ...base, number: 37, title: 'Copy button', headRefName: 'work/35-share-copy', headSha: head, baseRefName: 'feature/f001-reading-list', state: 'MERGED', files: [] }) // no file list from GitHub
+    writeFileSync(fx.github, JSON.stringify(gh))
+    const f = new Factory({ repo: fx.repo, dataDir: join(fx.root, 'data'), staleMinutes: 30, github: { kind: 'demo', path: fx.github }, transcriptsRoot: join(fx.root, 'none') })
+    await f.start()
+    try {
+      expect(f.state.byId.get('35')!.riskFiles.map((x) => x.path)).toEqual(['web/share.ts'])
+      const d = (await f.itemDetail('35'))!
+      expect(d.commits.map((c) => c.subject)).toEqual(['work 35: copy button'])
+      expect(await f.diff('35', 'web/share.ts')).toContain('+export const share = 1')
+    } finally {
+      f.stop()
+    }
+  })
+
   test('a dispatched cycle: each decision keeps its text and names the issues that build it', async () => {
     const fx = makeTeamsFactory(join(root, 'records'))
     process.env.PATH = `${fx.bin}:${PATH}`

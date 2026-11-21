@@ -166,6 +166,19 @@ export async function dirtyPaths(repo: string, paths: string[]): Promise<Set<str
   return new Set((out ?? '').split('\0').filter((l) => l.length > 3).map((l) => l.slice(3)))
 }
 
+/** What a work branch's change spans: base..ref, except that a merged or closed PR ends at its head (later commits on the branch
+ *  are not the PR's) and one merged with a merge commit starts at that merge's first parent (its head is already in base). */
+export async function workRange(repo: string, base: string, ref: string, pr?: { state: string; headSha: string }): Promise<{ from: string; to: string }> {
+  const head = pr && pr.state !== 'OPEN' && pr.headSha ? (await ok(git(repo, ['rev-parse', '--verify', '-q', `${pr.headSha}^{commit}`])))?.trim() : undefined
+  if (!head) return { from: base, to: ref }
+  if ((await ok(git(repo, ['merge-base', '--is-ancestor', head, base]))) !== null) {
+    const merge = (await ok(git(repo, ['rev-list', '--ancestry-path', '--first-parent', `${head}..${base}`])))?.trim().split('\n').at(-1)
+    // ponytail: only GitHub's merge commit is traced (head is its second parent); a fast-forward shows nothing beyond base
+    if (merge && (await ok(git(repo, ['rev-parse', '--verify', '-q', `${merge}^2`])))?.trim() === head) return { from: `${merge}^1`, to: head }
+  }
+  return { from: base, to: head }
+}
+
 export async function changedFiles(repo: string, base: string, ref: string): Promise<string[]> {
   const out = await ok(git(repo, ['diff', '--name-only', '-z', `${base}...${ref}`]))
   return (out ?? '').split('\0').filter(Boolean)
