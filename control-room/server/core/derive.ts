@@ -186,6 +186,7 @@ export interface ItemView {
   mergedInto?: string // the branch its PR merged into (the PR's base: main, or feature/<f> in team mode)
   readyAt?: string
   mergedBy?: 'auto' | 'human'
+  merger?: string // the GitHub login on the merge (for auto-merge, whoever enabled it)
   firstPass?: boolean
   reverted?: ItemInputs['revertedBy']
   spec?: Parsed<Spec>
@@ -471,8 +472,9 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
   const failingChecks = (pr?.checks ?? []).filter((c) => checkState(c) === 'fail' && !gateRerun(c))
   const readyAt = issue?.labelEvents.filter((e) => (e.label === 'factory:ready' || (dispatched && e.label === 'feature:' + feature)) && e.action === 'added').at(0)?.at ?? events.find((e) => e.stage === 'intake')?.ts
   let mergedBy: ItemView['mergedBy']
-  // Who merged is inferred: agents push and merge with the same account, so a merge with neither label nor auto-merge names no one.
-  if (pr?.state === 'MERGED') mergedBy = approved ? 'human' : pr.autoMerge || pr.timeline.some((x) => x.type === 'auto_merge_enabled') ? 'auto' : undefined
+  // Who merged is inferred: auto-merge evidence is auto (approved or not); else human-approved is you; else no one, since
+  // agents push and merge with the same account. GitHub's merger login is kept beside it, as GitHub says it.
+  if (pr?.state === 'MERGED') mergedBy = pr.autoMerge || pr.timeline.some((x) => x.type === 'auto_merge_enabled') ? 'auto' : approved ? 'human' : undefined
 
   // ---------- the state rules, first match wins (DESIGN.md §5) ----------
   let state: State
@@ -640,6 +642,7 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
     mergedInto: state === 'merged' ? (pr?.state === 'MERGED' ? pr.baseRefName : undefined) ?? (inp.onMain ? 'main' : undefined) : undefined,
     readyAt,
     mergedBy,
+    merger: pr?.state === 'MERGED' ? pr.merger : undefined,
     firstPass: state === 'merged' ? fixRounds === 0 && !inp.earlierAttempts : undefined,
     reverted: inp.revertedBy,
     spec,

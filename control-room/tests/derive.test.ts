@@ -197,8 +197,11 @@ describe('merged and closed', () => {
   test('merged: first pass, auto vs human', () => {
     const auto = derive({ stageEvents: RUN_TO_PR(), pull: pull({ state: 'MERGED', mergedAt: ago(30), timeline: [{ type: 'auto_merge_enabled', at: ago(59) }] }) })
     expect(auto).toMatchObject({ state: 'merged', column: 'merged', mergedAt: ago(30), mergedBy: 'auto', firstPass: true, fixRounds: 0 })
-    const human = derive({ stageEvents: [...RUN_TO_PR(), se('gate', 'failed', 69)], pull: pull({ state: 'MERGED', mergedAt: ago(30), labels: ['risk:R2', 'human-approved'] }) })
+    const human = derive({ stageEvents: [...RUN_TO_PR(), se('gate', 'failed', 69)], pull: pull({ state: 'MERGED', mergedAt: ago(30), labels: ['risk:R2', 'human-approved'], autoMerge: false }) }) // merged by hand
     expect(human).toMatchObject({ mergedBy: 'human', firstPass: false, fixRounds: 1, fixByStage: { gate: 1 } })
+    // approved, then auto-merge merged it: auto, not "merged by you"; GitHub's merger login is kept as said
+    const approvedAuto = derive({ stageEvents: RUN_TO_PR(), pull: pull({ state: 'MERGED', mergedAt: ago(30), labels: ['risk:R2', 'human-approved'], autoMerge: true, merger: 'octo' }) })
+    expect(approvedAuto).toMatchObject({ mergedBy: 'auto', merger: 'octo' })
   })
 
   test('merged on a second attempt is not a first pass, though this attempt had no fix rounds', () => {

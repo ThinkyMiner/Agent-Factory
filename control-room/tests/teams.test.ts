@@ -107,6 +107,13 @@ test('a pull request keeps the branch it merges into (GitHub\'s baseRefName); wi
   expect(PULLS).toContain('baseRefName')
 })
 
+test('a merged pull request keeps the GitHub login that merged it (for auto-merge, whoever enabled it)', () => {
+  const n = { number: 1, title: 't', state: 'MERGED', headRefName: 'work/1-x', createdAt: '2026-11-01T00:00:00Z', url: 'u' }
+  expect(normalisePull({ ...n, mergedBy: { login: 'octo' } }).merger).toBe('octo')
+  expect(normalisePull(n).merger).toBeUndefined()
+  expect(PULLS).toContain('mergedBy { login }')
+})
+
 describe('a team-mode factory', () => {
   let fx: ReturnType<typeof makeTeamsFactory>
   let s: Awaited<ReturnType<typeof computeState>>

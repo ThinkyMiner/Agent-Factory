@@ -235,6 +235,7 @@ export const PullSchema = z.object({
   url: z.string().default(''),
   body: z.string().default(''),
   autoMerge: z.boolean().default(false),
+  merger: optionalString, // the login GitHub says merged it; for auto-merge, whoever enabled it. Agents use the same account.
   checks: z.array(CheckSchema).default([]),
   files: z.array(z.object({ path: z.string(), additions: z.number().default(0), deletions: z.number().default(0) })).default([]),
   timeline: z
