@@ -4,7 +4,7 @@
 // factory (message bodies, briefs, decisions) is passed through as strings, never interpreted.
 import { z } from 'zod'
 import type { ItemView, NeedsEntry } from './derive.ts'
-import type { FactoryEvent, Issue, Notice, Parsed, Pull } from './types.ts'
+import { checkState, type FactoryEvent, type Issue, type Notice, type Parsed, type Pull } from './types.ts'
 import { roundWords } from './words.ts'
 import { prNext } from './meta.ts'
 
@@ -580,7 +580,7 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
 
 /** Where things are: the newest feature (on main, its PR to main, its integration round, its items),
  *  and beside it a planning cycle not yet dispatched. A feature already on main is shown only alone. */
-export function phasesOf(cycle: CycleView | undefined, features: FeatureView[], pulls: Pull[], next: (p: Pull) => ReturnType<typeof prNext> = (p) => prNext(p, 'R2', 'none')): Phase[] {
+export function phasesOf(cycle: CycleView | undefined, features: FeatureView[], pulls: Pull[], next: (p: Pull, floor?: 'R2') => ReturnType<typeof prNext> = (p) => prNext(p, 'R2', 'none')): Phase[] {
   const st = cycle?.state
   const planning = cycle && st?.status !== 'dispatched' && st?.status !== 'closed' ? cyclePhase(cycle) : undefined
   const f = features.find((x) => x.name === st?.feature) ?? features.at(-1)
@@ -598,7 +598,7 @@ function cyclePhase(cycle: CycleView): Phase {
   return { step: 'planning', label: `Planning ${cycle.name}: ${roundWords(st.status)}`, next: owed(cycle.waiting[0]) ?? { who: 'orchestrator', what: 'close the round (round.sh next)', href: '/planning' } }
 }
 
-function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefined, stepOf: (p: Pull) => ReturnType<typeof prNext>): Phase {
+function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefined, stepOf: (p: Pull, floor?: 'R2') => ReturnType<typeof prNext>): Phase {
   const toMain = pulls.filter((p) => p.headRefName === `integrate/${f.name}`).sort((a, b) => b.number - a.number)[0]
   if (toMain?.state === 'MERGED') return { step: 'merged', label: `Merged: ${f.name} is on main`, detail: `PR #${toMain.number} merged.`, next: cycle && !cycle.active ? { who: 'orchestrator', what: 'the next planning cycle (/plan)', href: '/planning' } : undefined }
   if (toMain?.state === 'OPEN') {
@@ -617,25 +617,36 @@ function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefine
       ? { step: 'integration', label: `Integration round ${round ?? '?'} passed`, detail: `The e2e tests passed on ${report.ref}. Research reviews the acceptance tests; then the orchestrator opens the pull request to main.`, next: { who: 'orchestrator', what: 'the acceptance review, then integrate.sh pr', href: '/planning' } }
       : { step: 'integration', label: `Integration round ${round ?? '?'} failed`, detail: `The e2e tests failed on ${report.ref}; ${tickets.length} ticket${tickets.length === 1 ? '' : 's'} open for the teams that own the failures.`, next: tickets.length ? { who: teams.join(', '), what: `fix ${tickets.map((t) => `#${t.number}`).join(', ')}, then the next round runs`, href: '/planning' } : { who: 'orchestrator', what: 'file tickets from attribution.md (integrate.sh tickets)', href: '/planning' } }
   }
-  const blocked = work.find((i) => i.item?.state === 'blocked')
-  const yours = work.filter((i) => i.item?.state === 'awaiting-approval' || i.item?.state === 'awaiting-merge')
-  const running = work.filter((i) => i.item && ['in-progress', 'pr-open', 'awaiting-approval', 'awaiting-merge'].includes(i.item.state))
+  const doing = f.items.filter((i) => i.item) // the dispatched items and the follow-up tickets being worked
+  const blocked = doing.find((i) => i.item!.state === 'blocked')
+  // an item with an open PR: its next step is the PR's, from the helper Needs you and Planning use
+  const prSteps = doing.filter((i) => ['pr-open', 'awaiting-approval', 'awaiting-merge'].includes(i.item!.state)).map((i) => {
+    const st = i.item!.state
+    const pull = pulls.find((p) => p.number === i.item!.pr && p.state === 'OPEN')
+    const n = pull && stepOf(pull, st === 'awaiting-approval' ? 'R2' : undefined)
+    // without GitHub data: what the item's state says
+    const what = n?.what ?? (st === 'awaiting-merge' ? 'merge it' : st === 'awaiting-approval' ? (i.item!.autoMerge ? 'add human-approved; auto-merge then merges it once the checks pass' : 'add human-approved, wait for the checks to pass, then merge') : 'its checks and review (no GitHub data)')
+    const who = n ? (n.who === 'its author' ? (i.team ?? 'its author') : n.who) : st === 'pr-open' ? (i.team ?? '?') : 'you'
+    const wait = who === 'you' ? 'waiting on you' : n?.kind === 'failed' ? 'with failing checks' : !pull || pull.checks.some((c) => checkState(c) === 'pending') ? 'waiting on checks' : 'merging'
+    return { n: i.number, who, what: `#${i.number}${i.item!.pr ? ` (PR #${i.item!.pr})` : ''}: ${what}`, wait }
+  })
+  // "in progress" is an agent at work: an item with no PR yet
+  const inProgress = doing.filter((i) => i.item!.state === 'in-progress')
+  const yours = prSteps.filter((x) => x.who === 'you')
+  const others = [...prSteps.filter((x) => x.who !== 'you'), ...inProgress.map((i) => ({ n: i.number, who: i.team ?? '?', what: `finish #${i.number}` }))]
   const ready = work.filter((i) => i.item?.state === 'ready' && i.waitsFor && !/^#/.test(i.waitsFor))
+  const step = (xs: { n: number; who: string; what: string }[]) => ({ who: [...new Set(xs.map((x) => x.who))].join(', '), what: xs.map((x) => x.what).join('; '), href: `/items/${xs[0]!.n}` })
   const next = blocked
     ? { who: 'you', what: `answer #${blocked.number} (it stopped with a question)`, href: `/items/${blocked.number}` }
     : yours.length
-      ? {
-          who: 'you',
-          what: yours
-            .map((i) => `#${i.number}${i.item!.pr ? ` (PR #${i.item!.pr})` : ''}: ${i.item!.state === 'awaiting-merge' ? 'merge it' : i.item!.autoMerge ? 'add human-approved; auto-merge then merges it once the checks pass' : 'add human-approved, wait for the checks to pass, then merge'}`)
-            .join('; '),
-          href: `/items/${yours[0]!.number}`,
-        }
-    : running.length
-      ? { who: [...new Set(running.map((i) => i.team ?? '?'))].join(', '), what: `finish ${running.map((i) => `#${i.number}`).join(', ')}`, href: '/board' }
-      : ready.length
-        ? { who: ready[0]!.team ?? '?', what: `start #${ready[0]!.number} (the sweep types it when the session is free)`, href: `/items/${ready[0]!.number}` }
-        : undefined
+      ? step(yours)
+      : others.length
+        ? step(others)
+        : ready.length
+          ? { who: ready[0]!.team ?? '?', what: `start #${ready[0]!.number} (the sweep types it when the session is free)`, href: `/items/${ready[0]!.number}` }
+          : undefined
+  const waiting = Object.entries(Object.groupBy(prSteps, (x) => x.wait)).map(([w, xs]) => `${xs!.length} pull request${xs!.length === 1 ? '' : 's'} ${w}`)
+  const deps = f.items.filter((i) => i.waitsFor?.startsWith('#')).map((i) => `#${i.number} waits for ${i.waitsFor}`)
   // follow-ups: tickets a team accepted and worked, beside the dispatched items
   const follow = f.items.filter((i) => i.ticket && i.item)
   const followMerged = follow.filter((i) => i.item!.state === 'merged').length
@@ -645,7 +656,7 @@ function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefine
   return {
     step: 'building',
     label: `Building ${f.name}: ${merged.length} of ${work.length} dispatched item${work.length === 1 ? '' : 's'} merged into its feature branch${follow.length ? `, +${follow.length} follow-up ticket${follow.length === 1 ? '' : 's'}${followMerged ? ` (${followMerged} merged)` : ''}` : ''}`,
-    detail: [running.length ? `${running.length} in progress.` : '', e2e].filter(Boolean).join(' '),
+    detail: [inProgress.length ? `${inProgress.length} in progress.` : '', waiting.length ? `${waiting.join(', ')}.` : '', deps.length ? `${deps.join('; ')}.` : '', e2e].filter(Boolean).join(' '),
     next,
   }
 }

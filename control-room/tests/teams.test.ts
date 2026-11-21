@@ -9,7 +9,7 @@ import type { ItemView } from '../server/core/derive.ts'
 import { herdrSessions } from '../server/sources/teams.ts'
 import { Factory } from '../server/factory.ts'
 import { PULLS, normalisePull } from '../server/sources/github.ts'
-import type { GitHubData } from '../server/core/types.ts'
+import type { GitHubData, Pull } from '../server/core/types.ts'
 import { computeState, readDemoGitHub } from '../server/state.ts'
 import { HOSTILE, PRIVATE, QUESTION, SEALED, makeTeamsFactory } from './teams-fixture.ts'
 
@@ -60,7 +60,7 @@ describe('parsers', () => {
   test('the phase: an item held at your approval makes the next step yours', () => {
     const row = (number: number, state: ItemView['state'] | undefined, more: object = {}) => ({ number, title: `t${number}`, url: '', team: 'frontend', ticket: false, open: true, ...(state && { item: { state, pr: number + 4 } }), ...more })
     const f = { name: 'f001-first-card', refs: {}, docs: [], pulls: [], items: [row(7, 'merged'), row(8, 'awaiting-approval'), row(9, 'ready', { waitsFor: '#8 fit-layout (awaiting-approval)' })] }
-    expect(phasesOf(undefined, [f], [])).toEqual([{ step: 'building', label: 'Building f001-first-card: 1 of 3 dispatched items merged into its feature branch', detail: '1 in progress. No integration branch yet: the orchestrator saves the e2e tests on integrate/f001-first-card.', next: { who: 'you', what: '#8 (PR #12): add human-approved, wait for the checks to pass, then merge', href: '/items/8' } }])
+    expect(phasesOf(undefined, [f], [])).toEqual([{ step: 'building', label: 'Building f001-first-card: 1 of 3 dispatched items merged into its feature branch', detail: '1 pull request waiting on you. #9 waits for #8 fit-layout (awaiting-approval). No integration branch yet: the orchestrator saves the e2e tests on integrate/f001-first-card.', next: { who: 'you', what: '#8 (PR #12): add human-approved, wait for the checks to pass, then merge', href: '/items/8' } }])
   })
   test('the phase while building: dispatched items, follow-up tickets, and the e2e tests on the integration branch', () => {
     const row = (number: number, state: ItemView['state'] | undefined, more: object = {}) => ({ number, title: `t${number}`, url: '', team: 'frontend', ticket: false, open: true, ...(state && { item: { state, pr: number + 4 } }), ...more })
@@ -70,6 +70,21 @@ describe('parsers', () => {
     expect(p!.detail).toBe('1 in progress. 3 e2e test files saved on origin/integrate/f001-first-card; no integration round yet.')
     const [q] = phasesOf(undefined, [{ name: 'f001-first-card', refs: {}, docs: [], pulls: [], items: items.slice(0, 3) }], [])
     expect(q!.detail).toBe('1 in progress. No integration branch yet: the orchestrator saves the e2e tests on integrate/f001-first-card.')
+  })
+  test('the phase: an item\'s open PR takes its next step from the PR, not "finish"; what waits for what is said', () => {
+    const row = (number: number, state: ItemView['state'] | undefined, more: object = {}) => ({ number, title: `t${number}`, url: '', team: 'frontend', ticket: false, open: true, ...(state && { item: { state, pr: number + 9 } }), ...more })
+    const items = [row(7, 'merged'), row(8, 'pr-open'), row(9, 'ready', { waitsFor: '#8 fit-layout (pr-open)' }), row(10, 'ready', { waitsFor: '#9 placement (ready)' })]
+    const pr17 = { number: 17, title: 't8', state: 'OPEN', isDraft: false, headRefName: 'work/8-fit-layout', headSha: '', labels: ['risk:R2', 'human-approved'], createdAt: '', url: 'https://github.invalid/harbor/pull/17', body: '', autoMerge: true, files: [], timeline: [],
+      checks: [{ name: 'factory-tests', status: 'IN_PROGRESS' }] } as Pull
+    const f = { name: 'f001-first-card', refs: {}, docs: [], pulls: [], items }
+    const [p] = phasesOf(undefined, [f], [pr17])
+    expect(p!.next).toEqual({ who: 'GitHub', what: '#8 (PR #17): auto-merge merges it when the checks pass', href: '/items/8' }) // approved, auto-merge on, checks pending
+    expect(p!.detail).toBe('1 pull request waiting on checks. #9 waits for #8 fit-layout (pr-open); #10 waits for #9 placement (ready). No integration branch yet: the orchestrator saves the e2e tests on integrate/f001-first-card.')
+    // a failing check: the item's team fixes it; an agent at work on another item is "in progress"
+    const red = { ...pr17, checks: [{ name: 'factory-tests', status: 'COMPLETED', conclusion: 'FAILURE' }] } as Pull
+    const [q] = phasesOf(undefined, [{ ...f, items: [...items, row(11, 'in-progress', { team: 'backend', item: { state: 'in-progress' } })] }], [red])
+    expect(q!.next).toEqual({ who: 'frontend, backend', what: '#8 (PR #17): fix the failing check: factory-tests; finish #11', href: '/items/8' })
+    expect(q!.detail).toMatch(/^1 in progress\. 1 pull request with failing checks\. /)
   })
   test('who a round waits for, by its own rule', () => {
     const s = (status: string, draft = 0): CycleState => ({ status, teams: ['a', 'b'], draft, strikes: {}, unanswered: [], history: [] }) as CycleState
