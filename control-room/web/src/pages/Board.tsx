@@ -6,7 +6,7 @@ import { useApiState, useNow, type Column, type ItemSummary, type Tier } from '@
 import { ago, cn } from '@/lib/utils'
 import { PageHeader } from '@/components/Layout'
 import { Empty, ErrorState, Loading } from '@/components/States'
-import { ItemId, LiveDot, NEEDS, NeedsTag, StageDots, StageLabel, StateBadge, TierChip } from '@/components/vocab'
+import { ItemId, LiveDot, NEEDS, NeedsTag, StageDots, StageLabel, StateBadge, TIER_HINT, TierChip } from '@/components/vocab'
 
 const COLUMNS: { key: Column; label: string; hint: string }[] = [
   { key: 'proposed', label: 'Proposed', hint: 'Issues labelled factory:proposed' },
@@ -65,7 +65,7 @@ export function Board() {
         </label>
         <FilterGroup label="Tier">
           {TIERS.map((t) => (
-            <Toggle key={t} on={tiers.includes(t)} onClick={() => toggle('tier', tiers, t)} label={`Tier ${t}`}>
+            <Toggle key={t} on={tiers.includes(t)} onClick={() => toggle('tier', tiers, t)} label={`Tier ${t}`} title={`Risk tier ${TIER_HINT[t]}`}>
               <span className="font-mono">{t}</span>
             </Toggle>
           ))}
@@ -88,7 +88,11 @@ export function Board() {
         {error && <ErrorState title="Could not load the board" error={error} onRetry={() => void refetch()} />}
         {data && data.items.length === 0 && (
           <Empty title="No work items yet">
-            Run <code className="font-mono">/groom</code> in the factory to propose issues; they appear here as Proposed.
+            {data.factory.teams ? (
+              <>In team mode items come from dispatch: once you approve and merge a planning cycle's decisions, <code className="font-mono">/dispatch</code> makes one issue per row of its work breakdown, and they appear here as Ready. See <Link to="/planning" className="underline">Planning</Link> for where the cycle is.</>
+            ) : (
+              <>Run <code className="font-mono">/groom</code> in the factory to propose issues; they appear here as Proposed.</>
+            )}
           </Empty>
         )}
         {data && data.items.length > 0 && (
@@ -187,9 +191,9 @@ function FilterGroup({ label, children }: { label: string; children: React.React
     </div>
   )
 }
-function Toggle({ on, onClick, label, children }: { on: boolean; onClick: () => void; label: string; children: React.ReactNode }) {
+function Toggle({ on, onClick, label, title, children }: { on: boolean; onClick: () => void; label: string; title?: string; children: React.ReactNode }) {
   return (
-    <button aria-pressed={on} aria-label={label} onClick={onClick} className={cn('px-2 py-1 text-[11.5px] text-muted hover:text-fg', on && 'bg-accent text-white hover:text-white')}>
+    <button aria-pressed={on} aria-label={label} title={title} onClick={onClick} className={cn('px-2 py-1 text-[11.5px] text-muted hover:text-fg', on && 'bg-accent text-white hover:text-white')}>
       {children}
     </button>
   )

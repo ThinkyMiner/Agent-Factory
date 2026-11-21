@@ -23,6 +23,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { STAGE_WORDS, TERMS } from '../../../server/core/words.ts'
 import type { Drift, NeedsKind, Stage, State, StageView, Tier } from '@/lib/api'
 
 type Tone = 'pass' | 'fail' | 'block' | 'run' | 'wait' | 'muted' | 'attention'
@@ -84,7 +85,7 @@ export function StageLabel({ stage, round, status }: { stage?: Stage; round?: nu
   return (
     <span className="inline-flex items-center gap-1 whitespace-nowrap">
       {status && <StatusGlyph status={status} />}
-      <span>{stage}</span>
+      <span title={STAGE_WORDS[stage]} className="cursor-help">{stage}</span>
       {!!round && <span className="text-muted tabular">r{round}</span>}
     </span>
   )
@@ -135,7 +136,7 @@ export function NeedsTag({ kind, className }: { kind: NeedsKind; className?: str
 export const needsTone = (k: NeedsKind) => NEEDS[k].tone
 
 // ---- risk tier: a square, outlined, monospace chip; never coloured like a status ----
-const TIER_HINT: Record<Tier, string> = {
+export const TIER_HINT: Record<Tier, string> = {
   R0: 'R0: cannot break the product (docs, copy, records)',
   R1: 'R1: ordinary change inside existing boundaries',
   R2: 'R2: a human reads and approves the diff',
@@ -162,6 +163,17 @@ export function TierChip({ tier, className }: { tier?: Tier; className?: string 
 }
 
 // ---- small bits ----
+/** A factory term with its explanation on hover and focus (dotted underline says there is one). */
+export function Term({ k, children, className }: { k: keyof typeof TERMS | string; children?: ReactNode; className?: string }) {
+  const hint = TERMS[k]
+  if (!hint) return <>{children ?? k}</>
+  return (
+    <abbr title={hint} className={cn('cursor-help underline decoration-dotted decoration-1 underline-offset-2', className)}>
+      {children ?? k}
+    </abbr>
+  )
+}
+
 export const Mono = ({ children, className }: { children: ReactNode; className?: string }) => <span className={cn('font-mono text-[12px]', className)}>{children}</span>
 
 export function ItemId({ id, link = true, className }: { id: string; link?: boolean; className?: string }) {

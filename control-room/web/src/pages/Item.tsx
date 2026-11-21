@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { Tabs } from 'radix-ui'
 import { ArrowLeft, ExternalLink, FileWarning, GitCommitHorizontal, Radio, ShieldQuestion } from 'lucide-react'
-import { getText, HttpError, useItem, useNow, type ItemDetail, type StageView } from '@/lib/api'
+import { getText, HttpError, useItem, useNow, useTeams, type ItemDetail, type StageView } from '@/lib/api'
 import { ago, cn, compact, duration, when } from '@/lib/utils'
 import { Md, Raw } from '@/components/Markdown'
 import { Patch } from '@/components/Patch'
@@ -112,7 +112,38 @@ function Header({ item }: { item: ItemDetail }) {
           <MarkReady issue={item.issue.number} />
         </div>
       )}
+      <TeamLinks item={item} />
       <ActionTrail issue={item.issue?.number} pr={item.pr?.number} />
+    </div>
+  )
+}
+
+/** Team mode: the item's place in its feature: its work-breakdown row, the decisions it builds, the
+ *  ticket it is, and what it waits for, each linked to Planning. */
+function TeamLinks({ item }: { item: ItemDetail }) {
+  const { data } = useTeams()
+  const f = data?.features.find((x) => x.items.some((i) => String(i.number) === item.id))
+  const row = f?.items.find((i) => String(i.number) === item.id)
+  if (!f || !row) return null
+  const records = new Set(data?.cycle?.records.map((r) => r.id))
+  return (
+    <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[12.5px] text-muted">
+      <span>feature <Link to="/planning#features" className="font-mono text-[12px] text-fg underline underline-offset-2">{f.name}</Link></span>
+      {row.team && <span>team <Mono className="text-fg">{row.team}</Mono></span>}
+      {row.dispatch && <span>work-breakdown item <Mono className="text-fg">{row.dispatch.item}</Mono></span>}
+      {!!row.dispatch?.decisions.length && (
+        <span>
+          builds{' '}
+          {row.dispatch.decisions.map((d, k) => (
+            <span key={d}>
+              {k > 0 && ', '}
+              {records.has(d) ? <Link to={`/planning#decision-${d}`} className="font-mono text-[12px] text-fg underline underline-offset-2">{d}</Link> : <span className="font-mono text-[12px]" title="a record of an earlier cycle, in its planning folder on main">{d}</span>}
+            </span>
+          ))}
+        </span>
+      )}
+      {row.ticket && <span>ticket{row.from ? ` from ${row.from}` : ''}{row.ticketState ? `: ${row.ticketState}` : ''}</span>}
+      {row.waitsFor && <span>waits for {row.waitsFor}</span>}
     </div>
   )
 }

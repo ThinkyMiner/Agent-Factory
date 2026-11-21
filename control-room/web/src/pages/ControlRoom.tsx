@@ -5,7 +5,7 @@ import { useApiState, useNow, useTeams, type ApiState, type NeedsEntry, type Ses
 import { ago, cn, elapsed } from '@/lib/utils'
 import { PageHeader } from '@/components/Layout'
 import { Empty, ErrorState, Loading, Section } from '@/components/States'
-import { ItemId, LiveDot, Mono, NeedsTag, NEEDS, StageLabel, StateBadge, TierChip, TONE_BORDER, needsTone } from '@/components/vocab'
+import { ItemId, LiveDot, Mono, NeedsTag, NEEDS, StageLabel, StateBadge, Term, TierChip, TONE_BORDER, needsTone } from '@/components/vocab'
 
 export function ControlRoom() {
   const { data, error, isLoading, refetch } = useApiState()
@@ -32,6 +32,7 @@ function FactoryLine({ data }: { data: ApiState }) {
 function Home({ data }: { data: ApiState }) {
   return (
     <>
+      {data.factory.teams && <Where />}
       <NeedsYou entries={data.needsYou} />
       {data.factory.teams && <Teams />}
       <Running data={data} />
@@ -84,11 +85,38 @@ function NeedsYou({ entries }: { entries: NeedsEntry[] }) {
           </li>
         ))}
       </ul>
-      <p className="flex items-center gap-1.5 border-t border-border bg-surface-2 px-4 py-2 text-[12px] text-muted">
-        <Info aria-hidden className="size-3.5" /> {NEEDS.answer.label}: answer on the issue, then run <CopyCommand cmd="/work <id>" /> again. Rows clear themselves when the item moves on.
-      </p>
+      <div role="note" aria-label="How to clear these rows" className="space-y-0.5 border-t border-border bg-surface-2 px-4 py-2 text-[12px] text-muted">
+        {[...new Set(entries.map(hintKey))].map((k) => (
+          <p key={k} className="flex items-start gap-1.5">
+            <Info aria-hidden className="mt-0.5 size-3.5 shrink-0" /> <span>{HINT[k]}</span>
+          </p>
+        ))}
+        <p className="pl-5">Rows clear themselves when what they wait for moves on.</p>
+      </div>
     </section>
   )
+}
+
+/** What clears a row, by what the row is: an item's question, a pull request, a planning record, the sweep, a session. */
+const hintKey = (n: NeedsEntry) =>
+  n.id.startsWith('pr-') ? `pr-${n.kind}` : n.id.startsWith('sweep-') ? 'sweep' : n.id.startsWith('session-') ? `session-${n.kind}` : n.id.startsWith('decision-') ? 'decision' : n.id.startsWith('cycle-') ? 'cycle' : n.kind
+const HINT: Record<string, React.ReactNode> = {
+  answer: <>{NEEDS.answer.label}: answer on the item's issue, then run <CopyCommand cmd="/work <id>" /> again (in team mode the team's session picks it up).</>,
+  approve: <>{NEEDS.approve.label}: read the item's pull request, add the <Mono>human-approved</Mono> label on GitHub, then merge.</>,
+  merge: <>{NEEDS.merge.label}: the pull request is ready; merge it on GitHub (nothing will merge it for you).</>,
+  failed: <>{NEEDS.failed.label}: open the item to see which check or stage failed; the factory retries only when the run is started again.</>,
+  'waiting-input': <>{NEEDS['waiting-input'].label}: a Claude Code session is showing a prompt; answer it in that terminal.</>,
+  quiet: <>{NEEDS.quiet.label}: nothing was heard from the run for a while; look at its terminal: it may have stopped.</>,
+  info: <>{NEEDS.info.label}: nothing to do; it moves by itself, and is listed so nothing waits unseen.</>,
+  'pr-approve': <>Pull request rows: read it on GitHub, add the <Mono>human-approved</Mono> label, then merge.</>,
+  'pr-merge': <>Pull request rows marked {NEEDS.merge.label}: merge it on GitHub.</>,
+  'pr-failed': <>Pull request rows marked {NEEDS.failed.label}: a required check fails on GitHub; whoever owns the branch fixes it.</>,
+  'pr-info': <>Pull request rows marked {NEEDS.info.label}: approved, with auto-merge on: GitHub merges it when CI is green.</>,
+  decision: <>Planning records marked needs-human: decide them in the cycle's <Mono>DECISIONS.md</Mono> (or tell the orchestrator); see Planning.</>,
+  cycle: <>Planning rows: the round waits for your label or merge on the cycle's pull request; see Planning.</>,
+  sweep: <>Sweep rows: what the sweep (the factory's watchdog) saw in the team sessions, in its words; it clears when the sweep stops seeing it.</>,
+  'session-failed': <>Session rows: a team's Claude Code session reports an error in its Herdr tab.</>,
+  'session-waiting-input': <>Session rows: a team's Claude Code session waits on a prompt or dialog in its Herdr tab; answer it there.</>,
 }
 
 export function CopyCommand({ cmd, className }: { cmd: string; className?: string }) {
@@ -124,6 +152,42 @@ function Session({ s }: { s?: SessionTab }) {
   )
 }
 
+/** Team mode: where the project is, in plain words: each phase under way, its next step and who owns it. */
+function Where() {
+  const { data } = useTeams()
+  if (!data?.phases.length) return null
+  return (
+    <section aria-labelledby="where" className="mb-4 border border-border bg-surface">
+      <h2 id="where" className="sr-only">Where things are</h2>
+      <ol className="divide-y divide-border">
+        {data.phases.map((p, i) => (
+          <li key={i} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2.5">
+            <span className="label w-20 shrink-0">{STEP[p.step]}</span>
+            <span className="min-w-0 flex-1">
+              <span className="font-medium">{p.label}</span>
+              {p.detail && <span className="block text-[12.5px] text-muted">{p.detail}</span>}
+            </span>
+            {p.next && (
+              <span className="text-[12.5px]">
+                <span className="text-muted">next: </span>
+                <Mono className={cn(p.next.who === 'you' ? 'font-semibold text-attention' : 'text-fg')}>{p.next.who}</Mono>{' '}
+                {p.next.href?.startsWith('http') ? (
+                  <a href={p.next.href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">{p.next.what}</a>
+                ) : p.next.href ? (
+                  <Link to={p.next.href} className="underline underline-offset-2">{p.next.what}</Link>
+                ) : (
+                  p.next.what
+                )}
+              </span>
+            )}
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
+}
+const STEP: Record<string, string> = { 'no-cycle': 'start', planning: 'planning', approval: 'approval', stopped: 'stopped', building: 'building', integration: 'integration', 'pr-to-main': 'to main', merged: 'merged' }
+
 /** Team mode: each team's session, checkout and the item it holds; the cycle in one line. */
 function Teams() {
   const { data } = useTeams()
@@ -152,7 +216,7 @@ function Teams() {
               <th className="px-3 py-2">Team</th>
               <th className="px-3 py-2">Session</th>
               <th className="px-3 py-2">Checkout</th>
-              <th className="px-3 py-2">Holds</th>
+              <th className="px-3 py-2"><Term k="holds">Holds</Term></th>
             </tr>
           </thead>
           <tbody>
@@ -200,7 +264,11 @@ function Running({ data }: { data: ApiState }) {
   return (
     <Section title="Running now" count={data.running.length} id="running">
       {data.running.length === 0 ? (
-        <Empty title="Nothing is running">Start an item with <CopyCommand cmd="/work <id>" /> in a Claude Code session in the factory repo.</Empty>
+        data.factory.teams ? (
+          <Empty title="Nothing is running">No agent run or session is open. In team mode the sweep types <Mono>/work</Mono> into a team's session when it is free and a dispatched item is ready; the strip at the top says what comes next.</Empty>
+        ) : (
+          <Empty title="Nothing is running">Start an item with <CopyCommand cmd="/work <id>" /> in a Claude Code session in the factory repo.</Empty>
+        )
       ) : (
         <table className="panel w-full text-left">
           <thead className="text-muted">
@@ -229,7 +297,7 @@ function Running({ data }: { data: ApiState }) {
                 <td className="px-3 py-1.5">
                   <span className="inline-flex items-center gap-1.5">
                     {r.agentType !== 'foreman' && <LiveDot />}
-                    <Mono>{r.agentType}</Mono>
+                    <Mono>{r.agentType === 'foreman' ? <Term k="foreman" /> : r.agentType}</Mono>
                   </span>
                 </td>
                 <td className="px-3 py-1.5 text-right tabular text-muted">{elapsed(r.since, now)}</td>

@@ -9,7 +9,8 @@ import { useApiState, useNow, useRuns, type ItemSummary, type RunRow } from '@/l
 import { ago, cn, compact, duration } from '@/lib/utils'
 import { PageHeader } from '@/components/Layout'
 import { Empty, ErrorState, Loading } from '@/components/States'
-import { ItemId, LiveDot, Mono, STATUS, Status, StatusGlyph } from '@/components/vocab'
+import { ItemId, LiveDot, Mono, STATUS, Status, StatusGlyph, Term } from '@/components/vocab'
+import { STAGE_WORDS } from '../../../server/core/words.ts'
 
 type RunState = 'running' | 'waiting' | 'no-end' | 'finished' | 'abandoned'
 const RUN_STATES: RunState[] = ['running', 'waiting', 'no-end', 'finished', 'abandoned']
@@ -152,9 +153,9 @@ export function Runs() {
                             )}
                           </span>
                           <span role="cell" className="truncate">
-                            <Mono>{r.agentType}</Mono>
+                            <Mono>{r.agentType === 'foreman' ? <Term k="foreman" /> : r.agentType}</Mono>
                           </span>
-                          <span role="cell">{r.stage ?? <span className="text-faint">—</span>}</span>
+                          <span role="cell" title={r.stage && STAGE_WORDS[r.stage]}>{r.stage ?? <span className="text-faint">—</span>}</span>
                           <span role="cell" className="truncate" title={r.model ?? r.tokensNote}>
                             {r.model ? <Mono className="text-muted">{r.model}</Mono> : <span className="text-faint">—</span>}
                           </span>

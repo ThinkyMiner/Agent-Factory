@@ -358,6 +358,25 @@ describe('missing and damaged inputs', () => {
     expect(s.teams!.cycle!.records).toEqual([{ id: 'c001-D01', title: 'The list API', status: 'decided', text: '- owner: backend\n- affects: frontend\n- status: decided\n\n### Decision\nGET /api/list.', implementedBy: [19, 20, 21] }]) // #24's row names no decision
   })
 
+  test('where things are: the feature\'s phase and the planning round, each with its next step and owner', async () => {
+    const fx = makeTeamsFactory(join(root, 'phases'))
+    process.env.PATH = `${fx.bin}:${PATH}`
+    const gh = await readDemoGitHub(fx.github)
+    const brief = (st: Awaited<ReturnType<typeof computeState>>) => st.teams!.phases.map((p) => [p.step, p.label, p.next?.who, p.next?.what])
+    let s = await computeState(fx.repo, gh, { staleMinutes: 30 })
+    const planning = ['planning', 'Planning c002-share-links: decisions: the orchestrator drafts DECISIONS.md and each team accepts or objects', 'backend', 'accept or objection on draft 1']
+    expect(brief(s)).toEqual([['pr-to-main', 'Pull request to main: #25', 'you', 'read PR #25, add human-approved, then merge'], planning])
+    gh.data!.pulls = gh.data!.pulls.filter((p) => p.number !== 25) // before the PR to main: the failed round and its open ticket
+    s = await computeState(fx.repo, gh, { staleMinutes: 30 })
+    expect(brief(s)).toEqual([['integration', 'Integration round 1 failed', 'backend', 'fix #23, then the next round runs'], planning]) // #26 was declined
+    gh.data!.issues = gh.data!.issues.filter((i) => i.number !== 23) // no ticket open, no round yet counted: still building
+    s = await computeState(fx.repo, gh, { staleMinutes: 30 })
+    expect(brief(s)[0]).toEqual(['building', 'Building f001-reading-list: 1 of 4 items merged into its feature branch', 'you', 'answer #19 (it stopped with a question)'])
+    gh.data!.pulls.push({ ...gh.data!.pulls.find((p) => p.number === 22)!, number: 25, headRefName: 'integrate/f001-reading-list', state: 'MERGED' })
+    s = await computeState(fx.repo, gh, { staleMinutes: 30 })
+    expect(brief(s)).toEqual([planning]) // on main: what is under way is the next cycle
+  })
+
   test('the brief and the approval rounds need you while their pull request is open', async () => {
     const fx = makeTeamsFactory(join(root, 'four'))
     process.env.PATH = `${fx.bin}:${PATH}`
@@ -464,7 +483,7 @@ describe('missing and damaged inputs', () => {
       expect(s.teams).toBeNull() // not team mode: nothing changes
       writeFileSync(join(dir, 'factory/teams.json'), '{"teams": ')
       s = await computeState(dir, { status: { state: 'unavailable' } }, { staleMinutes: 30 })
-      expect(s.teams).toMatchObject({ rosterError: 'factory/teams.json: not valid JSON', teams: [], sessions: { available: false } })
+      expect(s.teams).toMatchObject({ rosterError: 'factory/teams.json: not valid JSON', teams: [], sessions: { available: false }, phases: [{ step: 'no-cycle', next: { who: 'orchestrator', what: 'open one with /plan' } }] })
       expect(s.snap.notices.find((n) => n.source === 'factory/teams.json')).toMatchObject({ level: 'error', raw: '{"teams": ' })
     } finally {
       process.env.PATH = PATH

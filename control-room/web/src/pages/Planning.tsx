@@ -1,16 +1,25 @@
 // Team mode: the planning cycle (status, round, who owes what, its pull request, the transcript)
 // and the features it dispatched. Everything here was written by agents: bodies are plain text,
 // documents go through the sanitising markdown renderer.
+import { useEffect } from 'react'
+import { useLocation } from 'react-router'
 import { useNow, useTeams, type CycleView, type FeatureView } from '@/lib/api'
 import { ago, cn, when } from '@/lib/utils'
 import { PageHeader } from '@/components/Layout'
 import { Empty, ErrorState, Loading, Section } from '@/components/States'
 import { Md } from '@/components/Markdown'
-import { ItemId, Mono, StateBadge } from '@/components/vocab'
+import { ItemId, Mono, StateBadge, Term } from '@/components/vocab'
+import { roundWords } from '../../../server/core/words.ts'
 import { CopyCommand } from './ControlRoom'
 
 export function Planning() {
   const { data, error, isPending, refetch } = useTeams()
+  // a link from elsewhere (/planning#decision-c001-D02): scroll to it once the page has it
+  const { hash } = useLocation()
+  const ready = !!data
+  useEffect(() => {
+    if (ready && hash) document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView({ block: 'center' })
+  }, [ready, hash])
   return (
     <>
       <PageHeader title="Planning" />
@@ -31,7 +40,7 @@ export function Planning() {
               </Section>
             )}
             <Section title="Features" count={data.features.length} id="features">
-              {data.features.length ? <div className="space-y-3">{data.features.map((f) => <Feature key={f.name} f={f} records={new Set(data.cycle?.records.map((r) => r.id))} />)}</div> : <Empty title="No feature dispatched yet" />}
+              {data.features.length ? <div className="space-y-3">{data.features.map((f) => <Feature key={f.name} f={f} records={new Set(data.cycle?.records.map((r) => r.id))} />)}</div> : <Empty title="No feature dispatched yet">Once you approve and merge the cycle's decisions, the orchestrator's <Mono>/dispatch</Mono> makes a feature branch and an issue per row of the work breakdown.</Empty>}
             </Section>
             {data.cycle && <Transcript c={data.cycle} />}
           </>
@@ -58,7 +67,8 @@ function Cycle({ c }: { c: CycleView }) {
         {c.error && <p role="alert" className="text-fail">{c.error}</p>}
         <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
           <Field k="Status">
-            <Mono className="text-fg">{s?.status ?? 'unknown'}</Mono>
+            <Mono className="text-fg" >{s?.status ?? 'unknown'}</Mono>
+            {s && <span className="block text-[12px] text-muted">{roundWords(s.status)}</span>}
             {s?.feature && <Mono className="text-muted"> → {s.feature}</Mono>}
           </Field>
           <Field k="In this status">
@@ -93,7 +103,7 @@ function Cycle({ c }: { c: CycleView }) {
               {s.teams.map((t) => (
                 <span key={t} className="mr-3 inline-block">
                   <Mono>{t}</Mono>
-                  {!!s.strikes[t] && <span className="text-block"> · {s.strikes[t]} strike{s.strikes[t] === 1 ? '' : 's'}</span>}
+                  {!!s.strikes[t] && <span className="text-block"> · {s.strikes[t]} <Term k="strike">strike{s.strikes[t] === 1 ? '' : 's'}</Term></span>}
                 </span>
               ))}
             </Field>
@@ -115,7 +125,7 @@ function Cycle({ c }: { c: CycleView }) {
         {!!s?.history.length && (
           <ol aria-label="Rounds" className="flex flex-wrap gap-x-1 gap-y-1 font-mono text-[11.5px] text-muted">
             {s.history.map((h, i) => (
-              <li key={i} title={when(h.at)} className={cn(i === s.history.length - 1 && 'text-fg')}>
+              <li key={i} title={`${roundWords(h.status)} · ${when(h.at)}`} className={cn('cursor-help', i === s.history.length - 1 && 'text-fg')}>
                 {i > 0 && <span aria-hidden>→ </span>}
                 {h.status}
               </li>
@@ -266,7 +276,7 @@ function Feature({ f, records }: { f: FeatureView; records: Set<string> }) {
                   <td className="py-1.5 pr-3">
                     {i.item ? <ItemId id={String(i.number)} /> : <ExtIssue url={i.url} n={i.number} />} {i.title}
                     {i.item && <> <a href={i.url} target="_blank" rel="noopener noreferrer" className="text-[11.5px] text-muted underline underline-offset-2" aria-label={`issue #${i.number} on GitHub`}>issue</a></>}
-                    {i.ticket && <Mono className="ml-1.5 text-muted" >ticket{i.from ? ` from ${i.from}` : ''}</Mono>}
+                    {i.ticket && <Mono className="ml-1.5 text-muted"><Term k="ticket" />{i.from ? ` from ${i.from}` : ''}</Mono>}
                     {i.dispatch && (
                       <span className="block text-[11.5px] text-muted">
                         item <Mono>{i.dispatch.item}</Mono>
