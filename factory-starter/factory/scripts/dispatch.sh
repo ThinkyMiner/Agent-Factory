@@ -42,6 +42,8 @@ st=$(jq -r '.status // empty' "$dir/state.json" 2>/dev/null || true)
 [ "$st" = approval ] || die "the cycle's state on main is '${st:-unreadable}', not approval"
 items=$(bash "$here/decisions.sh" items "$dir") || die "the approved decisions cannot be dispatched (above)"
 feature="f${cyc#c}"
+# Planning writes the work breakdown before the feature has an id, so features/<f>/ means this one.
+items=$(printf '%s\n' "$items" | jq -c --arg f "$feature" '.delivers |= gsub("features/<f>/"; "features/\($f)/")')
 
 # Research's acceptance criteria, unless the breakdown already gives research that file.
 acc="features/$feature/acceptance.md"

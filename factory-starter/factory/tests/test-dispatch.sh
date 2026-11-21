@@ -100,6 +100,12 @@ test_a_breakdown_that_has_the_acceptance_line_gets_no_second() {
   expect_eq "$(jsonl | jq -r .item | tr '\n' ' ')" "share-api share-button share-research "
 }
 
+test_a_breakdown_that_names_the_feature_as_f_gets_no_second() {
+  DEC_PERL='s{^\| share-research \|}{| acceptance |}; s{who shares notes and why}{features/<f>/acceptance.md, what done means}'; approved
+  by orchestrator "$DIS" "$C"; expect_rc 0; expect_out "3 item(s)"
+  expect_eq "$(jsonl | jq -r 'select(.item == "acceptance") | .delivers' | cut -d, -f1)" "features/$F/acceptance.md"
+}
+
 test_only_research_delivering_the_file_counts() {
   DEC_PERL='s{POST /shares and GET /s/:token}{features/f001-share-links/acceptance.md and the API}'; approved
   by orchestrator "$DIS" "$C"; expect_rc 0; expect_out "4 item(s)"
