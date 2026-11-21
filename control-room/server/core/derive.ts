@@ -52,6 +52,7 @@ export interface ItemInputs {
   onMain?: { at: string; sha?: string } // the work folder is in main's tree (merged)
   changedFiles?: string[] // vs main: branch diff, PR files or the squash commit
   testRefs?: TestRef[]
+  tickets?: { ts: string; what: string }[] // ticket.sh transitions of the ticket this item does
   revertedBy?: { at: string; ref: string; title: string }
   notices: Notice[]
 }
@@ -413,9 +414,16 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
 
   // BLOCKED.md and its freshness
   const bf = inp.files['BLOCKED.md']
-  const startedAfter = (ts: string) => events.some((e) => e.status === 'started' && e.stage !== 'observe' && t(e.ts) > t(ts))
-  const blocked = bf ? { text: bf.text, summary: blockedSummary(bf.text), time: bf.time, stale: startedAfter(bf.time), path: bf.path } : undefined
-  if (blocked?.stale) note('BLOCKED.md is older than later stage events; treating it as answered')
+  // answered once the item moved on after it: a later stage start, its PR opened or merged, a ticket transition
+  const movedOnAfter = (ts: string) =>
+    [
+      ...events.filter((e) => e.status === 'started' && e.stage !== 'observe').map((e) => ({ ts: e.ts, what: `${e.stage} started` })),
+      ...(pr ? [{ ts: pr.createdAt, what: `PR #${pr.number} opened` }, ...(pr.mergedAt ? [{ ts: pr.mergedAt, what: `PR #${pr.number} merged` }] : [])] : []),
+      ...(inp.tickets ?? []),
+    ].filter((x) => t(x.ts) > t(ts)).sort((a, b) => t(a.ts) - t(b.ts))[0]
+  const later = bf ? movedOnAfter(bf.time) : undefined
+  const blocked = bf ? { text: bf.text, summary: blockedSummary(bf.text), time: bf.time, stale: !!later, path: bf.path } : undefined
+  if (later) note(`BLOCKED.md is older than a later step (${later.what}); treating it as answered`)
 
   // pull request facts
   const approved = !!pr?.labels.includes('human-approved')

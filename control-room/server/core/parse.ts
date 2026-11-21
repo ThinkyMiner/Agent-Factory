@@ -427,10 +427,14 @@ export function parsePolicy(text: string): Parsed<{ autoMergeMax: Tier | 'none' 
 /** One-line summary of a BLOCKED.md for the needs-you row. The full text is always shown on open. */
 export function blockedSummary(text: string): string {
   const clean = (l: string) => l.replace(/^\s*(?:#+|[-*>]|\d+[.)])\s*/, '').replace(/\*\*/g, '').trim()
+  const body = (t: string) => lines(t).filter((l) => l.trim() && !/^\s*#/.test(l)).map(clean).filter(Boolean)
   const all = lines(text).filter((l) => l.trim())
-  const body = all.filter((l) => !/^\s*#/.test(l)).map(clean).filter(Boolean)
-  const q = body.find((l) => l.endsWith('?'))
-  return (q ?? body[0] ?? (all[0] ? clean(all[0]) : '') ?? '').slice(0, 240) || '(BLOCKED.md is empty)'
+  // the work skill asks for "the smallest decision the human needs to make": that section, when there is one
+  const ask = [...sections(text)].find(([h]) => /decision|question|need|ask|request/.test(h))?.[1]
+  const asked = ask ? body(ask) : []
+  const rest = body(text)
+  const q = asked.find((l) => l.endsWith('?')) ?? asked[0] ?? rest.find((l) => l.endsWith('?'))
+  return (q ?? rest[0] ?? (all[0] ? clean(all[0]) : '') ?? '').slice(0, 240) || '(BLOCKED.md is empty)'
 }
 
 /** A "## Not verified" section from a pull request body (factory/templates/pr-body.md). */

@@ -114,6 +114,16 @@ describe('blocked', () => {
     expect(r.flags).toContain('stale-blocked')
     expect(r.blocked?.stale).toBe(true)
   })
+  test('a BLOCKED.md older than the item\'s pull request or a ticket transition is answered, not current', () => {
+    const block = { stageEvents: [se('review', 'blocked', 300, 2)], files: { 'BLOCKED.md': file('Which wording?', 300) } }
+    const pr = derive({ ...block, pull: pull({ createdAt: ago(100) }) })
+    expect(pr).toMatchObject({ state: 'pr-open', blocked: { stale: true } })
+    expect(pr.notices.map((x) => x.message)).toContain('BLOCKED.md is older than a later step (PR #101 opened); treating it as answered')
+    const ticket = derive({ ...block, tickets: [{ ts: ago(200), what: 'ticket done (done)' }] })
+    expect(ticket.blocked?.stale).toBe(true)
+    expect(ticket.flags).toContain('stale-blocked')
+    expect(derive({ ...block, tickets: [{ ts: ago(400), what: 'ticket accepted (accepted)' }] })).toMatchObject({ state: 'blocked', blocked: { stale: false } })
+  })
 })
 
 describe('failed', () => {

@@ -261,6 +261,8 @@ describe('small files', () => {
     expect(blockedSummary('# Blocked\n\nNo question here')).toBe('No question here')
     expect(blockedSummary('# Blocked: #4 x')).toBe('Blocked: #4 x')
     expect(blockedSummary('')).toBe('(BLOCKED.md is empty)')
+    // the decision the human must make beats a question in "What I did"
+    expect(blockedSummary('# Blocked\n\n## What I did\nIs the old copy fine?\n\n## Decision needed\n- Record the wording approval in D07.\n')).toBe('Record the wording approval in D07.')
   })
   test('PR body "Not verified" section; "nothing known" means none', () => {
     expect(prNotVerified(TEMPLATE('factory/templates/pr-body.md'))).toEqual([])

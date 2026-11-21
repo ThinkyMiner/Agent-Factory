@@ -223,6 +223,39 @@ describe('missing and damaged inputs', () => {
     expect(s.needsYou.find((n) => n.id === 'pr-40')).toBeUndefined()
   })
 
+  test('an item tried twice: branch, PR, spec, files and block all come from the newest attempt', async () => {
+    const fx = makeTeamsFactory(join(root, 'attempts'))
+    process.env.PATH = `${fx.bin}:${PATH}`
+    const gh = await readDemoGitHub(fx.github)
+    const put = (rel: string, text: string) => {
+      mkdirSync(join(fx.repo, rel, '..'), { recursive: true })
+      writeFileSync(join(fx.repo, rel), text)
+    }
+    const spec = (title: string) => `---\nid: 21\ntitle: ${title}\nrisk_floor: R1\ntests: none\nstatus: draft\n---\n## Problem\np\n## Acceptance criteria\n- AC-1: the page lists links\n`
+    fx.git('switch', '-q', '-c', 'work/21-list-page', 'feature/f001-reading-list')
+    put('work/21-list-page/spec.md', spec('Reading list page, first try'))
+    put('work/21-list-page/BLOCKED.md', '# Blocked\n\n## What I did\nBuilt the page; is the old copy fine?\n\n## Decision needed\nRecord the wording approval in c001-D01.\n')
+    fx.git('add', '-A')
+    fx.git('commit', '-qm', 'work 21: first attempt')
+    fx.git('switch', '-q', '-c', 'work/21-list-page-2', 'feature/f001-reading-list')
+    put('work/21-list-page-2/spec.md', spec('Reading list page'))
+    put('web/page.ts', 'export const page = 1\n')
+    fx.git('add', '-A')
+    fx.git('commit', '-qm', 'work 21: second attempt')
+    fx.git('switch', '-q', 'planning/c002-share-links')
+    const base = gh.data!.pulls.find((p) => p.number === 22)!
+    gh.data!.pulls.push(
+      { ...base, number: 24, title: 'Reading list page', headRefName: 'work/21-list-page', state: 'MERGED', createdAt: new Date(Date.now() - 7_200_000).toISOString() },
+      { ...base, number: 31, title: 'Reading list page', headRefName: 'work/21-list-page-2', state: 'OPEN', mergedAt: undefined, autoMerge: true, url: 'https://github.invalid/harbor/pull/31',
+        files: [{ path: 'work/21-list-page-2/spec.md', additions: 9, deletions: 0 }, { path: 'web/page.ts', additions: 1, deletions: 0 }] },
+    )
+    const s = await computeState(fx.repo, gh, { staleMinutes: 30 })
+    const i = s.byId.get('21')!
+    expect(i).toMatchObject({ branch: 'work/21-list-page-2', pr: { number: 31, state: 'OPEN' }, title: 'Reading list page', state: 'pr-open', blocked: undefined })
+    expect(i.files['spec.md']!.path).toBe('work/21-list-page-2/spec.md')
+    expect(s.needsYou.find((n) => n.id === '21')).toBeUndefined() // the first attempt's question is not this attempt's
+  })
+
   test('the brief and the approval rounds need you while their pull request is open', async () => {
     const fx = makeTeamsFactory(join(root, 'four'))
     process.env.PATH = `${fx.bin}:${PATH}`

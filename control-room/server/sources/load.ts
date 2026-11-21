@@ -186,13 +186,15 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
   const issues = new Map<string, Issue>()
   const pulls = new Map<string, Pull>()
   const revertedPr = new Map<number, { at: string; ref: string; title: string }>()
+  const pullByHead = new Map<string, Pull>()
+  const rank = (x: Pull) => (x.state === 'OPEN' ? 2 : x.state === 'MERGED' ? 1 : 0)
+  const better = (p: Pull, prev: Pull | undefined) => !prev || rank(p) > rank(prev) || (rank(p) === rank(prev) && Date.parse(p.createdAt) > Date.parse(prev.createdAt))
   for (const i of gh.data?.issues ?? []) issues.set(String(i.number), i)
   for (const p of gh.data?.pulls ?? []) {
     const m = /^work\/([A-Za-z0-9._]+)-/.exec(p.headRefName)
     if (m) {
-      const prev = pulls.get(m[1]!)
-      const rank = (x: Pull) => (x.state === 'OPEN' ? 2 : x.state === 'MERGED' ? 1 : 0)
-      if (!prev || rank(p) > rank(prev) || (rank(p) === rank(prev) && Date.parse(p.createdAt) > Date.parse(prev.createdAt))) pulls.set(m[1]!, p)
+      if (better(p, pulls.get(m[1]!))) pulls.set(m[1]!, p)
+      if (better(p, pullByHead.get(p.headRefName))) pullByHead.set(p.headRefName, p)
     }
     const rv = /Reverts [\w.-]+\/[\w.-]+#(\d+)/.exec(p.body)
     if (p.state === 'MERGED' && /^Revert "/.test(p.title) && rv) revertedPr.set(Number(rv[1]), { at: p.mergedAt ?? p.createdAt, ref: `PR #${p.number}`, title: p.title })
@@ -232,20 +234,42 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
   )
   const stageById = groupBy(stageEvents, (e) => e.work_id)
   const lifeById = groupBy(lifecycle, (e) => e.work_id)
+  // ticket transitions (ticket.sh): an item that does a ticket is that ticket's issue
+  const ticketsById = groupBy(
+    events.flatMap((e) => {
+      if (e.type !== 'unknown' || !e.ts || !e.raw.includes('"ticket"')) return []
+      try {
+        const o = JSON.parse(e.raw) as Record<string, unknown>
+        return o.type === 'ticket' && (typeof o.number === 'string' || typeof o.number === 'number') ? [{ id: String(o.number), ts: e.ts, what: `ticket ${String(o.action ?? '?')}${typeof o.state === 'string' ? ` (${o.state})` : ''}` }] : []
+      } catch {
+        return []
+      }
+    }),
+    (x) => x.id,
+  )
+  // an item tried more than once (work/<id>-<slug>, then work/<id>-<slug>-2): the newest attempt is the item
+  const attempt = (name: string) => Number(/-(\d+)$/.exec(name)?.[1] ?? 1)
 
   const inputs: ItemInputs[] = []
   for (const id of ids) {
     const itemNotices: Notice[] = []
-    const branch = branches.find((b) => b.name.startsWith(`work/${id}-`))
-    const names = [...(folderNames.get(id) ?? [])]
+    // the open PR's branch is the live attempt; otherwise the newest branch (by its last commit), then the highest -<n>
+    const tries = branches.filter((b) => b.name.startsWith(`work/${id}-`)).sort((a, b) => Date.parse(b.time) - Date.parse(a.time) || attempt(b.name) - attempt(a.name))
+    const ranked = pulls.get(id)
+    const branch = (ranked?.state === 'OPEN' && tries.find((b) => b.name === ranked.headRefName)) || tries[0]
+    // the PR of that attempt; another attempt's PR only when it is not older than this attempt's work
+    const pull = (branch && pullByHead.get(branch.name)) ?? (branch && ranked && Date.parse(ranked.createdAt) < Date.parse(branch.time) ? undefined : ranked)
+    if (ranked && pull !== ranked) itemNotices.push({ level: 'info', source: `item #${id}`, message: `PR #${ranked.number} (${ranked.state.toLowerCase()}) was an earlier attempt from ${ranked.headRefName}; showing the newer ${branch!.name}` })
+    const names = [...(folderNames.get(id) ?? [])].sort((a, b) => attempt(b) - attempt(a))
     const folder = branch?.name.slice(5) ?? names[0]
     if (names.length > 1) itemNotices.push({ level: 'warn', source: `item #${id}`, message: `more than one work folder for #${id}: ${names.join(', ')}; using ${folder}` })
     const slug = folder ? FOLDER.exec(folder)?.[2] : undefined
 
-    // files: per file, worktree beats branch beats main
+    // files: per file, worktree beats branch beats main, all from the one attempt's folder
+    // (another attempt's BLOCKED.md or spec is not this attempt's)
     const files: ItemInputs['files'] = {}
     for (const name of WORK_FILES) {
-      const cands = [...new Set([folder, ...names])]
+      const cands = [...new Set(folder ? [folder] : names)]
         .flatMap((n) => byPath.get(`work/${n}/${name}`) ?? [])
         .filter((s) => s.origin !== 'branch' || s.ref === branch?.ref)
         .sort((a, b) => ORDER[a.origin] - ORDER[b.origin])
@@ -270,7 +294,6 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
       })
     }
 
-    const pull = pulls.get(id)
     const om = folder ? onMain.get(folder) ?? names.map((n) => onMain.get(n)).find(Boolean) : undefined
     let changed: string[] | undefined
     if (pull?.files.length) changed = pull.files.map((f) => f.path)
@@ -289,6 +312,7 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
       onMain: om ? { at: om.at, sha: om.sha } : undefined,
       changedFiles: changed,
       testRefs,
+      tickets: (ticketsById.get(id) ?? []).map(({ ts, what }) => ({ ts, what })),
       revertedBy: (pull && revertedPr.get(pull.number)) ?? (om ? revertedSha.get(om.sha) : undefined),
       notices: itemNotices,
     })
