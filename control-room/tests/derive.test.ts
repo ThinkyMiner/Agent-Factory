@@ -108,6 +108,15 @@ describe('blocked', () => {
     expect(r).toMatchObject({ state: 'blocked', needs: { kind: 'answer', summary: 'builder disputes AC-2' } })
     expect(r.notices.map((x) => x.message).join()).toMatch(/no current BLOCKED.md/)
   })
+  test('a bare blocked event while the item\'s agents still run is not a question for you yet', () => {
+    const life = [le('SessionStart', 30), le('SubagentStart', 12, { agent_id: 't1', agent_type: 'test-author' })]
+    const r = derive({ stageEvents: [se('build', 'started', 25), se('build', 'blocked', 8, 0, { detail: 'test dispute' })], lifecycle: life })
+    expect(r).toMatchObject({ state: 'in-progress', flags: ['live'] })
+    expect(r.needs).toMatchObject({ kind: 'info', summary: `logged a stop at build ${ago(8).slice(11, 16)} UTC while its agents are still running; check its tab` })
+    // a BLOCKED.md makes it a question, live agents or not
+    const asked = derive({ stageEvents: [se('build', 'started', 25), se('build', 'blocked', 8)], lifecycle: life, files: { 'BLOCKED.md': file('# Blocked\n\nWhich?', 8, 'worktree') } })
+    expect(asked).toMatchObject({ state: 'blocked', needs: { kind: 'answer', summary: 'Which?' } })
+  })
   test('a BLOCKED.md older than a re-run is stale: the item is in progress, flagged', () => {
     const r = derive({ stageEvents: [se('spec', 'blocked', 3000), se('spec', 'started', 30, 1), se('spec', 'passed', 25, 1), se('tests', 'started', 5)], files: { 'BLOCKED.md': file('Which?', 2990) } })
     expect(r).toMatchObject({ state: 'in-progress', stage: 'tests' })

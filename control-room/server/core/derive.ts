@@ -501,6 +501,12 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
     state = 'closed'
     since = pr?.state === 'CLOSED' ? pr.closedAt : issue?.closedAt
     reason = pr?.state === 'CLOSED' ? `PR #${pr.number} closed without merging` : `issue closed${issue?.stateReason ? ` (${issue.stateReason.toLowerCase().replace('_', ' ')})` : ''}`
+  } else if (!(blocked && !blocked.stale) && lastPipe?.status === 'blocked' && pr?.state !== 'OPEN' && liveRun) {
+    // a bare "blocked" event (no BLOCKED.md) while the item's agents still run: not a question for you yet
+    state = 'in-progress'
+    since = lastPipe.ts
+    reason = `logged a stop at ${lastPipe.stage} with no BLOCKED.md while its agents are still running`
+    needs = { kind: 'info', summary: `logged a stop at ${lastPipe.stage} ${new Date(lastPipe.ts).toISOString().slice(11, 16)} UTC while its agents are still running; check its tab`, since: lastPipe.ts }
   } else if ((blocked && !blocked.stale) || (lastPipe?.status === 'blocked' && pr?.state !== 'OPEN')) {
     state = 'blocked'
     const ev = [...pipeline].reverse().find((e) => e.status === 'blocked')
