@@ -99,7 +99,8 @@ export async function loadTeams(snap: Snapshot): Promise<TeamsInput | null> {
       const p = (await g.lsTree(repo, ref, ['planning/'])).find((e) => e.path.startsWith(`planning/c${f.slice(1, 4)}-`) && e.path.endsWith('/dispatch.jsonl'))?.path
       if (p && (dispatch = await show(repo, ref, p)) !== null) break
     }
-    features.push({ name: f, refs: { feature: fr[0], integrate: ir[0] }, docs, dispatch })
+    const e2eTests = ir[0] ? (await g.lsTree(repo, ir[0], [`tests/e2e/${f}/`])).length : undefined
+    features.push({ name: f, refs: { feature: fr[0], integrate: ir[0] }, e2eTests, docs, dispatch })
   }
 
   // ---- checkouts: the orchestrator's is the main one ----

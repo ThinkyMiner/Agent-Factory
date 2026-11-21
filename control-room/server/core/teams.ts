@@ -196,7 +196,7 @@ export interface TeamsInput {
     decisions: string | null
     submitted: string[] // teams with a sealed position (existence only)
   }
-  features: { name: string; refs: { feature?: string; integrate?: string }; docs: { file: string; ref: string; text: string }[]; dispatch: string | null }[]
+  features: { name: string; refs: { feature?: string; integrate?: string }; e2eTests?: number; docs: { file: string; ref: string; text: string }[]; dispatch: string | null }[]
   checkouts: { team: string; path: string; branch: string | null; exists: boolean }[] // the orchestrator's is the main checkout
   sessions: { available: boolean; tabs: SessionTab[] }
   events: FactoryEvent[]
@@ -259,6 +259,7 @@ export function dispatchRowOf(issue: Pick<Issue, 'title' | 'body'>, rows: Dispat
 export interface FeatureView {
   name: string
   refs: { feature?: string; integrate?: string }
+  e2eTests?: number // files under tests/e2e/<f>/ on the integration branch
   items: {
     number: number
     title: string
@@ -503,6 +504,7 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
     return {
       name,
       refs: f?.refs ?? {},
+      e2eTests: f?.e2eTests,
       items: list,
       docs: (f?.docs ?? []).map((d) => ({ ...d, headline: DOC_HEADLINE[d.file]?.(d.text) ?? '' })),
       attribution: (() => {
@@ -589,8 +591,8 @@ function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefine
   if (report && (merged.length === work.length || tickets.length)) {
     const teams = [...new Set(tickets.map((t) => t.team ?? '?'))]
     return verdict === 'pass'
-      ? { step: 'integration', label: `Integration round ${round ?? '?'} passed`, detail: 'Research reviews the acceptance tests; then the orchestrator opens the pull request to main.', next: { who: 'orchestrator', what: 'the acceptance review, then integrate.sh pr', href: '/planning' } }
-      : { step: 'integration', label: `Integration round ${round ?? '?'} failed`, detail: `The end-to-end tests failed; ${tickets.length} ticket${tickets.length === 1 ? '' : 's'} open for the teams that own the failures.`, next: tickets.length ? { who: teams.join(', '), what: `fix ${tickets.map((t) => `#${t.number}`).join(', ')}, then the next round runs`, href: '/planning' } : { who: 'orchestrator', what: 'file tickets from attribution.md (integrate.sh tickets)', href: '/planning' } }
+      ? { step: 'integration', label: `Integration round ${round ?? '?'} passed`, detail: `The e2e tests passed on ${report.ref}. Research reviews the acceptance tests; then the orchestrator opens the pull request to main.`, next: { who: 'orchestrator', what: 'the acceptance review, then integrate.sh pr', href: '/planning' } }
+      : { step: 'integration', label: `Integration round ${round ?? '?'} failed`, detail: `The e2e tests failed on ${report.ref}; ${tickets.length} ticket${tickets.length === 1 ? '' : 's'} open for the teams that own the failures.`, next: tickets.length ? { who: teams.join(', '), what: `fix ${tickets.map((t) => `#${t.number}`).join(', ')}, then the next round runs`, href: '/planning' } : { who: 'orchestrator', what: 'file tickets from attribution.md (integrate.sh tickets)', href: '/planning' } }
   }
   const blocked = work.find((i) => i.item?.state === 'blocked')
   const yours = work.filter((i) => i.item?.state === 'awaiting-approval' || i.item?.state === 'awaiting-merge')
@@ -611,5 +613,16 @@ function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefine
       : ready.length
         ? { who: ready[0]!.team ?? '?', what: `start #${ready[0]!.number} (the sweep types it when the session is free)`, href: `/items/${ready[0]!.number}` }
         : undefined
-  return { step: 'building', label: `Building ${f.name}: ${merged.length} of ${work.length} item${work.length === 1 ? '' : 's'} merged into its feature branch`, detail: running.length ? `${running.length} in progress.` : undefined, next }
+  // follow-ups: tickets a team accepted and worked, beside the dispatched items
+  const follow = f.items.filter((i) => i.ticket && i.item)
+  const followMerged = follow.filter((i) => i.item!.state === 'merged').length
+  const e2e = f.refs.integrate
+    ? `${f.e2eTests ? `${f.e2eTests} e2e test file${f.e2eTests === 1 ? '' : 's'} saved on ${f.refs.integrate}` : `no e2e tests on ${f.refs.integrate} yet`}; ${report ? `last integration round ${round ?? '?'}: ${verdict ?? 'no E2E line'}` : 'no integration round yet'}.`
+    : `No integration branch yet: the orchestrator saves the e2e tests on integrate/${f.name}.`
+  return {
+    step: 'building',
+    label: `Building ${f.name}: ${merged.length} of ${work.length} dispatched item${work.length === 1 ? '' : 's'} merged into its feature branch${follow.length ? `, +${follow.length} follow-up ticket${follow.length === 1 ? '' : 's'}${followMerged ? ` (${followMerged} merged)` : ''}` : ''}`,
+    detail: [running.length ? `${running.length} in progress.` : '', e2e].filter(Boolean).join(' '),
+    next,
+  }
 }

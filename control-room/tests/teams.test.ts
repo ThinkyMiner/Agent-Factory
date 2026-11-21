@@ -60,7 +60,16 @@ describe('parsers', () => {
   test('the phase: an item held at your approval makes the next step yours', () => {
     const row = (number: number, state: ItemView['state'] | undefined, more: object = {}) => ({ number, title: `t${number}`, url: '', team: 'frontend', ticket: false, open: true, ...(state && { item: { state, pr: number + 4 } }), ...more })
     const f = { name: 'f001-first-card', refs: {}, docs: [], pulls: [], items: [row(7, 'merged'), row(8, 'awaiting-approval'), row(9, 'ready', { waitsFor: '#8 fit-layout (awaiting-approval)' })] }
-    expect(phasesOf(undefined, [f], [])).toEqual([{ step: 'building', label: 'Building f001-first-card: 1 of 3 items merged into its feature branch', detail: '1 in progress.', next: { who: 'you', what: '#8 (PR #12): add human-approved, wait for the checks to pass, then merge', href: '/items/8' } }])
+    expect(phasesOf(undefined, [f], [])).toEqual([{ step: 'building', label: 'Building f001-first-card: 1 of 3 dispatched items merged into its feature branch', detail: '1 in progress. No integration branch yet: the orchestrator saves the e2e tests on integrate/f001-first-card.', next: { who: 'you', what: '#8 (PR #12): add human-approved, wait for the checks to pass, then merge', href: '/items/8' } }])
+  })
+  test('the phase while building: dispatched items, follow-up tickets, and the e2e tests on the integration branch', () => {
+    const row = (number: number, state: ItemView['state'] | undefined, more: object = {}) => ({ number, title: `t${number}`, url: '', team: 'frontend', ticket: false, open: true, ...(state && { item: { state, pr: number + 4 } }), ...more })
+    const items = [row(7, 'merged'), row(8, 'in-progress'), row(9, 'ready'), row(15, 'merged', { ticket: true, ticketState: 'done' })]
+    const [p] = phasesOf(undefined, [{ name: 'f001-first-card', refs: { integrate: 'origin/integrate/f001-first-card' }, e2eTests: 3, docs: [], pulls: [], items }], [])
+    expect(p!.label).toBe('Building f001-first-card: 1 of 3 dispatched items merged into its feature branch, +1 follow-up ticket (1 merged)')
+    expect(p!.detail).toBe('1 in progress. 3 e2e test files saved on origin/integrate/f001-first-card; no integration round yet.')
+    const [q] = phasesOf(undefined, [{ name: 'f001-first-card', refs: {}, docs: [], pulls: [], items: items.slice(0, 3) }], [])
+    expect(q!.detail).toBe('1 in progress. No integration branch yet: the orchestrator saves the e2e tests on integrate/f001-first-card.')
   })
   test('who a round waits for, by its own rule', () => {
     const s = (status: string, draft = 0): CycleState => ({ status, teams: ['a', 'b'], draft, strikes: {}, unanswered: [], history: [] }) as CycleState
@@ -427,9 +436,19 @@ describe('missing and damaged inputs', () => {
     gh.data!.pulls = gh.data!.pulls.filter((p) => p.number !== 25) // before the PR to main: the failed round and its open ticket
     s = await computeState(fx.repo, gh, { staleMinutes: 30 })
     expect(brief(s)).toEqual([['integration', 'Integration round 1 failed', 'backend', 'fix #23, then the next round runs'], planning]) // #26 was declined
+    expect(s.teams!.phases[0]!.detail).toMatch(/^The e2e tests failed on (origin\/)?integrate\/f001-reading-list; 1 ticket open/)
     gh.data!.issues = gh.data!.issues.filter((i) => i.number !== 23) // no ticket open, no round yet counted: still building
     s = await computeState(fx.repo, gh, { staleMinutes: 30 })
-    expect(brief(s)[0]).toEqual(['building', 'Building f001-reading-list: 1 of 4 items merged into its feature branch', 'you', 'answer #19 (it stopped with a question)'])
+    expect(brief(s)[0]).toEqual(['building', 'Building f001-reading-list: 1 of 4 dispatched items merged into its feature branch', 'you', 'answer #19 (it stopped with a question)'])
+    expect(s.teams!.phases[0]!.detail).toMatch(/no e2e tests on (origin\/)?integrate\/f001-reading-list yet; last integration round 1: fail\.$/)
+    fx.git('switch', '-q', 'integrate/f001-reading-list')
+    mkdirSync(join(fx.repo, 'tests/e2e/f001-reading-list'), { recursive: true })
+    writeFileSync(join(fx.repo, 'tests/e2e/f001-reading-list/ac2.spec.ts'), "test('AC2', () => {})\n")
+    fx.git('add', 'tests/e2e/f001-reading-list/ac2.spec.ts')
+    fx.git('commit', '-qm', 'e2e tests for f001-reading-list')
+    fx.git('switch', '-q', 'planning/c002-share-links')
+    s = await computeState(fx.repo, gh, { staleMinutes: 30 })
+    expect(s.teams!.phases[0]!.detail).toMatch(/1 e2e test file saved on (origin\/)?integrate\/f001-reading-list; last integration round 1: fail\.$/)
     gh.data!.pulls.push({ ...gh.data!.pulls.find((p) => p.number === 22)!, number: 25, headRefName: 'integrate/f001-reading-list', state: 'MERGED' })
     s = await computeState(fx.repo, gh, { staleMinutes: 30 })
     expect(brief(s)).toEqual([planning]) // on main: what is under way is the next cycle
