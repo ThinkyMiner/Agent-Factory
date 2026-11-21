@@ -201,6 +201,11 @@ describe('merged and closed', () => {
     expect(human).toMatchObject({ mergedBy: 'human', firstPass: false, fixRounds: 1, fixByStage: { gate: 1 } })
   })
 
+  test('merged on a second attempt is not a first pass, though this attempt had no fix rounds', () => {
+    const second = derive({ stageEvents: RUN_TO_PR(), earlierAttempts: 1, pull: pull({ state: 'MERGED', mergedAt: ago(30) }) })
+    expect(second).toMatchObject({ state: 'merged', fixRounds: 0, firstPass: false })
+  })
+
   test('merged: auto-merge still on the merged PR is auto even without the timeline event; no evidence names no one', () => {
     // GitHub keeps autoMergeRequest on a pull request that auto-merge merged, but the timeline can miss the event
     const autoOnly = derive({ stageEvents: RUN_TO_PR(), pull: pull({ state: 'MERGED', mergedAt: ago(30), autoMerge: true, timeline: [] }) })

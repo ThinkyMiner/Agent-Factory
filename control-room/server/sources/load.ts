@@ -322,12 +322,17 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
     else if (branch && base && !om) changed = await g.changedFiles(repo, base, branch.ref)
     else if (om) changed = om.files
 
+    // events of another attempt (its own work/<id>-* branch) are not this attempt's
+    const mine = branch?.name ?? (folder ? `work/${folder}` : undefined)
+    const other = (e: { branch: string }) => !!mine && e.branch !== mine && e.branch.startsWith(`work/${id}-`)
+    const stageAll = stageById.get(id) ?? []
     inputs.push({
       id,
       slug,
       files,
-      stageEvents: stageById.get(id) ?? [],
-      lifecycle: lifeById.get(id) ?? [],
+      stageEvents: stageAll.filter((e) => !other(e)),
+      lifecycle: (lifeById.get(id) ?? []).filter((e) => !other(e)),
+      earlierAttempts: new Set([...tries.map((b) => b.name), ...stageAll.map((e) => e.branch)].filter((b) => b.startsWith(`work/${id}-`) && b !== mine && attempt(b) < attempt(mine ?? ''))).size,
       issue: issues.get(id),
       pull,
       branch: branch?.name,

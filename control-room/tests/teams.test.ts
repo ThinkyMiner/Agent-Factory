@@ -297,10 +297,18 @@ describe('missing and damaged inputs', () => {
       { ...base, number: 31, title: 'Reading list page', headRefName: 'work/21-list-page-2', state: 'OPEN', mergedAt: undefined, autoMerge: true, url: 'https://github.invalid/harbor/pull/31',
         files: [{ path: 'work/21-list-page-2/spec.md', additions: 9, deletions: 0 }, { path: 'web/page.ts', additions: 1, deletions: 0 }] },
     )
+    // both attempts opened a PR: the stage history is the selected attempt's only
+    const ago = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
+    const ev = (h: number, branch: string, stage: string, status: string, pr: number) => JSON.stringify({ ts: ago(h), type: 'stage', work_id: '21', branch, stage, status, round: '0', tier: 'R1', pr: String(pr), detail: `opened PR #${pr}`, team: 'research' })
+    const evs = join(fx.repo, '.factory/events.jsonl')
+    mkdirSync(join(fx.repo, '.factory'), { recursive: true })
+    writeFileSync(evs, (existsSync(evs) ? readFileSync(evs, 'utf8') : '') + [ev(2, 'work/21-list-page', 'review', 'failed', 24), ev(1.9, 'work/21-list-page', 'pr', 'passed', 24), ev(0.5, 'work/21-list-page-2', 'pr', 'passed', 31)].join('\n') + '\n')
     const s = await computeState(fx.repo, gh, { staleMinutes: 30 })
     const i = s.byId.get('21')!
     expect(i).toMatchObject({ branch: 'work/21-list-page-2', pr: { number: 31, state: 'OPEN' }, title: 'Reading list page', state: 'pr-open', blocked: undefined })
     expect(i.files['spec.md']!.path).toBe('work/21-list-page-2/spec.md')
+    expect(i.stages.find((x) => x.stage === 'pr')!.attempts.map((a) => a.detail)).toEqual(['opened PR #31'])
+    expect(i.fixRounds).toBe(0) // the first attempt's failed review is not this attempt's
     expect(s.needsYou.find((n) => n.id === '21')).toBeUndefined() // the first attempt's question is not this attempt's
   })
 

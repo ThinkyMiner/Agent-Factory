@@ -56,6 +56,7 @@ export interface ItemInputs {
   base?: string // the ref the item's change is measured against: the PR's base, else its open feature branch, else main
   testRefs?: TestRef[]
   tickets?: { ts: string; what: string; state?: string }[] // ticket.sh transitions of the ticket this item does, oldest first
+  earlierAttempts?: number // work/<id>-* branches before the one shown (their events are left out)
   revertedBy?: { at: string; ref: string; title: string }
   notices: Notice[]
 }
@@ -639,7 +640,7 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
     mergedInto: state === 'merged' ? (pr?.state === 'MERGED' ? pr.baseRefName : undefined) ?? (inp.onMain ? 'main' : undefined) : undefined,
     readyAt,
     mergedBy,
-    firstPass: state === 'merged' ? fixRounds === 0 : undefined,
+    firstPass: state === 'merged' ? fixRounds === 0 && !inp.earlierAttempts : undefined,
     reverted: inp.revertedBy,
     spec,
     review,
