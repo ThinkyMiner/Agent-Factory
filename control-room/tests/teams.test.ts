@@ -256,6 +256,33 @@ describe('missing and damaged inputs', () => {
     expect(s.needsYou.find((n) => n.id === '21')).toBeUndefined() // the first attempt's question is not this attempt's
   })
 
+  test('acceptance tests under tests/acceptance/<team>/ are found; evidence, db and ui reviews are reviews', async () => {
+    const fx = makeTeamsFactory(join(root, 'tests-reviews'))
+    process.env.PATH = `${fx.bin}:${PATH}`
+    const gh = await readDemoGitHub(fx.github)
+    const put = (rel: string, text: string) => {
+      mkdirSync(join(fx.repo, rel, '..'), { recursive: true })
+      writeFileSync(join(fx.repo, rel), text)
+    }
+    const review = (verdict: string, nv: string) => `VERDICT: ${verdict}\nRISK: R1\nBLOCKING:\n- none\nNON-BLOCKING:\n- none\nVERIFIED: make check\nNOT VERIFIED:\n- ${nv}\n`
+    fx.git('switch', '-q', '-c', 'work/20-list-api', 'feature/f001-reading-list')
+    put('work/20-list-api/spec.md', '---\nid: 20\ntitle: Reading list API\nrisk_floor: R1\ntests: required\nstatus: draft\n---\n## Problem\np\n## Acceptance criteria\n- AC-1: GET lists saved links\n- AC-2: an empty list is []\n')
+    put('work/20-list-api/evidence-review.md', review('pass', 'load under many users'))
+    put('work/20-list-api/db-review.md', review('pass', 'the migration on a full table'))
+    put('tests/acceptance/backend/20-list-api.test.js', "test('AC-1: GET lists saved links', () => {})\n")
+    put('tests/acceptance/backend/harness.mjs', '// AC-9 is not a test of any item\n')
+    fx.git('add', '-A')
+    fx.git('commit', '-qm', 'work 20')
+    fx.git('switch', '-q', 'planning/c002-share-links')
+    put('tests/acceptance/backend/20-empty.test.js', "test('AC_2 empty list', () => {})\n") // the working tree, not committed
+    const s = await computeState(fx.repo, gh, { staleMinutes: 30 })
+    const i = s.byId.get('20')!
+    expect(i.testRefs.map((r) => [r.ac, r.file]).sort()).toEqual([['AC-1', 'tests/acceptance/backend/20-list-api.test.js'], ['AC-2', 'tests/acceptance/backend/20-empty.test.js']])
+    expect(i.reviews.map((r) => [r.file, r.review.ok && r.review.value.verdict])).toEqual([['evidence-review.md', 'pass'], ['db-review.md', 'pass']])
+    expect(i.review).toMatchObject({ ok: true, value: { verdict: 'pass' } })
+    expect(i.notVerified.map((n) => [n.text, n.source])).toEqual([['load under many users', 'evidence-review.md'], ['the migration on a full table', 'db-review.md']]) // and not "no review.md"
+  })
+
   test('the brief and the approval rounds need you while their pull request is open', async () => {
     const fx = makeTeamsFactory(join(root, 'four'))
     process.env.PATH = `${fx.bin}:${PATH}`

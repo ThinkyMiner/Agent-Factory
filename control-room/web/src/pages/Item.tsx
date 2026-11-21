@@ -71,7 +71,7 @@ export function Item() {
 function tabLabel(t: Tab, d: ItemDetail) {
   const base = { spec: 'Spec', plan: 'Plan', changes: 'Changes', gates: 'Gates', review: 'Review', activity: 'Activity', 'not-verified': 'Not verified', observations: 'Observations' }[t]
   const n = t === 'not-verified' ? d.notVerified.length : t === 'changes' ? d.changes.length : t === 'observations' ? d.observations.reduce((a, o) => a + o.items.length, 0) : 0
-  const bad = (t === 'spec' && d.spec && !d.spec.ok) || (t === 'review' && d.review && !d.review.ok)
+  const bad = (t === 'spec' && d.spec && !d.spec.ok) || (t === 'review' && d.reviews.some((r) => !r.review.ok))
   return (
     <span className="inline-flex items-center gap-1.5">
       {base}
@@ -458,14 +458,33 @@ function GatesTab({ item }: { item: ItemDetail }) {
   )
 }
 
+const REVIEW_WHO: Record<string, string> = {
+  'review.md': 'the independent reviewer',
+  'evidence-review.md': 'the evidence reviewer (research items)',
+  'db-review.md': 'the database specialist',
+  'ui-review.md': 'the UI specialist',
+}
 function ReviewTab({ item }: { item: ItemDetail }) {
-  const r = item.review
-  if (!r) return <Empty title="No review.md yet">The reviewer runs after the gate passes.</Empty>
+  if (!item.reviews.length) return <Empty title="No review on record yet">The reviewer writes review.md after the gate passes; specialists add db-review.md, ui-review.md or evidence-review.md when their paths are touched.</Empty>
+  return (
+    <div className="space-y-8">
+      {item.reviews.map((x) => (
+        <section key={x.file} aria-label={x.file}>
+          <h3 className="mb-2 text-[12px] text-muted">
+            <Mono className="text-fg">{x.file}</Mono> · by {REVIEW_WHO[x.file]}
+          </h3>
+          <OneReview item={item} file={x.file} r={x.review} />
+        </section>
+      ))}
+    </div>
+  )
+}
+function OneReview({ item, file, r }: { item: ItemDetail; file: string; r: ItemDetail['reviews'][number]['review'] }) {
   if (!r.ok)
     return (
       <div>
-        <ErrorState title="Could not parse review.md" error={r.error} />
-        <h3 className="mt-4 mb-1 text-[12px] font-semibold text-muted">Raw review.md</h3>
+        <ErrorState title={`Could not parse ${file}`} error={r.error} />
+        <h3 className="mt-4 mb-1 text-[12px] font-semibold text-muted">Raw {file}</h3>
         <Raw text={r.raw} />
       </div>
     )

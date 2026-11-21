@@ -38,6 +38,8 @@ const FOLDER = /^([A-Za-z0-9._]+)-([A-Za-z0-9._-]+)$/
 const readText = (p: string) => readFile(p, 'utf8').then((s) => s, () => null)
 const listDir = (p: string) => readdir(p, { withFileTypes: true }).then((d) => d, () => [])
 const ORDER: Record<Origin, number> = { worktree: 0, branch: 1, main: 2 }
+/** The item an acceptance test belongs to: tests/acceptance/<id>-... or tests/acceptance/<team>/<id>-... */
+const testOf = (path: string) => /^tests\/acceptance\/(?:[a-z0-9_-]+\/)?([A-Za-z0-9._]+?)-[^/]*$/.exec(path)?.[1]
 
 export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status: GitHubStatus }): Promise<Snapshot> {
   const notices: Notice[] = []
@@ -88,13 +90,17 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
   const worktrees = isGit ? await g.worktrees(repo) : []
   for (const w of g.teamWorktrees(worktrees)) if (w.exists && w.branch?.startsWith('work/')) await addCheckout(w.path, w.branch.slice(5))
   await addCheckout(repo)
-  for (const dir of ['tests/acceptance', 'memory/observations']) {
+  // acceptance tests sit in tests/acceptance/ or, in team mode, tests/acceptance/<team>/
+  const addFiles = async (dir: string, depth: number) => {
     for (const f of await listDir(join(repo, dir))) {
-      if (!f.isFile()) continue
       const rel = `${dir}/${f.name}`
+      if (f.isDirectory() && depth > 0) await addFiles(rel, depth - 1)
+      if (!f.isFile()) continue
       sources.push({ origin: 'worktree', path: rel, read: async () => ({ text: (await readText(join(repo, rel))) ?? '', time: (await stat(join(repo, rel))).mtime.toISOString() }) })
     }
   }
+  await addFiles('tests/acceptance', 1)
+  await addFiles('memory/observations', 0)
 
   const branches = isGit ? await g.workBranches(repo) : []
   const blobRefs: { origin: Origin; ref: string; time: string; entries: g.TreeEntry[] }[] = []
@@ -106,7 +112,7 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
     const folder = b.name.slice('work/'.length)
     const id = FOLDER.exec(folder)![1]!
     const entries = (await g.lsTree(repo, b.ref, [`work/${folder}/`, 'tests/acceptance/', 'memory/observations/'])).filter(
-      (e) => e.path.startsWith(`work/${folder}/`) || e.path.startsWith(`tests/acceptance/${id}-`) || new RegExp(`^memory/observations/\\d{4}-\\d{2}-\\d{2}-${id}-`).test(e.path),
+      (e) => e.path.startsWith(`work/${folder}/`) || testOf(e.path) === id || new RegExp(`^memory/observations/\\d{4}-\\d{2}-\\d{2}-${id}-`).test(e.path),
     )
     blobRefs.push({ origin: 'branch', ref: b.ref, time: b.time, entries })
   }
@@ -127,7 +133,7 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
     for (const [folder, c] of onMain) {
       if (inMain.has(folder)) continue
       const id = FOLDER.exec(folder)?.[1]
-      const entries = (await g.lsTree(repo, c.sha, [`work/${folder}/`, 'tests/acceptance/'])).filter((e) => e.path.startsWith(`work/${folder}/`) || e.path.startsWith(`tests/acceptance/${id}-`))
+      const entries = (await g.lsTree(repo, c.sha, [`work/${folder}/`, 'tests/acceptance/'])).filter((e) => e.path.startsWith(`work/${folder}/`) || testOf(e.path) === id)
       blobRefs.push({ origin: 'main', ref: c.sha, time: c.at, entries })
     }
   }
@@ -230,7 +236,7 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
   const byPath = groupBy(sources, (s) => s.path)
   const testsById = groupBy(
     sources.filter((s) => s.path.startsWith('tests/acceptance/')),
-    (s) => /^tests\/acceptance\/([A-Za-z0-9._]+?)-/.exec(s.path)?.[1] ?? '',
+    (s) => testOf(s.path) ?? '',
   )
   const stageById = groupBy(stageEvents, (e) => e.work_id)
   const lifeById = groupBy(lifecycle, (e) => e.work_id)

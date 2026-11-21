@@ -23,8 +23,10 @@ import {
 
 // ---------- inputs ----------
 
-export type WorkFileName = 'spec.md' | 'plan.md' | 'log.md' | 'review.md' | 'disputes.md' | 'BLOCKED.md'
-export const WORK_FILES: WorkFileName[] = ['spec.md', 'plan.md', 'log.md', 'review.md', 'disputes.md', 'BLOCKED.md']
+export type WorkFileName = 'spec.md' | 'plan.md' | 'log.md' | 'review.md' | 'evidence-review.md' | 'db-review.md' | 'ui-review.md' | 'disputes.md' | 'BLOCKED.md'
+export const WORK_FILES: WorkFileName[] = ['spec.md', 'plan.md', 'log.md', 'review.md', 'evidence-review.md', 'db-review.md', 'ui-review.md', 'disputes.md', 'BLOCKED.md']
+/** The independent review first; a research item's evidence review is its independent review. Specialists' after. */
+export const REVIEW_FILES = ['review.md', 'evidence-review.md', 'db-review.md', 'ui-review.md'] as const
 
 export interface WorkFile {
   path: string // repo-relative
@@ -181,7 +183,8 @@ export interface ItemView {
   firstPass?: boolean
   reverted?: ItemInputs['revertedBy']
   spec?: Parsed<Spec>
-  review?: Parsed<Review>
+  review?: Parsed<Review> // the first of REVIEW_FILES on record
+  reviews: { file: (typeof REVIEW_FILES)[number]; path: string; review: Parsed<Review> }[] // every review on record, same format
   blocked?: { text: string; summary: string; time: string; stale: boolean; path: string }
   notVerified: NotVerified[]
   pipelineRuns: PipelineRun[]
@@ -368,11 +371,14 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
 
   // documents
   const spec = inp.files['spec.md'] ? parseSpec(inp.files['spec.md'].text) : undefined
-  const review = inp.files['review.md'] ? parseReview(inp.files['review.md'].text) : undefined
+  const reviews = REVIEW_FILES.flatMap((f) => (inp.files[f] ? [{ file: f, path: inp.files[f].path, review: parseReview(inp.files[f].text) }] : []))
+  const review = reviews[0]?.review
   if (spec && !spec.ok) note(`could not parse spec.md: ${spec.error}`, 'error', inp.files['spec.md']!.path)
   if (spec?.ok) spec.warnings.forEach((w) => note(`spec.md: ${w}`, 'warn', inp.files['spec.md']!.path))
-  if (review && !review.ok) note(`could not parse review.md: ${review.error}`, 'error', inp.files['review.md']!.path)
-  if (review?.ok) review.warnings.forEach((w) => note(`review.md: ${w}`, 'warn', inp.files['review.md']!.path))
+  for (const r of reviews) {
+    if (!r.review.ok) note(`could not parse ${r.file}: ${r.review.error}`, 'error', r.path)
+    else r.review.warnings.forEach((w) => note(`${r.file}: ${w}`, 'warn', r.path))
+  }
   if (spec?.ok && spec.value.id !== inp.id) note(`spec.md says id ${spec.value.id} but the folder is #${inp.id}`)
 
   // stages and rounds
@@ -409,7 +415,7 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
   if (label) tierSources.push({ source: 'pr-label', tier: label })
   const evTier = [...events].reverse().find((e) => e.tier)?.tier
   if (evTier) tierSources.push({ source: 'pr-event', tier: evTier })
-  if (review?.ok && review.value.risk) tierSources.push({ source: 'review', tier: review.value.risk, why: review.value.riskWhy })
+  for (const r of reviews) if (r.review.ok && r.review.value.risk) tierSources.push({ source: 'review', tier: r.review.value.risk, why: r.review.value.riskWhy })
   const tier = maxTier(tierSources.map((s) => s.tier))
 
   // BLOCKED.md and its freshness
@@ -481,7 +487,7 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
       high.find((s) => s.source === 'paths')?.why ??
       (high.some((s) => s.source === 'spec') ? 'spec risk_floor' : undefined) ??
       (high.find((s) => s.source === 'review') ? `reviewer: ${high.find((s) => s.source === 'review')!.why ?? 'assessed ' + tier}` : 'PR label')
-    const verdict = review?.ok ? `review: ${review.value.verdict}` : review ? 'review.md unparseable' : 'no review.md'
+    const verdict = review?.ok ? `review: ${review.value.verdict}` : review ? `${reviews[0]!.file} unparseable` : 'no review.md'
     needs = { kind: 'approve', summary: `${tier} · ${why} · ${verdict}`, since }
   } else if (pr?.state === 'OPEN' && !pr.isDraft && !pr.autoMerge) {
     // Without auto-merge nothing will merge it but you. The policy only explains why.
@@ -548,8 +554,10 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
 
   // what nobody verified
   const notVerified: NotVerified[] = []
-  if (review?.ok) review.value.notVerified.forEach((text) => notVerified.push({ text, source: 'review.md' }))
-  if (review && !review.ok) notVerified.push({ text: 'review.md could not be parsed, so nothing in it can be relied on', source: 'review.md' })
+  for (const r of reviews) {
+    if (r.review.ok) r.review.value.notVerified.forEach((text) => notVerified.push({ text, source: r.file }))
+    else notVerified.push({ text: `${r.file} could not be parsed, so nothing in it can be relied on`, source: r.file })
+  }
   if (pr) prNotVerified(pr.body).forEach((text) => notVerified.push({ text, source: `PR #${pr.number} body` }))
   const testRefs = inp.testRefs ?? []
   if (spec?.ok && spec.value.tests === 'none') notVerified.push({ text: 'acceptance tests were skipped (spec says tests: none)', source: 'spec.md' })
@@ -601,6 +609,7 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
     reverted: inp.revertedBy,
     spec,
     review,
+    reviews,
     blocked,
     notVerified,
     pipelineRuns: pipelineRuns(events, state),
