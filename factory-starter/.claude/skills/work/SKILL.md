@@ -117,7 +117,13 @@ is exactly `VERDICT: pass`.
 - Run `factory/scripts/risk-tier.sh <base>` again for the tier, then
   `factory/scripts/check-specialists.sh --needs <base> <tier>`. For each report it
   names besides `review`, run that stage and save the reply:
-  - `ui-review`: `ui-reviewer`, saved as `ui-review.md`;
+  - `ui-review`: `ui-reviewer`, saved as `ui-review.md`. First, when a criterion's visible
+    result needs input on the page (a typed value, a chosen option, a pressed button), write
+    `<work folder>/ui-states.txt` from the spec and `design.md`, one line per state, e.g.
+    `long-title: fill Title = <text>; select Layout = Left with accent bar` (steps: `fill <label>
+    = <text>`, `select <label> = <option text>`, `click <button name>`), and commit it.
+    `make ui-shots` shoots each state too. If the reviewer escalates only because states were
+    missing, add them and run a new `ui-reviewer` once before you stop;
   - `security`: `security-engineer`, saved as `security.md`;
   - `db-review`: `db-engineer`, saved as `db-review.md`.
   After each report, get the tier and the list again: a raised tier can add a report.

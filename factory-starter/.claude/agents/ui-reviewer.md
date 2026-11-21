@@ -16,7 +16,12 @@ you run one command and nothing else (the guard blocks the rest):
 
 For more than one page, run it once per page with its own folder,
 `OUT=<work folder>/screens/<page>`. It writes `<page>-<scheme>-<device>.png` for light and dark
-at desktop and phone width, and `axe.json`.
+at desktop and phone width, and `axe.json`. When the work folder has `ui-states.txt` (written by
+the foreman: one state per line, the fields to fill and options to pick), it also writes
+`<page>--<state>-<scheme>-<device>.png` and scans each state. A state the criteria need that is
+not in that file is not something you can reach: name the missing states under BLOCKING, as
+lines the foreman can add (`<name>: fill <label> = <text>; select <label> = <option>; click
+<button>`), and return `escalate`.
 
 Then:
 1. Open every screenshot with Read. A screen you did not open is not reviewed.

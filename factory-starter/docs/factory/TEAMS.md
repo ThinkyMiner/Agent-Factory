@@ -310,7 +310,11 @@ adds or changes a screen, flow or design token first goes to `designer` (`design
 to define it. `factory/scripts/ui-shots.mjs` is a reference built on Playwright and
 `@axe-core/playwright` from the product's own `node_modules`: 8 screenshots per page
 ({light, dark} x {1280x800, 390x844}) and `axe.json`. It refuses `file://` pages outside the
-repository and output folders outside it.
+repository and output folders outside it. States the page reaches only after input (a long title,
+an invalid colour, another layout) come from `ui-states.txt` in the work folder, which the
+foreman writes before the UI review: each line names a state and the steps a person would take
+(`fill <label> = <text>`, `select <label> = <option text>`, `click <button name>`). The reviewer's
+command stays `make ui-shots URL=<url> OUT=<dir>`; a bad line stops it before anything renders.
 
 ## Research
 
