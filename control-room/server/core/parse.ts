@@ -440,8 +440,12 @@ export function blockedSummary(text: string): string {
   const body = (t: string) => lines(t).filter((l) => l.trim() && !/^\s*#/.test(l)).map(clean).filter(Boolean)
   const all = lines(text).filter((l) => l.trim())
   // the work skill asks for "the smallest decision the human needs to make": that section, when there is one
+  // ...as a heading, or as a "Smallest decision for the human: ..." line (its text, else the lines under it)
   const ask = [...sections(text)].find(([h]) => /decision|question|need|ask|request/.test(h))?.[1]
-  const asked = ask ? body(ask) : []
+  const at = all.findIndex((l) => /^[^:?]{0,60}\b(decision|question|need|ask|request)[^:?]{0,60}:/i.test(clean(l)))
+  const own = at < 0 ? '' : clean(all[at]!).replace(/^[^:]*:\s*/, '')
+  const labelled = at < 0 ? [] : own ? [own] : all.slice(at + 1).map(clean).filter(Boolean)
+  const asked = ask ? body(ask) : labelled
   const rest = body(text)
   const q = asked.find((l) => l.endsWith('?')) ?? asked[0] ?? rest.find((l) => l.endsWith('?'))
   return (q ?? rest[0] ?? (all[0] ? clean(all[0]) : '') ?? '').slice(0, 240) || '(BLOCKED.md is empty)'

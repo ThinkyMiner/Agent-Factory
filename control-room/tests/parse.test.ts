@@ -263,6 +263,12 @@ describe('small files', () => {
       { key: 'NEW_KEY', value: 'x y', comment: '' },
     ])
   })
+  test('blockedSummary: a "Label: text" BLOCKED.md gives the decision line, not "What I did"', () => {
+    const text = '# Blocked: #9 widget copy\n\nWhat I did: rewrote the label and checked the old copy still renders?\n\nWhat stopped me: the criterion and the contract disagree on the wording.\n(The contract was approved first.)\n\nSmallest decision for the human: keep the contract wording, or change the criterion to match the page?\n'
+    expect(blockedSummary(text)).toBe('keep the contract wording, or change the criterion to match the page?')
+    expect(blockedSummary('# Blocked\n\nWhat I did: x\nDecision needed:\n- pick A or B\n')).toBe('pick A or B')
+  })
+
   test('blockedSummary prefers the question line', () => {
     expect(blockedSummary('# Blocked\n\nI was writing the spec.\n\n- Hard delete or soft delete?\n')).toBe('Hard delete or soft delete?')
     expect(blockedSummary('# Blocked\n\nNo question here')).toBe('No question here')
