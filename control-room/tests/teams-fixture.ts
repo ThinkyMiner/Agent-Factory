@@ -38,7 +38,7 @@ export function makeTeamsFactory(root: string, now = Date.now()) {
   // ---- main: the kit, the roster, a merged planning cycle ----
   git('init', '-q', '-b', 'main')
   write('factory/risk-rules.txt', readFileSync(new URL('../demo/template/factory/risk-rules.txt', import.meta.url), 'utf8'))
-  write('factory/policy.env', 'AUTO_MERGE_MAX_TIER=none\n')
+  write('factory/policy.env', 'AUTO_MERGE_MAX_TIER=none\n\n# How much ceremony a feature gets (team mode).\nRIGOR=mvp\n')
   write('factory/teams.json', JSON.stringify({
     version: 1, default_team: 'backend', limits: { round_minutes: 45 },
     teams: {

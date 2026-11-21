@@ -31,14 +31,28 @@ const POLICY: Record<string, string> = {
   R1: 'R0 and R1 pull requests merge on their own once CI is green.',
 }
 
+/** What each setting changes, in one line. A key the control room does not know shows the comment above it in the file. */
+function meaning(key: string, value: string, comment: string): string {
+  if (key === 'AUTO_MERGE_MAX_TIER') return `${POLICY[value] ?? `Pull requests up to ${value} merge on their own once CI is green.`} R2 always needs the human-approved label; R3 is never done by the factory.`
+  if (key === 'RIGOR')
+    return value === 'mvp'
+      ? 'Team mode, first version: one discussion round, one draft, no specialist review round; at most 15 acceptance criteria; build items start at dispatch and the e2e tests come at integration.'
+      : 'Team mode, full ceremony: a specialist review round, up to 2 discussion rounds and 3 drafts; criteria get an evidence review; build items wait for the e2e tests. (Anything but "mvp" means full.)'
+  return comment.split('\n')[0]?.trim() || 'Not a setting the control room knows, and the file says nothing above it.'
+}
+
 function Policy({ v }: { v: FactoryView }) {
   const p = v.policy
   const show = (r: NonNullable<NonNullable<FactoryView['policy']>['main']>) =>
     r.ok ? (
-      <>
-        <Mono className="text-[13px]">AUTO_MERGE_MAX_TIER={r.value.autoMergeMax}</Mono>
-        <p className="mt-1">{POLICY[r.value.autoMergeMax] ?? `Pull requests up to ${r.value.autoMergeMax} merge on their own once CI is green.`} R2 always needs the <Mono>human-approved</Mono> label; R3 is never done by the factory.</p>
-      </>
+      <dl className="space-y-2">
+        {r.value.settings.map((s) => (
+          <div key={s.key}>
+            <dt><Mono className="text-[13px]">{s.key}={s.value}</Mono></dt>
+            <dd className="mt-0.5 text-muted">{meaning(s.key, s.value, s.comment)}</dd>
+          </div>
+        ))}
+      </dl>
     ) : (
       <div>
         <div className="font-medium text-fail">Could not read the policy: {r.error}</div>
@@ -46,7 +60,7 @@ function Policy({ v }: { v: FactoryView }) {
       </div>
     )
   return (
-    <Card title="Auto-merge policy" id="f-policy" aside={<><Mono className="text-muted">factory/policy.env</Mono><DriftFlag f={p} /></>}>
+    <Card title="Factory policy" id="f-policy" aside={<><Mono className="text-muted">factory/policy.env</Mono><DriftFlag f={p} /></>}>
       {!p ? <Empty title="No factory/policy.env">Without it, every pull request waits for you.</Empty> : p.main ? show(p.main) : <span className="text-muted">Not on main.</span>}
       {p?.worktree && (
         <div className="mt-3 rounded-md border border-attention/40 bg-attention-bg px-3 py-2">

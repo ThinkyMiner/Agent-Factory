@@ -255,6 +255,13 @@ describe('small files', () => {
     expect(parsePolicy('AUTO_MERGE_MAX_TIER="R1"\n')).toMatchObject({ ok: true, value: { autoMergeMax: 'R1' } })
     expect(parsePolicy('AUTO_MERGE_MAX_TIER=all').ok).toBe(false)
     expect(parsePolicy('# nothing').ok).toBe(false)
+    // every setting, RIGOR too, with the comment above it
+    const p = parsePolicy('# Highest tier\nAUTO_MERGE_MAX_TIER=R1\n\n# How much ceremony\n#   mvp  lighter\nRIGOR=mvp\nNEW_KEY="x y"\nlower=ignored\n')
+    expect(p.ok && p.value.settings).toEqual([
+      { key: 'AUTO_MERGE_MAX_TIER', value: 'R1', comment: 'Highest tier' },
+      { key: 'RIGOR', value: 'mvp', comment: 'How much ceremony\n  mvp  lighter' },
+      { key: 'NEW_KEY', value: 'x y', comment: '' },
+    ])
   })
   test('blockedSummary prefers the question line', () => {
     expect(blockedSummary('# Blocked\n\nI was writing the spec.\n\n- Hard delete or soft delete?\n')).toBe('Hard delete or soft delete?')

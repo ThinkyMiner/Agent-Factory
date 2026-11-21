@@ -77,6 +77,15 @@ test('board: dispatched items not started are Ready, with what they wait for', a
   expect(errors).toEqual([])
 })
 
+test('factory: the policy card shows every setting and what it changes', async ({ page }) => {
+  await page.goto(TEAMS_URL + '/factory')
+  const card = page.getByRole('region', { name: 'Factory policy' })
+  await expect(card).toContainText('AUTO_MERGE_MAX_TIER=none')
+  await expect(card).toContainText('Every pull request waits for you.')
+  await expect(card).toContainText('RIGOR=mvp')
+  await expect(card).toContainText('build items start at dispatch')
+})
+
 for (const scheme of ['light', 'dark'] as const) {
   test.describe(scheme, () => {
     test.use({ colorScheme: scheme })

@@ -415,13 +415,23 @@ export function parseReflection(file: string, text: string): Parsed<Reflection> 
 
 // ---------- small files ----------
 
-/** factory/policy.env: AUTO_MERGE_MAX_TIER. */
-export function parsePolicy(text: string): Parsed<{ autoMergeMax: Tier | 'none' }> {
+/** factory/policy.env: AUTO_MERGE_MAX_TIER, and every KEY=value in it with the comment written above it. */
+export function parsePolicy(text: string): Parsed<{ autoMergeMax: Tier | 'none'; settings: { key: string; value: string; comment: string }[] }> {
   const m = /^\s*AUTO_MERGE_MAX_TIER\s*=\s*["']?(\w+)["']?\s*$/m.exec(text)
   if (!m) return fail('AUTO_MERGE_MAX_TIER is not set', text)
   const v = m[1]!
   if (v !== 'none' && !(TIERS as readonly string[]).includes(v)) return fail(`AUTO_MERGE_MAX_TIER="${v}" is not none or R0..R3`, text)
-  return { ok: true, warnings: [], value: { autoMergeMax: v as Tier | 'none' } }
+  const settings: { key: string; value: string; comment: string }[] = []
+  let comment: string[] = []
+  for (const l of lines(text)) {
+    const kv = /^\s*([A-Z][A-Z0-9_]*)\s*=\s*["']?(.*?)["']?\s*$/.exec(l)
+    if (kv) {
+      settings.push({ key: kv[1]!, value: kv[2]!, comment: comment.join('\n') })
+      comment = []
+    } else if (/^\s*#/.test(l)) comment.push(l.replace(/^\s*#\s?/, ''))
+    else if (!l.trim()) comment = []
+  }
+  return { ok: true, warnings: [], value: { autoMergeMax: v as Tier | 'none', settings } }
 }
 
 /** One-line summary of a BLOCKED.md for the needs-you row. The full text is always shown on open. */
