@@ -255,6 +255,7 @@ function Merged({ data }: { data: ApiState }) {
       <Link data-nav-item to={`/items/${i.id}`} className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface-2">
         <ItemId id={i.id} link={false} />
         <span className="min-w-0 flex-1 truncate">{i.title}</span>
+        {i.mergedInto && i.mergedInto !== 'main' && <span className="font-mono text-[11px] text-muted" title="Merged into the feature branch; main gets it when the feature's integrate pull request merges">→ {i.mergedInto}</span>}
         {i.reverted && <span className="text-[11.5px] font-medium text-fail">reverted</span>}
         <TierChip tier={i.tier} />
         <span className="w-16 text-[12px] text-muted" title={i.mergedBy === 'auto' ? 'auto-merged' : 'merged by you'}>

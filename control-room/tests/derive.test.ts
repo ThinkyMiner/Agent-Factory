@@ -190,6 +190,10 @@ describe('pull requests', () => {
 })
 
 describe('merged and closed', () => {
+  test('merged says into what: the PR\'s base, or main when only main\'s tree says so', () => {
+    expect(derive({ stageEvents: RUN_TO_PR(), pull: pull({ state: 'MERGED', mergedAt: ago(30), baseRefName: 'feature/f001-x' }) })).toMatchObject({ state: 'merged', mergedInto: 'feature/f001-x' })
+    expect(derive({ onMain: { at: ago(30) } })).toMatchObject({ state: 'merged', mergedInto: 'main' })
+  })
   test('merged: first pass, auto vs human', () => {
     const auto = derive({ stageEvents: RUN_TO_PR(), pull: pull({ state: 'MERGED', mergedAt: ago(30), timeline: [{ type: 'auto_merge_enabled', at: ago(59) }] }) })
     expect(auto).toMatchObject({ state: 'merged', column: 'merged', mergedAt: ago(30), mergedBy: 'auto', firstPass: true, fixRounds: 0 })

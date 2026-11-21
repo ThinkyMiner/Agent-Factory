@@ -8,7 +8,7 @@ export function summary(i: ItemView) {
   return {
     id: i.id, slug: i.slug, title: i.title, state: i.state, column: i.column, reason: i.reason, needs: i.needs, flags: i.flags, since: i.since,
     stage: i.stage, stageStatus: i.stageStatus, round: i.round, fixRounds: i.fixRounds, fixByStage: i.fixByStage, tier: i.tier, pr: i.pr, issue: i.issue,
-    branch: i.branch, feature: i.feature, waitsFor: i.waitsFor, live: i.live, mergedAt: i.mergedAt, readyAt: i.readyAt, mergedBy: i.mergedBy, firstPass: i.firstPass, reverted: i.reverted,
+    branch: i.branch, feature: i.feature, waitsFor: i.waitsFor, live: i.live, mergedAt: i.mergedAt, mergedInto: i.mergedInto, readyAt: i.readyAt, mergedBy: i.mergedBy, firstPass: i.firstPass, reverted: i.reverted,
     lastActivity: i.lastActivity, notices: i.notices.length, errors: i.notices.filter((n) => n.level === 'error').length, notVerified: i.notVerified.length,
     stages: i.stages.map((s) => ({ stage: s.stage, status: s.status, rounds: s.rounds })),
   }

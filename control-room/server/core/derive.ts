@@ -181,6 +181,7 @@ export interface ItemView {
   feature?: string // team mode: the feature it was dispatched in
   waitsFor?: string // team mode, ready: what it waits for (the dispatch "after" column), set with the teams view
   mergedAt?: string
+  mergedInto?: string // the branch its PR merged into (the PR's base: main, or feature/<f> in team mode)
   readyAt?: string
   mergedBy?: 'auto' | 'human'
   firstPass?: boolean
@@ -627,6 +628,7 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
     feature,
     live: liveRun && flags.includes('live') ? { agentType: liveRun.agentType, since: liveRun.start } : undefined,
     mergedAt: state === 'merged' ? since : undefined,
+    mergedInto: state === 'merged' ? (pr?.state === 'MERGED' ? pr.baseRefName : undefined) ?? (inp.onMain ? 'main' : undefined) : undefined,
     readyAt,
     mergedBy,
     firstPass: state === 'merged' ? fixRounds === 0 : undefined,

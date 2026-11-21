@@ -28,7 +28,7 @@ function color(m: Metric, key: string) {
   return m.key === 'tiers' ? `var(--tier-${i})` : `var(--series-${i + 1})`
 }
 
-const NOUN: Record<string, string> = { throughput: 'merged', 'fix-rounds': 'fix rounds', tiers: 'merged', 'merged-by': 'merged', escaped: 'escaped' }
+const NOUN: Record<string, string> = { throughput: 'merged', 'merged-prs': 'pull requests merged', 'fix-rounds': 'fix rounds', tiers: 'merged', 'merged-by': 'merged', escaped: 'escaped' }
 const NONE: Record<string, string> = { 'fix-rounds': 'No fix rounds', stops: 'No runs ended', escaped: 'Nothing escaped' }
 const partValue = (p: Point, key: string) => p.parts?.find((x) => x.key === key)?.value ?? 0
 

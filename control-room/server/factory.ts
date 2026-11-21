@@ -211,8 +211,24 @@ export class Factory {
   async quality(weeks: number) {
     const { runs, tokensAvailable } = await this.runs()
     const tokensByItem = new Map<string, number>()
-    if (tokensAvailable) for (const r of runs) if (r.tokens && r.workId) tokensByItem.set(r.workId, (tokensByItem.get(r.workId) ?? 0) + r.tokens.total)
-    return quality({ items: this.state.items, tokensByItem, escapedIssues: this.state.snap.escapedIssues, now: Date.now(), weeks })
+    const tokenRuns = new Map<string, { read: number; total: number }>()
+    if (tokensAvailable) {
+      for (const r of runs) {
+        if (!r.workId) continue
+        const c = tokenRuns.get(r.workId) ?? { read: 0, total: 0 }
+        c.total++
+        if (r.tokens) {
+          c.read++
+          tokensByItem.set(r.workId, (tokensByItem.get(r.workId) ?? 0) + r.tokens.total)
+        }
+        tokenRuns.set(r.workId, c)
+      }
+    }
+    const mergedPulls = (this.gh.data?.pulls ?? []).flatMap((p) => {
+      const id = /^work\/([A-Za-z0-9._]+)-/.exec(p.headRefName)?.[1]
+      return id && p.state === 'MERGED' && p.mergedAt ? [{ number: p.number, id, mergedAt: p.mergedAt, base: p.baseRefName }] : []
+    })
+    return quality({ items: this.state.items, tokensByItem, tokenRuns, mergedPulls, escapedIssues: this.state.snap.escapedIssues, now: Date.now(), weeks })
   }
 
   memory = () => memoryView(this.state.meta, this.state.snap.observations)

@@ -47,13 +47,15 @@ const median = (xs: number[]) => {
 
 export interface QualityInput {
   items: ItemView[]
-  tokensByItem: Map<string, number> // total tokens of every run tied to the item (empty map: unknown)
+  tokensByItem: Map<string, number> // total tokens of the runs tied to the item whose transcript was readable (empty map: unknown)
+  tokenRuns?: Map<string, { read: number; total: number }> // per item: runs with a readable transcript, of all its runs
+  mergedPulls?: { number: number; id: string; mergedAt: string; base?: string }[] // every merged work PR (work/<id>-*), every attempt
   escapedIssues: { number: number; createdAt: string }[]
   now: number
   weeks: number
 }
 
-export function quality({ items, tokensByItem, escapedIssues, now, weeks }: QualityInput) {
+export function quality({ items, tokensByItem, tokenRuns = new Map(), mergedPulls = [], escapedIssues, now, weeks }: QualityInput) {
   const first = weekStart(now) - (weeks - 1) * 7 * DAY
   const starts = Array.from({ length: weeks }, (_, i) => weekStart(first + i * 7 * DAY + DAY / 2)) // DST-safe
   const weekOf = (iso: string | undefined) => {
@@ -173,26 +175,54 @@ export function quality({ items, tokensByItem, escapedIssues, now, weeks }: Qual
     if (w && escaped.has(w)) add(escaped.get(w)!, 'escaped-defect issue', `issue:${e.number}`)
   }
 
-  // 9. tokens per merged item (median)
+  // 9. tokens per merged item (median), saying how many of its runs could be read
+  let read = 0
+  let total = 0
   const tokens = byMergeWeek((p, i) => {
     const t = tokensByItem.get(i.id)
     if (t === undefined) return
     p.ids.push(i.id)
     ;(p.perItem ??= {})[i.id] = t
+    const c = tokenRuns.get(i.id)
+    if (c) {
+      read += c.read
+      total += c.total
+      if (c.read < c.total) (p.notes ??= {})[i.id] = `partial: ${c.read} of ${c.total} runs readable`
+    }
   })
   for (const p of tokens.values()) p.value = median(Object.values(p.perItem ?? {}))
 
+  // 10. every merged work pull request, attempts included, in the week it merged, by where it merged
+  const prs = blank()
+  for (const pr of mergedPulls) {
+    const w = weekOf(pr.mergedAt)
+    if (!w || !prs.has(w)) continue
+    const p = prs.get(w)!
+    add(p, pr.base?.startsWith('feature/') ? 'into a feature branch' : 'into main', pr.id)
+    const n = (p.notes ??= {})
+    n[pr.id] = n[pr.id] ? `${n[pr.id]}; PR #${pr.number}` : `PR #${pr.number}${pr.base ? ` into ${pr.base}` : ''}`
+  }
+  const mergedTo = merged.reduce((m, i) => m.set(i.mergedInto ?? 'main', (m.get(i.mergedInto ?? 'main') ?? 0) + 1), new Map<string, number>())
+  const intoFeature = [...mergedTo].filter(([b]) => b.startsWith('feature/')).reduce((a, [, n]) => a + n, 0)
+  const MERGED = intoFeature
+    ? `Merged means the item's pull request merged into its base: main, or in team mode its feature branch (${intoFeature} of ${merged.length} here), which reaches main later through the feature's integrate pull request.`
+    : "Merged means the item's pull request merged into main."
+
   const metrics: Metric[] = [
-    { key: 'throughput', question: 'How many items are we merging each week?', unit: 'count', kind: 'bars', points: series(throughput) },
+    { key: 'throughput', question: 'How many items are we merging each week?', unit: 'count', kind: 'bars', note: `${MERGED} Each item counts once, by its latest merged pull request.`, points: series(throughput) },
     { key: 'lead-time', question: 'How long from ready to merged? (median hours)', unit: 'hours', kind: 'bars', note: 'Ready is when the factory:ready label was added, or the first intake event when the label time is unknown.', points: series(lead) },
     { key: 'first-pass', question: 'What share merged with no fix rounds?', unit: 'percent', kind: 'bars', points: series(firstPass) },
     { key: 'fix-rounds', question: 'Where do fix rounds happen?', unit: 'count', kind: 'stacked', series: [...STAGES], note: 'Each failure that triggered a fix round, charged to the stage that failed.', points: series(fixes) },
     { key: 'stops', question: 'What share of runs stopped, and why?', unit: 'percent', kind: 'stacked', series: STOPS, note: 'Of the /work runs that ended that week. The drilldown says where each one stopped.', points: series(stops) },
     { key: 'tiers', question: 'What is the risk mix of what merged?', unit: 'count', kind: 'stacked', series: ['R0', 'R1', 'R2', 'R3', 'unknown'], points: series(tiers) },
-    { key: 'merged-by', question: 'How much merged without me?', unit: 'count', kind: 'stacked', series: ['auto-merged', 'merged by you', 'unknown'], points: series(mergedBy) },
+    { key: 'merged-by', question: 'How much merged without me?', unit: 'count', kind: 'stacked', series: ['auto-merged', 'merged by you', 'unknown'], note: 'Inferred from the pull request: auto-merge enabled and no human-approved label counts as auto-merged. Who pressed merge is not fetched from GitHub.', points: series(mergedBy) },
     { key: 'escaped', question: 'Did defects escape?', unit: 'count', kind: 'stacked', series: ['reverted', 'escaped-defect issue'], note: 'Reverted pull requests, plus issues labelled escaped-defect.', points: series(escaped) },
   ]
-  if (tokensByItem.size) metrics.push({ key: 'tokens', question: 'How many tokens does a merged item cost? (median)', unit: 'tokens', kind: 'bars', note: 'All agent runs and foreman sessions tied to the item, from transcripts.', points: series(tokens) })
+  if (mergedPulls.length) metrics.splice(1, 0, { key: 'merged-prs', question: 'How many work pull requests merged each week? (every attempt)', unit: 'count', kind: 'stacked', series: ['into main', 'into a feature branch'], note: 'Every merged pull request from a work/<id>-<slug> branch, so an item tried twice counts twice.', points: series(prs) })
+  if (tokensByItem.size) {
+    const cover = total && read < total ? `Partial: ${read} of ${total} runs of these items had a readable transcript; the rest are not counted.` : 'Every run of these items had a readable transcript.'
+    metrics.push({ key: 'tokens', question: 'How many tokens does a merged item cost? (median)', unit: 'tokens', kind: 'bars', note: `The agent runs and foreman sessions tied to the item, from their transcripts. ${total ? cover : ''}`.trim(), points: series(tokens) })
+  }
 
   // headline numbers over the last four weeks
   const recent = (m: Map<string, Point>) => series(m).slice(-4)

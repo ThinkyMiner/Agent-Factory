@@ -54,6 +54,25 @@ describe('quality over the demo', async () => {
     expect(why).toEqual(expect.arrayContaining(['blocked at spec', 'blocked at gate']))
     for (const m of q.metrics) for (const p of m.points) for (const x of p.parts ?? []) if (m.series) expect(m.series, m.key).toContain(x.key)
   })
+  test('merged says where; every merged work PR counts, an item tried twice twice; partial tokens say so', () => {
+    const items = s.items.filter((i) => i.state === 'merged' && i.mergedAt).slice(0, 2)
+    const [a, b] = items.map((i) => ({ ...i, mergedInto: 'feature/f001-x' }))
+    const at = a!.mergedAt!
+    const q2 = quality({
+      items: [a!, b!], now: NOW, weeks: 8, escapedIssues: [],
+      tokensByItem: new Map([[a!.id, 500]]), tokenRuns: new Map([[a!.id, { read: 6, total: 12 }]]),
+      mergedPulls: [{ number: 24, id: a!.id, mergedAt: at, base: 'feature/f001-x' }, { number: 31, id: a!.id, mergedAt: at, base: 'feature/f001-x' }, { number: 40, id: b!.id, mergedAt: at, base: 'main' }],
+    })
+    const m = (k: string) => q2.metrics.find((x) => x.key === k)!
+    expect(m('throughput').note).toMatch(/^Merged means the item's pull request merged into its base: main, or in team mode its feature branch \(2 of 2 here\)/)
+    const prs = m('merged-prs').points.find((p) => p.ids.length)!
+    expect(prs.value).toBe(3)
+    expect(prs.parts!.map((x) => [x.key, x.value])).toEqual([['into a feature branch', 2], ['into main', 1]])
+    expect(prs.notes![a!.id]).toBe('PR #24 into feature/f001-x; PR #31')
+    expect(m('tokens').note).toContain('Partial: 6 of 12 runs of these items had a readable transcript')
+    expect(m('tokens').points.find((p) => p.ids.length)!.notes).toEqual({ [a!.id]: 'partial: 6 of 12 runs readable' })
+    expect(quality({ items: [a!], now: NOW, weeks: 8, escapedIssues: [], tokensByItem: new Map() }).metrics.find((x) => x.key === 'throughput')!.note).toContain('feature branch (1 of 1 here)')
+  })
   test('lead time and tokens are medians with per-item values', () => {
     const tok = metric('tokens').points.find((p) => p.ids.length > 0)!
     const v = Object.values(tok.perItem!).sort((a, b) => a - b)

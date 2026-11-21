@@ -15,7 +15,7 @@ const COLUMNS: { key: Column; label: string; hint: string }[] = [
   { key: 'pr-open', label: 'Pull request open', hint: 'Open with auto-merge; CI decides' },
   { key: 'waiting', label: 'Waiting for me', hint: 'A pull request held at the human gate' },
   { key: 'stopped', label: 'Stopped', hint: 'The run halted before a pull request, or was closed' },
-  { key: 'merged', label: 'Merged', hint: 'Merged into main' },
+  { key: 'merged', label: 'Merged', hint: "The item's pull request merged into its base: main, or in team mode its feature branch (main gets it with the feature)" },
 ]
 const TIERS: Tier[] = ['R0', 'R1', 'R2', 'R3']
 const MERGED_SHOWN = 15
@@ -152,7 +152,7 @@ function Card({ i }: { i: ItemSummary }) {
           {i.column === 'ready' && i.waitsFor && <span className="w-full text-[11.5px]">waits for {i.waitsFor}</span>}
           {(i.column === 'waiting' || i.column === 'stopped') && !i.needs && <StateBadge state={i.state} className="px-1.5 py-0 text-[11.5px]" />}
           {i.column === 'pr-open' && i.pr && <span>PR #{i.pr.number}</span>}
-          {i.column === 'merged' && <span>{i.mergedBy === 'auto' ? 'auto-merged' : i.mergedBy === 'human' ? 'merged by you' : 'merged'}</span>}
+          {i.column === 'merged' && <span>{i.mergedBy === 'auto' ? 'auto-merged' : i.mergedBy === 'human' ? 'merged by you' : 'merged'}{i.mergedInto && i.mergedInto !== 'main' && <> into <span className="font-mono text-[11px]">{i.mergedInto}</span></>}</span>}
           {i.needs && <NeedsTag kind={i.needs.kind} className="text-[12px] [&_svg]:size-3.5" />}
           <span className="ml-auto inline-flex items-center gap-2 tabular">
             {i.fixRounds > 0 ? <span title={`${i.fixRounds} fix rounds`}>{i.fixRounds} fix</span> : i.column === 'merged' ? <span>first pass</span> : null}
