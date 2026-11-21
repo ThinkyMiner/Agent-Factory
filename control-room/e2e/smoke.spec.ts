@@ -97,20 +97,23 @@ test('item detail: a blocked item shows the question; a malformed review shows a
   await shot(page, 'item-malformed-review')
 })
 
-test('runs: live and historic, with quiet runs called out and filters in the URL', async ({ page }) => {
+test('runs: live and historic, with runs that never recorded an end called out and filters in the URL', async ({ page }) => {
   const errors = watchErrors(page)
   await page.goto('/runs')
   const table = page.getByRole('table', { name: 'Agent runs' })
-  await expect(table.getByRole('row').filter({ hasText: '#29' }).filter({ hasText: 'quiet' })).toHaveCount(1)
+  await expect(table.getByRole('row').filter({ hasText: '#29' }).filter({ hasText: 'no end recorded' })).toHaveCount(1)
   await expect(table.getByRole('row').filter({ hasText: '#30' }).filter({ hasText: 'foreman' }).first()).toContainText('waiting for you')
   await expect(table).toContainText('claude-opus-5-5')
   await shot(page, 'runs')
-  await page.getByRole('button', { name: /^quiet/ }).click()
-  await expect(page).toHaveURL(/status=quiet/)
+  await page.getByRole('button', { name: /^no end recorded/ }).click()
+  await expect(page).toHaveURL(/status=no-end/)
   const rows = table.getByRole('row').filter({ hasNot: page.getByRole('columnheader') })
-  await expect(rows).toHaveCount(1) // the demo has one quiet run: #29's builder
-  await expect(rows.first()).toContainText('#29')
-  await expect(rows.first()).toContainText('quiet')
+  await expect(rows.filter({ hasText: '#29' })).toHaveCount(1) // #29's builder: open, silent past the threshold
+  await expect(rows.first()).toContainText('no end recorded')
+  // the home page's Running now counts what this page calls running
+  const running = Number((await page.getByText(/\d+ running ·/).textContent())!.match(/(\d+) running/)![1])
+  await page.goto('/')
+  await expect(page.getByRole('region', { name: /running now/i }).getByRole('row')).toHaveCount(running + 1)
   expect(errors).toEqual([])
 })
 

@@ -1,5 +1,6 @@
-// Every agent run, live and historic, from the lifecycle events. A run is "quiet" when it is still
-// open but its item has had no event for the stale threshold. Virtualised: thousands of rows stay fast.
+// Every agent run, live and historic, from the lifecycle events. A run that started and never recorded an
+// end, with nothing heard for the quiet threshold, is "no end recorded", not running (the server decides,
+// so the home page's Running now counts the same runs). Virtualised: thousands of rows stay fast.
 import { useMemo, useRef } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -10,23 +11,23 @@ import { PageHeader } from '@/components/Layout'
 import { Empty, ErrorState, Loading } from '@/components/States'
 import { ItemId, LiveDot, Mono, STATUS, Status, StatusGlyph } from '@/components/vocab'
 
-type RunState = 'running' | 'quiet' | 'waiting' | 'finished' | 'abandoned'
-const RUN_STATES: RunState[] = ['running', 'quiet', 'waiting', 'finished', 'abandoned']
+type RunState = 'running' | 'waiting' | 'no-end' | 'finished' | 'abandoned'
+const RUN_STATES: RunState[] = ['running', 'waiting', 'no-end', 'finished', 'abandoned']
+const STATE_LABEL: Record<RunState, string> = { running: 'running', waiting: 'waiting', 'no-end': 'no end recorded', finished: 'finished', abandoned: 'abandoned' }
 
 function runState(r: RunRow, item: ItemSummary | undefined): RunState {
   if (r.outcome !== 'running') return r.outcome
   if (r.agentType === 'foreman' && item?.flags.includes('waiting-input')) return 'waiting'
-  if (item?.flags.includes('quiet')) return 'quiet'
   return 'running'
 }
 
-function RunStatus({ s, item, now }: { s: RunState; item?: ItemSummary; now: number }) {
+function RunStatus({ s, item, now, staleMinutes }: { s: RunState; item?: ItemSummary; now: number; staleMinutes?: number }) {
   if (s === 'running') return <Status status="running" />
-  if (s === 'quiet')
+  if (s === 'no-end')
     return (
-      <span className="inline-flex items-center gap-1 text-muted" title="Open, but no event for longer than the stale threshold">
+      <span className="inline-flex items-center gap-1 text-muted" title={`It started and never recorded an end, and nothing was heard for over ${staleMinutes ?? 'the quiet threshold of'} min: it may have crashed or been closed without its hook firing`}>
         <Hourglass aria-hidden className="size-3.5" />
-        quiet{item?.lastActivity ? ` · ${ago(item.lastActivity, now)}` : ''}
+        no end recorded{item?.lastActivity ? ` · last heard ${ago(item.lastActivity, now)} ago` : ''}
       </span>
     )
   if (s === 'waiting')
@@ -72,7 +73,7 @@ export function Runs() {
     <>
       <PageHeader title="Runs">
         <span className="text-[12px] text-muted tabular">
-          {counts.running} running · {counts.quiet} quiet · {counts.waiting} waiting · {all.length} total
+          {counts.running} running · {counts.waiting} waiting · {counts['no-end']} no end recorded · {all.length} total
         </span>
       </PageHeader>
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-2">
@@ -94,7 +95,7 @@ export function Runs() {
         <div role="group" aria-label="Status" className="inline-flex border border-border bg-surface">
           {(['', ...RUN_STATES] as const).map((s) => (
             <button key={s || 'all'} aria-pressed={status === s} onClick={() => set('status', s)} className={cn('border-r border-border px-2.5 py-1 font-mono text-[11.5px] text-muted last:border-r-0 hover:text-fg', status === s && 'bg-accent text-white hover:text-white')}>
-              {s || 'all'}
+              {s ? STATE_LABEL[s] : 'all'}
               {s && <span className="ml-1 tabular text-faint">{counts[s]}</span>}
             </button>
           ))}
@@ -164,7 +165,7 @@ export function Runs() {
                             {r.start ? duration((r.end ? Date.parse(r.end) : now) - Date.parse(r.start)) : '—'}
                           </span>
                           <span role="cell">
-                            <RunStatus s={s} item={item} now={now} />
+                            <RunStatus s={s} item={item} now={now} staleMinutes={state?.factory.staleMinutes} />
                           </span>
                           <span role="cell">
                             {r.stageResult && r.stageResult !== 'pending' && r.stageResult !== 'running' ? (

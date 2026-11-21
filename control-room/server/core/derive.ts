@@ -78,7 +78,7 @@ export interface AgentRun {
   start?: string
   end?: string
   transcriptPath?: string
-  outcome: 'running' | 'finished' | 'abandoned'
+  outcome: 'running' | 'finished' | 'abandoned' | 'no-end' // no-end: started, never ended, nothing heard for the quiet threshold
 }
 
 export interface Context {
@@ -269,6 +269,18 @@ export function indexLifecycle(events: LifecycleEvent[]): { sessions: Map<string
     runs.push({ agentId: `session:${s.id}`, agentType: 'foreman', sessionId: s.id, workId: s.workId ?? '', start: s.start, end: s.end, transcriptPath: s.transcriptPath, outcome: s.end ? 'finished' : 'running' })
   }
   return { sessions, runs }
+}
+
+/** A run still open with nothing heard from its item (or, without an item, its session) for the quiet
+ *  threshold is not running: its end was never recorded. The same rule makes an item quiet. */
+export function expireRuns(runs: AgentRun[], sessions: Map<string, Session>, lastByItem: Map<string, number>, now: number, staleMinutes: number) {
+  for (const r of runs) {
+    if (r.outcome !== 'running') continue
+    const s = r.sessionId ? sessions.get(r.sessionId) : undefined
+    const heard = Math.max(...[t(r.start), r.workId ? lastByItem.get(r.workId) : t(s?.last.ts)].filter((x): x is number => x !== undefined && !Number.isNaN(x)), -Infinity)
+    if (now - heard > staleMinutes * 60000) r.outcome = 'no-end'
+  }
+  return runs
 }
 
 /** The status of the stage an agent run served: the first terminal event for it after the run started. */
@@ -543,7 +555,8 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
       }
     } else if (idleMs > stale) {
       flags.push('quiet')
-      needs = { kind: 'quiet', summary: `no event for ${fmtMin(idleMs)} during ${stageName}${liveRun ? ` (${liveRun.agentType} still open)` : ''}`, since: new Date(lastActivity ?? ctx.now).toISOString() }
+      const open = itemRuns.filter((r) => r.outcome === 'no-end').at(-1)
+      needs = { kind: 'quiet', summary: `no event for ${fmtMin(idleMs)} during ${stageName}${open ? ` (${open.agentType}: no end recorded)` : ''}`, since: new Date(lastActivity ?? ctx.now).toISOString() }
     }
   } else if (issue?.labels.includes('factory:ready') || dispatched) {
     state = 'ready'
@@ -661,12 +674,20 @@ export function deriveAll(inputs: ItemInputs[], ctx: Context) {
     .map((i) => ({ ...i.needs!, id: i.id, title: i.title, tier: i.tier, stage: i.stage }))
     .sort(byNeeds)
   const byId = new Map(items.map((i) => [i.id, i]))
+  // Running now: the runs the Runs page calls running (an open session waiting at a prompt is a need, not a run).
+  // Without any lifecycle telemetry, an item whose stage is running stands in for its foreman.
   const running: RunningEntry[] = []
-  for (const i of items) {
-    if (i.live) running.push({ workId: i.id, title: i.title, stage: i.stage, agentType: i.live.agentType, since: i.live.since })
-    else if (i.state === 'in-progress' && i.stageStatus === 'running' && !i.flags.includes('quiet') && !i.flags.includes('waiting-input')) {
-      running.push({ workId: i.id, title: i.title, stage: i.stage, agentType: 'foreman', since: i.since })
+  for (const r of ctx.runs) {
+    if (r.outcome !== 'running') continue
+    const i = byId.get(r.workId)
+    if (r.agentType === 'foreman' && i?.flags.includes('waiting-input')) continue
+    running.push({ workId: r.workId, title: i?.title ?? '', stage: r.stage ?? i?.stage, agentType: r.agentType, since: r.start })
+  }
+  if (!ctx.runs.length) {
+    for (const i of items) {
+      if (i.state === 'in-progress' && i.stageStatus === 'running' && !i.flags.includes('quiet') && !i.flags.includes('waiting-input')) running.push({ workId: i.id, title: i.title, stage: i.stage, agentType: 'foreman', since: i.since })
     }
   }
+  running.sort((a, b) => Number(a.agentType === 'foreman') - Number(b.agentType === 'foreman') || t(b.since) - t(a.since))
   return { items, needsYou, running, byId }
 }

@@ -212,12 +212,16 @@ function Running({ data }: { data: ApiState }) {
             </tr>
           </thead>
           <tbody>
-            {data.running.map((r) => (
-              <tr key={r.workId} className="border-b border-border last:border-b-0">
+            {data.running.map((r, k) => (
+              <tr key={`${r.workId}-${r.agentType}-${r.since ?? k}`} className="border-b border-border last:border-b-0">
                 <td className="px-3 py-1.5">
-                  <Link data-nav-item to={`/items/${r.workId}`} className="hover:underline">
-                    <ItemId id={r.workId} link={false} /> {r.title}
-                  </Link>
+                  {r.workId ? (
+                    <Link data-nav-item to={`/items/${r.workId}`} className="hover:underline">
+                      <ItemId id={r.workId} link={false} /> {r.title}
+                    </Link>
+                  ) : (
+                    <span className="text-muted" title="A Claude Code session that is not running /work on an item: a team session, setup, /plan or /groom">no work item</span>
+                  )}
                 </td>
                 <td className="px-3 py-1.5">
                   <StageLabel stage={r.stage} status="running" />

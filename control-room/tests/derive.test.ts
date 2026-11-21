@@ -1,7 +1,7 @@
 // State derivation: every rule in DESIGN.md §5, plus partial and contradictory inputs.
 import { describe, expect, test } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { buildStages, deriveAll, deriveItem, indexLifecycle, type Context, type ItemInputs } from '../server/core/derive.ts'
+import { buildStages, deriveAll, deriveItem, expireRuns, indexLifecycle, type Context, type ItemInputs } from '../server/core/derive.ts'
 import { parseRiskRules } from '../server/core/risk.ts'
 import type { Issue, LifecycleEvent, Pull, Stage, StageEvent, Status } from '../server/core/types.ts'
 
@@ -290,6 +290,27 @@ describe('indexLifecycle', () => {
   test('a subagent event with an empty agent_type is labelled "subagent", not blank', () => {
     const { runs } = indexLifecycle([le('SubagentStop', 5, { agent_id: 'c', agent_type: '' })])
     expect(runs.find((r) => r.agentId === 'c')?.agentType).toBe('subagent')
+  })
+})
+
+describe('runs with no end', () => {
+  test('a run open past the quiet threshold with nothing heard is "no end recorded"; Running now lists exactly the running runs', () => {
+    const lifecycle = [
+      le('SessionStart', 120, { session_id: 'old', work_id: '7' }), le('SubagentStart', 100, { session_id: 'old', work_id: '7', agent_id: 'b7', agent_type: 'builder' }), // never stopped
+      le('SessionStart', 20, { session_id: 'new', work_id: '8' }), le('SubagentStart', 10, { session_id: 'new', work_id: '8', agent_id: 'r8', agent_type: 'reviewer' }),
+      le('SessionStart', 200, { session_id: 'team', work_id: '' }), le('Notification', 5, { session_id: 'team', work_id: '', reason: 'idle' }), // a team session, no item
+      le('SessionStart', 300, { session_id: 'setup', work_id: '' }), // a session long gone without its end
+    ]
+    const { sessions, runs } = indexLifecycle(lifecycle)
+    const last = new Map([['7', Date.parse(ago(100))], ['8', Date.parse(ago(10))]])
+    expireRuns(runs, sessions, last, NOW, 30)
+    const by = (id: string) => runs.find((r) => r.agentId === id)!.outcome
+    expect([by('b7'), by('session:old'), by('r8'), by('session:new'), by('session:team'), by('session:setup')]).toEqual(['no-end', 'no-end', 'running', 'running', 'running', 'no-end'])
+    const c = ctx([], { runs, sessions })
+    const out = deriveAll([{ id: '7', files: {}, stageEvents: [se('build', 'started', 100, 0, { work_id: '7' })], lifecycle: lifecycle.filter((e) => e.work_id === '7'), notices: [] }, { id: '8', files: {}, stageEvents: [se('review', 'started', 10, 0, { work_id: '8' })], lifecycle: lifecycle.filter((e) => e.work_id === '8'), notices: [] }], c)
+    expect(out.running.map((r) => [r.workId, r.agentType])).toEqual([['8', 'reviewer'], ['8', 'foreman'], ['', 'foreman']])
+    expect(out.running).toHaveLength(runs.filter((r) => r.outcome === 'running').length) // what the Runs page counts as running
+    expect(out.byId.get('7')).toMatchObject({ flags: ['quiet'], needs: { kind: 'quiet', summary: 'no event for 100 min during build (builder: no end recorded)' } })
   })
 })
 

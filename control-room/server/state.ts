@@ -1,6 +1,6 @@
 // One full read of a factory: load raw inputs, then derive state. Used by the server and tests.
 import { readFile } from 'node:fs/promises'
-import { byNeeds, deriveAll, indexLifecycle, type Context, type NeedsEntry, type NeedsKind } from './core/derive.ts'
+import { byNeeds, deriveAll, expireRuns, indexLifecycle, type Context, type NeedsEntry, type NeedsKind } from './core/derive.ts'
 import type { SweepFinding } from './core/parse.ts'
 import { pullNeeds } from './core/meta.ts'
 import { GitHubDataSchema, type GitHubData, type GitHubStatus } from './core/types.ts'
@@ -18,7 +18,16 @@ export async function computeState(repo: string, gh: GitHubInput, opts: { now?: 
   const snap = await loadSnapshot(repo, gh)
   const meta = await loadMeta(repo, snap.isGit, snap.main)
   const { sessions, runs } = indexLifecycle(snap.lifecycle)
-  const ctx: Context = { now: opts.now ?? Date.now(), staleMinutes: opts.staleMinutes, autoMergeMax: snap.autoMergeMax, rules: snap.rules, sessions, runs }
+  const now = opts.now ?? Date.now()
+  // when each item was last heard from (stage and lifecycle events), for runs that never recorded an end
+  const lastByItem = new Map<string, number>()
+  for (const e of snap.events) {
+    if ((e.type !== 'stage' && e.type !== 'lifecycle') || !e.work_id) continue
+    const x = Date.parse(e.ts)
+    if (!Number.isNaN(x) && x > (lastByItem.get(e.work_id) ?? -Infinity)) lastByItem.set(e.work_id, x)
+  }
+  expireRuns(runs, sessions, lastByItem, now, opts.staleMinutes)
+  const ctx: Context = { now, staleMinutes: opts.staleMinutes, autoMergeMax: snap.autoMergeMax, rules: snap.rules, sessions, runs }
   const d = deriveAll(snap.inputs, ctx)
   // team mode: the cycle, features, teams and sessions, and what in them needs you
   const teamsIn = await loadTeams(snap)
