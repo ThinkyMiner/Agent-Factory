@@ -82,6 +82,9 @@ describe('over the demo', async () => {
     const red = { ...pr, labels: ['risk:R1'], autoMerge: true, checks: [{ name: 'factory-tests', status: 'COMPLETED', conclusion: 'FAILURE' }, { name: 'risk-gate', status: 'COMPLETED', conclusion: 'SUCCESS' }] }
     expect(prNext(red, 'R1', 'R1')).toMatchObject({ kind: 'failed', who: 'its author', what: 'fix the failing check: factory-tests' })
     expect(prNext({ ...red, checks: [{ name: 'factory-tests', status: 'IN_PROGRESS' }] }, 'R1', 'R1')).toMatchObject({ kind: 'info', who: 'GitHub', what: 'auto-merge merges it when the checks pass' })
+    // a re-run under way is newer than the dated failure
+    const rerun = { ...red, checks: [{ name: 'factory-tests', status: 'COMPLETED', conclusion: 'FAILURE', completedAt: '2026-11-13T09:00:00Z' }, { name: 'factory-tests', status: 'IN_PROGRESS' }] }
+    expect(prNext(rerun, 'R1', 'R1')).toMatchObject({ kind: 'info', who: 'GitHub', failing: [] })
   })
 
   test('audits newest first, text kept raw for the sanitising renderer', () => {

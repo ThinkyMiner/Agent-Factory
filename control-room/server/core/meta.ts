@@ -3,7 +3,7 @@
 import { parseLessons, parsePolicy, parseReflection, splitFrontmatter } from './parse.ts'
 import type { NeedsEntry, NeedsKind } from './derive.ts'
 import { classify, type RiskRule } from './risk.ts'
-import { checkState, maxTier, tierRank, type Check, type Notice, type Tier, type ObservationFile, type Parsed, type Pull, type Reflection, type ReflectionChange, type ReflectionResult } from './types.ts'
+import { checkState, currentChecks, maxTier, tierRank, type Check, type Notice, type Tier, type ObservationFile, type Parsed, type Pull, type Reflection, type ReflectionChange, type ReflectionResult } from './types.ts'
 
 export type Drift = 'same' | 'modified' | 'added' | 'deleted'
 export interface MetaFile {
@@ -76,7 +76,7 @@ export function improvementView(files: MetaFile[], pulls: Pull[]) {
       isDraft: p.isDraft,
       approved: p.labels.includes('human-approved'),
       tier: /^risk:(R[0-3])$/.exec(p.labels.find((l) => l.startsWith('risk:')) ?? '')?.[1],
-      checks: p.checks.map((c) => ({ name: c.name, state: checkState(c) })),
+      checks: currentChecks(p.checks).map((c) => ({ name: c.name, state: checkState(c) })),
       files: p.files.map((x) => x.path),
     }))
   const count = (r: string) => preds.filter((p) => p.check?.result === r).length
@@ -107,12 +107,9 @@ export function prNext(p: Pull, tier: Tier | undefined, autoMergeMax: Tier | 'no
   const approved = p.labels.includes('human-approved')
   const approvedAt = p.timeline.filter((x) => x.type === 'labeled' && x.label === 'human-approved').at(-1)?.at
   const stale = (c: Check) => r2 && c.name === 'risk-gate' && (!approved || (!!approvedAt && !!c.completedAt && Date.parse(c.completedAt) < Date.parse(approvedAt)))
-  // a check can run more than once on the head (risk-gate re-runs on the label): its newest run counts, and of undated runs a pass
-  const key = (c: Check) => (Date.parse(c.completedAt ?? '') || 0) * 2 + (checkState(c) === 'pass' ? 1 : 0)
-  const newest = new Map<string, Check>()
-  for (const c of p.checks) if (!newest.has(c.name) || key(c) > key(newest.get(c.name)!)) newest.set(c.name, c)
-  const failing = [...newest.values()].filter((c) => checkState(c) === 'fail' && !stale(c)).map((c) => c.name)
-  const pending = p.checks.some((c) => checkState(c) === 'pending')
+  const checks = currentChecks(p.checks)
+  const failing = checks.filter((c) => checkState(c) === 'fail' && !stale(c)).map((c) => c.name)
+  const pending = checks.some((c) => checkState(c) === 'pending')
   const base = { failing, approved }
   if (failing.length) return { ...base, kind: 'failed', who: 'its author', what: `fix the failing check${failing.length > 1 ? 's' : ''}: ${failing.join(', ')}` }
   if (r2 && !approved) return { ...base, kind: 'approve', who: 'you', what: p.autoMerge ? 'add human-approved; auto-merge then merges it once the checks pass' : 'add human-approved, wait for the checks to pass, then merge' }

@@ -4,7 +4,7 @@
 // factory (message bodies, briefs, decisions) is passed through as strings, never interpreted.
 import { z } from 'zod'
 import type { ItemView, NeedsEntry } from './derive.ts'
-import { checkState, type FactoryEvent, type Issue, type Notice, type Parsed, type Pull } from './types.ts'
+import { checkState, currentChecks, type FactoryEvent, type Issue, type Notice, type Parsed, type Pull } from './types.ts'
 import { roundWords } from './words.ts'
 import { prNext } from './meta.ts'
 
@@ -627,7 +627,7 @@ function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefine
     // without GitHub data: what the item's state says
     const what = n?.what ?? (st === 'awaiting-merge' ? 'merge it' : st === 'awaiting-approval' ? (i.item!.autoMerge ? 'add human-approved; auto-merge then merges it once the checks pass' : 'add human-approved, wait for the checks to pass, then merge') : 'its checks and review (no GitHub data)')
     const who = n ? (n.who === 'its author' ? (i.team ?? 'its author') : n.who) : st === 'pr-open' ? (i.team ?? '?') : 'you'
-    const wait = who === 'you' ? 'waiting on you' : n?.kind === 'failed' ? 'with failing checks' : !pull || pull.checks.some((c) => checkState(c) === 'pending') ? 'waiting on checks' : 'merging'
+    const wait = who === 'you' ? 'waiting on you' : n?.kind === 'failed' ? 'with failing checks' : !pull || currentChecks(pull.checks).some((c) => checkState(c) === 'pending') ? 'waiting on checks' : 'merging'
     return { n: i.number, who, what: `#${i.number}${i.item!.pr ? ` (PR #${i.item!.pr})` : ''}: ${what}`, wait }
   })
   // "in progress" is an agent at work: an item with no PR yet

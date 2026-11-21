@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto'
 import { realpathSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { homedir } from 'node:os'
-import type { GitHubData } from './core/types.ts'
+import { currentChecks, type GitHubData } from './core/types.ts'
 import type { ItemDetail, RunRow, RunsResponse } from './core/api.ts'
 import { stageResults } from './core/derive.ts'
 import { quality } from './core/quality.ts'
@@ -278,7 +278,7 @@ export class Factory {
       observations,
       commits,
       changes: item.riskFiles.map((f) => ({ ...f, ...(numstat[f.path] ?? {}) })),
-      checks: inp.pull?.checks ?? [],
+      checks: currentChecks(inp.pull?.checks ?? []),
       prBody: inp.pull?.body,
       issueBody: inp.issue?.body,
       github: snap.github,

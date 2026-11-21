@@ -9,7 +9,7 @@
 import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { GitHubDataSchema, tierRank, type GitHubData } from './core/types.ts'
+import { GitHubDataSchema, currentChecks, tierRank, type GitHubData } from './core/types.ts'
 import { pullTier } from './core/meta.ts'
 import { gh } from './sources/github.ts'
 import type { Factory } from './factory.ts'
@@ -192,7 +192,7 @@ export class Actions {
         r2Files: t.files.filter((f) => tierRank(f.tier) >= 2),
         files: t.files.length,
         review: item?.review ? (item.review.ok ? { verdict: item.review.value.verdict, blocking: item.review.value.blocking.length, nonBlocking: item.review.value.nonBlocking.length } : { error: item.review.error }) : null,
-        checks: pull.checks.map((c) => ({ name: c.name, conclusion: c.conclusion ?? c.status })),
+        checks: currentChecks(pull.checks).map((c) => ({ name: c.name, conclusion: c.conclusion ?? c.status })),
         notVerified: item?.notVerified.length ?? null,
         confirm: `approve #${pr}`,
       },

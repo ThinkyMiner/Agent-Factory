@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { buildStages, deriveAll, deriveItem, expireRuns, indexLifecycle, type Context, type ItemInputs } from '../server/core/derive.ts'
 import { parseRiskRules } from '../server/core/risk.ts'
-import type { Issue, LifecycleEvent, Pull, Stage, StageEvent, Status } from '../server/core/types.ts'
+import { currentChecks, type Issue, type LifecycleEvent, type Pull, type Stage, type StageEvent, type Status } from '../server/core/types.ts'
 
 const NOW = Date.parse('2026-11-13T12:00:00Z')
 const ago = (min: number) => new Date(NOW - min * 60_000).toISOString()
@@ -194,6 +194,16 @@ describe('merged and closed', () => {
     expect(derive({ stageEvents: RUN_TO_PR(), pull: pull({ state: 'MERGED', mergedAt: ago(30), baseRefName: 'feature/f001-x' }) })).toMatchObject({ state: 'merged', mergedInto: 'feature/f001-x' })
     expect(derive({ onMain: { at: ago(30) } })).toMatchObject({ state: 'merged', mergedInto: 'main' })
   })
+  test('a CI re-run on the same head: only each check\'s current run counts (a running re-run is newer than any result)', () => {
+    const run = (conclusion: string | undefined, min?: number) => ({ name: 'factory-tests', status: conclusion ? 'COMPLETED' : 'IN_PROGRESS', conclusion, completedAt: min === undefined ? undefined : ago(min) })
+    const green = derive({ stageEvents: RUN_TO_PR(), pull: pull({ autoMerge: false, checks: [run('FAILURE', 20), run('SUCCESS', 5)] }) })
+    expect(green.state).not.toBe('failed')
+    const rerunning = derive({ stageEvents: RUN_TO_PR(), pull: pull({ autoMerge: false, checks: [run('FAILURE', 20), run(undefined)] }) })
+    expect(rerunning.state).not.toBe('failed')
+    expect(rerunning.needs?.summary).toContain('checks pending')
+    expect(currentChecks([run('SUCCESS', 5), run('FAILURE', 20)]).map((c) => c.conclusion)).toEqual(['SUCCESS'])
+  })
+
   test('merged: first pass, auto vs human', () => {
     const auto = derive({ stageEvents: RUN_TO_PR(), pull: pull({ state: 'MERGED', mergedAt: ago(30), timeline: [{ type: 'auto_merge_enabled', at: ago(59) }] }) })
     expect(auto).toMatchObject({ state: 'merged', column: 'merged', mergedAt: ago(30), mergedBy: 'auto', firstPass: true, fixRounds: 0 })

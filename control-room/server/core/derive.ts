@@ -6,6 +6,7 @@ import { classify, type FileRisk, type RiskRule } from './risk.ts'
 import {
   STAGES,
   checkState,
+  currentChecks,
   maxTier,
   tierRank,
   type Check,
@@ -469,7 +470,8 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
   // So a failing risk-gate is expected before approval, and out of date if it finished before it.
   const approvedAt = pr?.timeline.filter((x) => x.type === 'labeled' && x.label === 'human-approved').at(-1)?.at
   const gateRerun = (c: Check) => c.name === 'risk-gate' && tierRank(tier ?? 'R0') >= 2 && (!approved || (!!approvedAt && !!c.completedAt && t(c.completedAt) < t(approvedAt)))
-  const failingChecks = (pr?.checks ?? []).filter((c) => checkState(c) === 'fail' && !gateRerun(c))
+  const checks = currentChecks(pr?.checks ?? []) // each check's current run, as the PR helper reads them
+  const failingChecks = checks.filter((c) => checkState(c) === 'fail' && !gateRerun(c))
   const readyAt = issue?.labelEvents.filter((e) => (e.label === 'factory:ready' || (dispatched && e.label === 'feature:' + feature)) && e.action === 'added').at(0)?.at ?? events.find((e) => e.stage === 'intake')?.ts
   let mergedBy: ItemView['mergedBy']
   // Who merged is inferred: auto-merge evidence is auto (approved or not); else human-approved is you; else no one, since
@@ -533,8 +535,8 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
         ? `${tier ?? 'tier unknown'} is above AUTO_MERGE_MAX_TIER=${ctx.autoMergeMax}`
         : 'auto-merge was not enabled'
     reason = `PR #${pr.number} open; ${why}`
-    const checks = pr.checks.length ? (pr.checks.every((c) => checkState(c) === 'pass' || checkState(c) === 'skipped') ? 'checks passing' : 'checks pending') : 'no checks reported'
-    needs = { kind: 'merge', summary: `${tier ?? '?'} · ${checks} · ${why}`, since }
+    const ci = checks.length ? (checks.every((c) => checkState(c) === 'pass' || checkState(c) === 'skipped') ? 'checks passing' : 'checks pending') : 'no checks reported'
+    needs = { kind: 'merge', summary: `${tier ?? '?'} · ${ci} · ${why}`, since }
   } else if (pr?.state === 'OPEN' || (!pr && lastPipe?.stage === 'pr' && lastPipe.status === 'passed')) {
     state = 'pr-open'
     since = pr?.createdAt ?? lastPipe?.ts
