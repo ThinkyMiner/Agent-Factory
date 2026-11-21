@@ -104,15 +104,18 @@ export function pullTier(p: Pull, rules: RiskRule[]) {
 export function pullNeeds(pulls: Pull[], rules: RiskRule[], autoMergeMax: Tier | 'none', skip: Set<number> = new Set()): NeedsEntry[] {
   return pulls
     .filter((p) => p.state === 'OPEN' && !p.isDraft && !skip.has(p.number))
-    .flatMap((p) => {
+    .flatMap((p): NeedsEntry[] => {
       const { tier } = pullTier(p, rules)
       if (!tier || tierRank(tier) <= tierRank(autoMergeMax)) return []
       const r2 = tierRank(tier) >= 2
+      const failing = [...new Set(p.checks.filter((c) => checkState(c) === 'fail' && !(r2 && c.name === 'risk-gate')).map((c) => c.name))] // risk-gate fails until approved
+      const improvement = p.labels.includes('factory:improvement')
       // ponytail: the label counts as approval; GitHub's push times are not fetched, so a label older
       // than the last push shows only as risk-gate failing on the PR. Fetch push activity if that bites.
-      if (r2 && p.labels.includes('human-approved')) return []
-      const failing = p.checks.filter((c) => checkState(c) === 'fail' && !(r2 && c.name === 'risk-gate')).map((c) => c.name) // risk-gate fails until approved
-      const improvement = p.labels.includes('factory:improvement')
+      // Approved, an outside PR still needs you while another check fails: nothing merges it.
+      if (r2 && p.labels.includes('human-approved')) {
+        return improvement || !failing.length ? [] : [{ kind: 'failed', id: `pr-${p.number}`, label: `PR #${p.number}`, title: p.title, tier, summary: `${p.headRefName} · approved, but failing: ${failing.join(', ')}`, since: p.createdAt, href: p.url || '/' }]
+      }
       const what = improvement ? 'factory:improvement' : `${p.headRefName} · ${r2 ? 'add human-approved, then merge' : 'merge it'}`
       return [{
         kind: r2 ? ('approve' as const) : ('merge' as const),
