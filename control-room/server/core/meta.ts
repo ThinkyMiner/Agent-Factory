@@ -109,8 +109,9 @@ export function prNext(p: Pull, tier: Tier | undefined, autoMergeMax: Tier | 'no
   const stale = (c: Check) => r2 && c.name === 'risk-gate' && (!approved || (!!approvedAt && !!c.completedAt && Date.parse(c.completedAt) < Date.parse(approvedAt)))
   // a check can run more than once on the head (risk-gate re-runs on the label): its newest run counts, and of undated runs a pass
   const key = (c: Check) => (Date.parse(c.completedAt ?? '') || 0) * 2 + (checkState(c) === 'pass' ? 1 : 0)
-  const newest = [...Map.groupBy(p.checks, (c) => c.name).values()].map((runs) => runs.reduce((a, b) => (key(b) > key(a) ? b : a)))
-  const failing = newest.filter((c) => checkState(c) === 'fail' && !stale(c)).map((c) => c.name)
+  const newest = new Map<string, Check>()
+  for (const c of p.checks) if (!newest.has(c.name) || key(c) > key(newest.get(c.name)!)) newest.set(c.name, c)
+  const failing = [...newest.values()].filter((c) => checkState(c) === 'fail' && !stale(c)).map((c) => c.name)
   const pending = p.checks.some((c) => checkState(c) === 'pending')
   const base = { failing, approved }
   if (failing.length) return { ...base, kind: 'failed', who: 'its author', what: `fix the failing check${failing.length > 1 ? 's' : ''}: ${failing.join(', ')}` }

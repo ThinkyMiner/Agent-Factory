@@ -645,7 +645,9 @@ function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefine
         : ready.length
           ? { who: ready[0]!.team ?? '?', what: `start #${ready[0]!.number} (the sweep types it when the session is free)`, href: `/items/${ready[0]!.number}` }
           : undefined
-  const waiting = Object.entries(Object.groupBy(prSteps, (x) => x.wait)).map(([w, xs]) => `${xs!.length} pull request${xs!.length === 1 ? '' : 's'} ${w}`)
+  const waitCount = new Map<string, number>()
+  for (const x of prSteps) waitCount.set(x.wait, (waitCount.get(x.wait) ?? 0) + 1)
+  const waiting = [...waitCount].map(([w, n]) => `${n} pull request${n === 1 ? '' : 's'} ${w}`)
   const deps = f.items.filter((i) => i.waitsFor?.startsWith('#')).map((i) => `#${i.number} waits for ${i.waitsFor}`)
   // follow-ups: tickets a team accepted and worked, beside the dispatched items
   const follow = f.items.filter((i) => i.ticket && i.item)

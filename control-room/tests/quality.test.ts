@@ -104,7 +104,7 @@ describe('quality over the demo', async () => {
 
   test('the throughput note never says main for a base it does not know', () => {
     const items = s.items.filter((i) => i.state === 'merged' && i.mergedAt).slice(0, 2).map((i) => ({ ...i, mergedInto: undefined }))
-    const note = (xs: typeof items) => quality({ items: xs, now: NOW, weeks: 8, escapedIssues: [], tokensByItem: new Map() }).metrics.find((x) => x.key === 'throughput')!.note!
+    const note = (xs: typeof s.items) => quality({ items: xs, now: NOW, weeks: 8, escapedIssues: [], tokensByItem: new Map() }).metrics.find((x) => x.key === 'throughput')!.note!
     expect(note(items)).not.toContain('into main')
     expect(note(items)).toMatch(/^Merged means the item's pull request merged into its base branch \(2 of 2 here with no recorded base\)\./)
     expect(note(items.map((i) => ({ ...i, mergedInto: 'main' })))).toMatch(/^Merged means the item's pull request merged into main\./)
