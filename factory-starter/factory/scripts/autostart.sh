@@ -8,9 +8,10 @@
 #   /work <n>             team <t>: an open issue labelled feature:<f> for the open feature branch,
 #   /research-work <n>    and team:<t> (an item from dispatch) or ticket, to:<t> and state:accepted;
 #                         with no work/<n>-* branch yet. The research team gets /research-work.
-#   /integrate <f>        orchestrator: feature/<f> or integrate/<f> moved, or one of its open
-#                         tickets on <f> changed state (a team declined or finished it), since it
-#                         was last typed: nothing else tells the orchestrator a ticket came back
+#   /integrate <f>        orchestrator: feature/<f> or integrate/<f> moved, the factory on main
+#                         (factory/, .claude/) changed, or one of its open tickets on <f> changed
+#                         state (a team declined or finished it), since it was last typed: nothing
+#                         else tells the orchestrator a ticket came back or main has a kit to sync
 # Only into a tab of this factory's Herdr space that waits for input, one command per tab per pass,
 # lowest issue first. /dispatch and /work are typed again after retry_minutes [30] while nothing
 # came of them, or at once when what they wait on moves: origin/main for /dispatch, the feature
@@ -93,8 +94,10 @@ else
   if jq -e 'type == "array"' <<<"${items:-}" >/dev/null 2>&1; then
     tk=$(jq -r '[.[] | [.labels[]?.name | strings] as $l | select(($l | index("ticket")) and ($l | index("from:orchestrator")))
       | "\(.number):\([$l[] | select(startswith("state:")) | ltrimstr("state:")] | join("+"))"] | sort | join(",")' <<<"$items")
-  else tk=${was#* }; tk=${tk#* }; fi     # the third field; the second may be empty
-  key="$fsha $(git -C "$home" rev-parse -q --verify "refs/remotes/origin/integrate/$f") $tk"
+  else tk=${was#* }; tk=${tk#* }; tk=${tk#* }; fi     # the fourth field; the second may be empty
+  # The factory on main, as its trees: /integrate syncs main into the feature when it changed.
+  kit="$(git -C "$home" rev-parse -q --verify "refs/remotes/origin/main:factory")+$(git -C "$home" rev-parse -q --verify "refs/remotes/origin/main:.claude")"
+  key="$fsha $(git -C "$home" rev-parse -q --verify "refs/remotes/origin/integrate/$f") $kit $tk"
   if [ "$was" != "$key" ] && type_into orchestrator "/integrate $f"; then
     mark "integrate:$f" "$(jq -n --arg v "$key" '$v')"
   fi

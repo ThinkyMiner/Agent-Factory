@@ -141,6 +141,20 @@ test_integrate_is_typed_again_when_the_feature_moves() {
   run "$A"; expect_eq "$(typed)" "t1|keys ctrl+u / i n t e g r a t e space f 0 0 1 - x enter;"
 }
 
+test_integrate_is_typed_again_when_the_factory_on_main_changes() {
+  setup; feature
+  run "$A"; reset_log; run "$A"; expect_eq "$(typed)" ""
+  echo product > README.md; git add README.md; git commit -qm readme && git push -q origin main
+  run "$A"; expect_eq "$(typed)" ""                                   # product only: nothing to sync
+  mkdir -p factory .claude; echo k >> factory/kit-note; git add factory; git commit -qm kit && git push -q origin main
+  run "$A"; expect_eq "$(typed)" "t1|keys ctrl+u / i n t e g r a t e space f 0 0 1 - x enter;"
+  reset_log; run "$A"; expect_eq "$(typed)" ""
+  echo s >> .claude/skill-note; git add .claude; git commit -qm skill && git push -q origin main
+  run "$A"; expect_eq "$(typed)" "t1|keys ctrl+u / i n t e g r a t e space f 0 0 1 - x enter;"
+  reset_log; echo l >> factory/kit-note; git commit -qam local                 # only local: not on origin/main
+  run "$A"; expect_eq "$(typed)" ""
+}
+
 test_integrate_is_typed_again_when_a_team_answers_the_orchestrators_ticket() {
   setup; feature; issue 34 OPEN ticket feature:f001-x from:orchestrator to:frontend type:bug state:open
   issue 40 OPEN ticket feature:f001-x from:backend to:frontend type:request state:open

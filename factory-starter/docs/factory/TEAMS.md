@@ -207,7 +207,7 @@ type it:
 |---|---|---|
 | `/dispatch <cycle>` | orchestrator | the cycle's state on `origin/main` is `approval`, its `DECISIONS.md` is there, and no feature branch is open |
 | `/work <n>` (research: `/research-work <n>`) | the team's tab | issue `<n>` is open on the open feature (`feature:<f>`), labelled `team:<team>` (an item from dispatch) or a ticket `to:<team>` in `state:accepted`, and has no `work/<n>-*` branch |
-| `/integrate <f>` | orchestrator | `feature/<f>` or `integrate/<f>` moved, or a team declined or finished one of the orchestrator's tickets on `<f>`, since it last typed it |
+| `/integrate <f>` | orchestrator | `feature/<f>` or `integrate/<f>` moved, the factory on main (`factory/`, `.claude/`) changed (its first step syncs main into the feature), or a team declined or finished one of the orchestrator's tickets on `<f>`, since it last typed it |
 
 `/dispatch` and `/work` are typed again after `retry_minutes` (30) while nothing came of them (a
 full slot, tests not in yet), and at once when what they wait on moves: `origin/main` for
