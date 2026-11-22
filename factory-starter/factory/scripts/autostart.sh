@@ -8,10 +8,14 @@
 #   /work <n>             team <t>: an open issue labelled feature:<f> for the open feature branch,
 #   /research-work <n>    and team:<t> (an item from dispatch) or ticket, to:<t> and state:accepted;
 #                         with no work/<n>-* branch yet. The research team gets /research-work.
+#                         Typed again into an item that has its branch when a ticket naming it
+#                         under "blocks" (with feature:<f>) was answered (done, verified) or
+#                         declined since autostart last saw it: the item stopped to wait for it.
 #   /integrate <f>        orchestrator: feature/<f> or integrate/<f> moved, the factory on main
 #                         (factory/, .claude/) changed, or one of its open tickets on <f> changed
 #                         state (a team declined or finished it), since it was last typed: nothing
-#                         else tells the orchestrator a ticket came back or main has a kit to sync
+#                         else tells the orchestrator a ticket came back or main has a kit to sync;
+#                         and once the pull request integrate/<f> -> main has merged, so it closes
 # Only into a tab of this factory's Herdr space that waits for input, one command per tab per pass,
 # lowest issue first. /dispatch and /work are typed again after retry_minutes [30] while nothing
 # came of them, or at once when what they wait on moves: origin/main for /dispatch, the feature
@@ -71,15 +75,36 @@ if [ -z "$f" ]; then
 else
   fsha=$(git -C "$home" rev-parse -q --verify "refs/remotes/origin/feature/$f")
   # ---- work: the feature's items and accepted tickets, lowest first ----
-  if items=$(gh issue list --state open --label "feature:$f" --limit 200 --json number,labels 2>/dev/null) &&
+  # Closed issues too, for the tickets: answering one may close it (verified) before this pass.
+  # ponytail: the newest 300 issues of the feature; page through them if a feature ever has more.
+  if items=$(gh issue list --state all --label "feature:$f" --limit 300 --json number,state,labels,body 2>/dev/null) &&
      jq -e 'type == "array"' <<<"$items" >/dev/null 2>&1; then
+    # "<item> <ticket> answered|declined" for every ticket whose "blocks" names an issue.
+    blk=$(jq -r '.[] | [.labels[]?.name | strings] as $l | select($l | index("ticket")) | .number as $t
+        | ([$l[] | select(startswith("state:")) | ltrimstr("state:")]
+           | if (index("done") or index("verified")) then "answered" elif index("declined") then "declined" else empty end) as $c
+        | (.body // "" | strings | try (capture("<!-- factory-ticket (?<j>[^\n]*) -->").j | fromjson | .blocks) catch null)
+        | if type == "array" then .[] else empty end
+        | (numbers, (strings | ltrimstr("#") | select(test("^[0-9]{1,9}$")) | tonumber))
+        | "\(.)\t\($t)\t\($c)"' <<<"$items" 2>/dev/null | sort -u)
     while IFS=$'\t' read -r t n; do
       [[ "$n" =~ ^[0-9]{1,9}$ ]] && valid_team_name "$t" && [ "$t" != orchestrator ] || continue
-      [ -z "$(git -C "$home" for-each-ref --format=x "refs/heads/work/$n-*" "refs/remotes/origin/work/$n-*")" ] || continue
-      again "work:$n" "$fsha" || continue
       cmd="/work $n"; [ "$t" = research ] && cmd="/research-work $n"
+      if [ -n "$(git -C "$home" for-each-ref --format=x "refs/heads/work/$n-*" "refs/remotes/origin/work/$n-*")" ]; then
+        # Started: resume it once per ticket answer it was waiting for.
+        pend=""
+        while IFS=$'\t' read -r bt bc; do
+          [[ "$bt" =~ ^[0-9]{1,9}$ ]] || continue
+          [ "$(jq -r --arg k "resume:$n:$bt" '.[$k] // "" | strings' <<<"$state")" = "$bc" ] || pend+="$bt=$bc "
+        done < <(awk -F'\t' -v n="$n" '$1 == n { print $2 "\t" $3 }' <<<"$blk")
+        if [ -n "$pend" ] && type_into "$t" "$cmd"; then
+          for kv in $pend; do mark "resume:$n:${kv%%=*}" "\"${kv#*=}\""; done
+        fi
+        continue
+      fi
+      again "work:$n" "$fsha" || continue
       type_into "$t" "$cmd" && typed_at "work:$n" "$fsha"
-    done < <(jq -r '.[] | [.labels[]?.name | strings] as $l
+    done < <(jq -r '.[] | select((.state // "OPEN" | ascii_upcase) == "OPEN") | [.labels[]?.name | strings] as $l
         | (if ($l | index("ticket")) then (if ($l | index("state:accepted")) then [$l[] | select(startswith("to:")) | ltrimstr("to:")] else [] end)
            else [$l[] | select(startswith("team:")) | ltrimstr("team:")] end) as $who
         | select($who | length == 1) | [$who[0], .number] | @tsv' <<<"$items" | sort -t$'\t' -k2,2n)
@@ -92,12 +117,17 @@ else
   was=$(jq -r --arg k "integrate:$f" '.[$k] // "" | strings' <<<"$state")
   # Its tickets as "<n>:<state>,..."; when GitHub cannot be read, the last ones seen.
   if jq -e 'type == "array"' <<<"${items:-}" >/dev/null 2>&1; then
-    tk=$(jq -r '[.[] | [.labels[]?.name | strings] as $l | select(($l | index("ticket")) and ($l | index("from:orchestrator")))
+    tk=$(jq -r '[.[] | select((.state // "OPEN" | ascii_upcase) == "OPEN") | [.labels[]?.name | strings] as $l | select(($l | index("ticket")) and ($l | index("from:orchestrator")))
       | "\(.number):\([$l[] | select(startswith("state:")) | ltrimstr("state:")] | join("+"))"] | sort | join(",")' <<<"$items")
-  else tk=${was#* }; tk=${tk#* }; tk=${tk#* }; fi     # the fourth field; the second may be empty
+  else tk=${was#* }; tk=${tk#* }; tk=${tk#* }; tk=${tk#* }; fi     # the fifth field; the second may be empty
+  # The pull request to main, once merged: the orchestrator closes the feature. When GitHub cannot
+  # be read, the last value seen (the fourth field).
+  if m=$(gh pr list --head "integrate/$f" --base main --state merged --limit 1 --json number --jq '.[0].number // empty' 2>/dev/null); then
+    [[ "$m" =~ ^[0-9]{1,9}$ ]] && m="merged:$m" || m=-
+  else m=${was#* }; m=${m#* }; m=${m#* }; m=${m%% *}; fi
   # The factory on main, as its trees: /integrate syncs main into the feature when it changed.
   kit="$(git -C "$home" rev-parse -q --verify "refs/remotes/origin/main:factory")+$(git -C "$home" rev-parse -q --verify "refs/remotes/origin/main:.claude")"
-  key="$fsha $(git -C "$home" rev-parse -q --verify "refs/remotes/origin/integrate/$f") $kit $tk"
+  key="$fsha $(git -C "$home" rev-parse -q --verify "refs/remotes/origin/integrate/$f") $kit ${m:--} $tk"
   if [ "$was" != "$key" ] && type_into orchestrator "/integrate $f"; then
     mark "integrate:$f" "$(jq -n --arg v "$key" '$v')"
   fi

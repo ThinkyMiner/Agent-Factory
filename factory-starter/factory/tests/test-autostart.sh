@@ -215,4 +215,101 @@ test_the_sweep_does_not_ring_a_tab_autostart_just_typed_into() {
   [ -f .factory/rings/backend ] || fail "the waiting ring was dropped instead of kept for the next pass"
 }
 
+# tkt <n> <OPEN|CLOSED> <body> <label>...: a ticket issue whose body is given as is.
+tkt() {
+  local n=$1 st=$2 body=$3; shift 3
+  jq --argjson n "$n" --arg st "$st" --arg b "$body" '. + [{number: $n, title: "t", body: $b, state: $st, comments: [],
+      createdAt: "2026-01-01T00:00:00Z", labels: ($ARGS.positional | map({name: .}))}]' "$FAKE_GH/issues.json" --args "$@" > "$FAKE_GH/i" &&
+    mv "$FAKE_GH/i" "$FAKE_GH/issues.json"
+}
+meta() { printf '<!-- factory-ticket {"v":1,"from":"frontend","to":"orchestrator","type":"question","blocks":%s} -->\n## What is needed\nx' "$1"; }
+relabel() {  # relabel <n> <OPEN|CLOSED> <label>...: replace the issue's labels and state
+  local n=$1 st=$2; shift 2
+  jq --argjson n "$n" --arg st "$st" 'map(if .number == $n then .state = $st | .labels = ($ARGS.positional | map({name: .})) else . end)' \
+    "$FAKE_GH/issues.json" --args "$@" > "$FAKE_GH/i" && mv "$FAKE_GH/i" "$FAKE_GH/issues.json"
+}
+
+test_a_started_item_resumes_once_when_the_ticket_it_waits_on_is_answered() {
+  setup; feature; issue 9 OPEN feature:f001-x team:frontend; git -C "$MAIN" branch -q work/9-page
+  tkt 30 OPEN "$(meta '[9]')" ticket feature:f001-x from:frontend to:orchestrator type:question state:open
+  run "$A"; expect_rc 0; expect_eq "$(typed)" "t1|keys ctrl+u / i n t e g r a t e space f 0 0 1 - x enter;"   # not answered yet
+  reset_log; relabel 30 OPEN ticket feature:f001-x from:frontend to:orchestrator type:question state:done
+  run "$A"; expect_rc 0; expect_out "typed /work 9 into frontend (t3)"
+  expect_eq "$(typed)" "t3|keys ctrl+u / w o r k space 9 enter;"
+  reset_log; run "$A"; expect_eq "$(typed)" ""                                     # once
+  relabel 30 CLOSED ticket feature:f001-x from:frontend to:orchestrator type:question state:verified
+  run "$A"; expect_eq "$(typed)" ""                                                # verified is the same answer
+  tkt 31 OPEN "$(meta '[9]')" ticket feature:f001-x from:frontend to:orchestrator type:request state:open
+  run "$A"; expect_eq "$(typed)" ""
+  relabel 31 OPEN ticket feature:f001-x from:frontend to:orchestrator type:request state:declined
+  echo working > "$TEST_TMP/hc-status-t3"; run "$A"; expect_eq "$(typed)" ""       # busy: later
+  rm "$TEST_TMP/hc-status-t3"; run "$A"; expect_eq "$(typed)" "t3|keys ctrl+u / w o r k space 9 enter;"
+  reset_log; run "$A"; expect_eq "$(typed)" ""
+  relabel 31 OPEN ticket feature:f001-x from:frontend to:orchestrator type:request state:accepted
+  run "$A"; expect_eq "$(typed)" ""                                                # disputed and accepted: not an answer
+  relabel 31 OPEN ticket feature:f001-x from:frontend to:orchestrator type:request state:done
+  run "$A"; expect_eq "$(typed)" "t3|keys ctrl+u / w o r k space 9 enter;"         # answered after all: resume again
+}
+
+test_a_ticket_answered_and_closed_between_passes_still_resumes_the_item() {
+  setup; feature; issue 9 OPEN feature:f001-x team:frontend; git -C "$MAIN" branch -q work/9-page
+  tkt 32 OPEN "$(meta '[9]')" ticket feature:f001-x from:frontend to:orchestrator state:open
+  run "$A"; reset_log
+  relabel 32 CLOSED ticket feature:f001-x from:frontend to:orchestrator state:verified   # done and verified before this pass
+  run "$A"; expect_eq "$(typed)" "t3|keys ctrl+u / w o r k space 9 enter;"
+  reset_log; run "$A"; expect_eq "$(typed)" ""
+}
+
+test_only_a_well_formed_ticket_naming_the_item_resumes_it() {
+  setup; feature; issue 9 OPEN feature:f001-x team:frontend; git -C "$MAIN" branch -q work/9-page
+  local L="feature:f001-x from:frontend to:orchestrator state:done" i=40 b
+  for b in "no meta here" '<!-- factory-ticket {"blocks":[9] -->' "$(meta '{"a":9}')" "$(meta '"9"')" "$(meta '9')" \
+           "$(meta '[9.5]')" "$(meta '[-9]')" "$(meta '[0]')" "$(meta '[1e20]')" "$(meta '[10]')" "$(meta '["9; touch pwned"]')" \
+           "$(meta '["$(touch pwned)"]')" "$(meta '[null,true,[9],{"n":9}]')" "$(printf '<!-- factory-ticket\n{"blocks":[9]} -->')"; do
+    i=$((i + 1)); tkt "$i" OPEN "$b" ticket $L
+  done
+  tkt 60 OPEN "$(meta '[9]')" feature:f001-x from:frontend to:orchestrator state:done             # not a ticket
+  tkt 61 OPEN "$(meta '[9]')" ticket feature:f001-x from:frontend to:orchestrator state:withdrawn
+  tkt 62 OPEN "$(meta '[9]')" ticket feature:f001-x from:frontend to:orchestrator                 # no state
+  tkt 63 OPEN "$(meta '[9]')" ticket from:frontend to:orchestrator state:done                     # not about the feature
+  run "$A"; expect_rc 0; expect_eq "$(typed)" "t1|keys ctrl+u / i n t e g r a t e space f 0 0 1 - x enter;"
+  [ ! -e pwned ] && [ ! -e "$MAIN/pwned" ] || fail "a ticket body was executed"
+  reset_log; tkt 64 OPEN "$(meta '["#9"]')" ticket $L
+  run "$A"; expect_eq "$(typed)" "t3|keys ctrl+u / w o r k space 9 enter;"         # "#9" as text counts too
+}
+
+test_resume_types_the_right_command_for_research_and_for_an_accepted_ticket() {
+  setup; feature
+  issue 6 OPEN feature:f001-x team:research; git -C "$MAIN" branch -q work/6-brief
+  issue 20 OPEN ticket feature:f001-x from:frontend to:backend state:accepted; git -C "$MAIN" branch -q work/20-api
+  tkt 70 OPEN "$(meta '[6, 20]')" ticket feature:f001-x from:research to:orchestrator state:open
+  run "$A"; reset_log
+  relabel 70 OPEN ticket feature:f001-x from:research to:orchestrator state:done
+  run "$A"; expect_eq "$(typed)" "t2|keys ctrl+u / w o r k space 2 0 enter;t4|keys ctrl+u / r e s e a r c h - w o r k space 6 enter;"
+  reset_log; run "$A"; expect_eq "$(typed)" ""
+}
+
+test_github_down_resumes_nothing_and_the_answer_is_not_lost() {
+  setup; feature; issue 9 OPEN feature:f001-x team:frontend; git -C "$MAIN" branch -q work/9-page
+  tkt 30 OPEN "$(meta '[9]')" ticket feature:f001-x from:frontend to:orchestrator state:open
+  run "$A"; reset_log; relabel 30 OPEN ticket feature:f001-x from:frontend to:orchestrator state:done
+  echo 'issue list' > "$FAKE_GH/fail"; run "$A"; expect_rc 0; expect_eq "$(typed)" ""
+  rm "$FAKE_GH/fail"; run "$A"; expect_eq "$(typed)" "t3|keys ctrl+u / w o r k space 9 enter;"
+}
+
+test_the_orchestrator_is_typed_once_when_the_pull_request_to_main_merges() {
+  setup; feature; mkdir -p "$FAKE_GH/pulls"
+  run "$A"; reset_log; run "$A"; expect_eq "$(typed)" ""
+  pr() { jq -n --argjson n "$1" --arg h "$2" --arg b "$3" --argjson m "$4" --arg s "$5" \
+    '{number: $n, title: "t", state: $s, merged: $m, head: {ref: $h}, base: {ref: $b}}' > "$FAKE_GH/pulls/$1.json"; }
+  pr 50 integrate/f001-x main false open; run "$A"; expect_eq "$(typed)" ""          # open, not merged
+  pr 51 integrate/f002-y main true closed; pr 52 integrate/f001-x feature/f001-x true closed; pr 53 work/9-x main true closed
+  run "$A"; expect_eq "$(typed)" ""                                                # another feature, base or head
+  pr 50 integrate/f001-x main true closed
+  run "$A"; expect_eq "$(typed)" "t1|keys ctrl+u / i n t e g r a t e space f 0 0 1 - x enter;"
+  reset_log; run "$A"; expect_eq "$(typed)" ""                                     # once
+  echo 'pr list' > "$FAKE_GH/fail"; run "$A"; expect_eq "$(typed)" ""              # GitHub down: not a change
+  rm "$FAKE_GH/fail"; run "$A"; expect_eq "$(typed)" ""
+}
+
 run_tests
