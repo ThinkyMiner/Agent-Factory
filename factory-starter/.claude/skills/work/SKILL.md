@@ -32,7 +32,10 @@ Stage names: intake, spec, design, tests, build, gate, review, ui-review, securi
 db-review, pr, observe.
 Statuses: started, passed, failed, blocked, skipped. `blocked` means the item stopped for the
 human (`BLOCKED.md` or an escalation); the control room asks the human to answer it, so never use
-it for something the team settles itself. Use `round` for fix rounds (0 for the first attempt). On the pr stage add `tier=<R0..R3>` and `pr=<number>`.
+it for something the team settles itself. Use `round` for fix rounds (0 for the first attempt).
+When a stage cannot go on until something outside the team happens (a pull request the human
+must approve, a ticket to another team), add `waits=#<n>` naming it: the control room shows the
+item as waiting on it, so its owner sees what their step unblocks. On the pr stage add `tier=<R0..R3>` and `pr=<number>`.
 
 ## 0. Intake
 - If the argument is a number, read it with `gh issue view <n> --json number,title,body,labels`.
