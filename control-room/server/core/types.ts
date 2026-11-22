@@ -262,9 +262,11 @@ export interface GitHubStatus {
 
 export type CheckState = 'pass' | 'fail' | 'pending' | 'skipped'
 /** Each check's current run: a check can run more than once on the same head (a re-run, or risk-gate on the label).
- *  A run still going is the newest; then the latest completion; of undated results, a pass (a re-run that passed). */
+ *  By date (a pending status from GitHub carries one; it wins a tie); an undated run still going is the newest;
+ *  of undated results, a pass (a re-run that passed). */
 export function currentChecks(checks: Check[]): Check[] {
-  const key = (c: Check) => (checkState(c) === 'pending' ? Infinity : (Date.parse(c.completedAt ?? '') || 0) * 2 + (checkState(c) === 'pass' ? 1 : 0))
+  const at = (c: Check) => Date.parse(c.completedAt ?? '') || 0
+  const key = (c: Check) => (checkState(c) === 'pending' ? (at(c) ? at(c) * 2 + 1 : Infinity) : at(c) * 2 + (checkState(c) === 'pass' ? 1 : 0))
   const cur = new Map<string, Check>()
   for (const c of checks) if (!cur.has(c.name) || key(c) > key(cur.get(c.name)!)) cur.set(c.name, c)
   return [...cur.values()]

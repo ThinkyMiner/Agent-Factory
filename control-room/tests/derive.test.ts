@@ -217,6 +217,9 @@ describe('merged and closed', () => {
     expect(rerunning.state).not.toBe('failed')
     expect(rerunning.needs?.summary).toContain('checks pending')
     expect(currentChecks([run('SUCCESS', 5), run('FAILURE', 20)]).map((c) => c.conclusion)).toEqual(['SUCCESS'])
+    // a pending status with a date (GitHub's StatusContext) is compared by that date: a later result is newer
+    expect(currentChecks([{ ...run(undefined), completedAt: ago(10) }, run('SUCCESS', 5)]).map((c) => c.conclusion)).toEqual(['SUCCESS'])
+    expect(currentChecks([run('SUCCESS', 10), { ...run(undefined), completedAt: ago(5) }]).map((c) => c.status)).toEqual(['IN_PROGRESS'])
   })
 
   test('merged: first pass, auto vs human', () => {
