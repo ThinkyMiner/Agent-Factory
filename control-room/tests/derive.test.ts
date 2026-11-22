@@ -315,6 +315,12 @@ describe('pipelineRuns', () => {
     const dead = derive({ stageEvents: [se('intake', 'started', 300), se('gate', 'failed', 200)] })
     expect(dead.pipelineRuns).toMatchObject([{ outcome: 'failed', stage: 'gate' }])
   })
+  test('a run ends in its last state: a blocked event the run went on from is not a stop', () => {
+    const resolved = [se('intake', 'started', 300), se('build', 'blocked', 290), se('build', 'passed', 289), se('review', 'started', 288)]
+    expect(derive({ stageEvents: resolved }).pipelineRuns.map((x) => [x.outcome, x.stage])).toEqual([['running', undefined]]) // still at review
+    const later = derive({ stageEvents: [...resolved, se('intake', 'started', 60), se('spec', 'passed', 55), se('pr', 'passed', 40)] })
+    expect(later.pipelineRuns.map((x) => [x.outcome, x.stage])).toEqual([['abandoned', 'review'], ['pr', undefined]])
+  })
 })
 
 describe('stageResult', () => {

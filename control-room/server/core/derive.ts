@@ -332,20 +332,18 @@ export function pipelineRuns(events: StageEvent[], itemState: State): PipelineRu
   }
   return groups.map((g, i) => {
     const last = i === groups.length - 1
-    const pipe = g.filter((e) => e.stage !== 'observe')
-    const blocked = pipe.find((e) => e.status === 'blocked')
+    // a run ends in its last state: a blocked event it went on from (a dispute settled in the team) is not a stop
+    const end = g.filter((e) => e.stage !== 'observe').at(-1)
     const outcome: PipelineRun['outcome'] = g.some((e) => e.stage === 'pr' && e.status === 'passed')
       ? 'pr'
-      : blocked
-        ? 'blocked'
-        : last && itemState === 'failed'
-          ? 'failed'
-          : last && itemState === 'in-progress'
-            ? 'running'
-            : last && itemState === 'blocked'
-              ? 'blocked'
-              : 'abandoned'
-    return { start: g[0]!.ts, end: g.at(-1)!.ts, outcome, stage: outcome === 'pr' || outcome === 'running' ? undefined : (blocked ?? pipe.at(-1))?.stage }
+      : last && itemState === 'in-progress'
+        ? 'running'
+        : end?.status === 'blocked' || (last && itemState === 'blocked')
+          ? 'blocked'
+          : last && itemState === 'failed'
+            ? 'failed'
+            : 'abandoned'
+    return { start: g[0]!.ts, end: g.at(-1)!.ts, outcome, stage: outcome === 'pr' || outcome === 'running' ? undefined : end?.stage }
   })
 }
 
