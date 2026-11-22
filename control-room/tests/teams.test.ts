@@ -161,6 +161,17 @@ test('a pull request keeps the branch it merges into (GitHub\'s baseRefName); wi
   expect(PULLS).toContain('baseRefName')
 })
 
+test('main is GitHub\'s default branch when the cache has it, not the first of main or master', async () => {
+  const fx = makeTeamsFactory(join(root, 'default-branch'))
+  process.env.PATH = `${fx.bin}:${PATH}`
+  fx.git('branch', 'trunk', 'main')
+  const gh = await readDemoGitHub(fx.github)
+  expect((await computeState(fx.repo, gh, { staleMinutes: 30 })).snap.main).toBe('main')
+  gh.data!.defaultBranch = 'trunk'
+  expect((await computeState(fx.repo, gh, { staleMinutes: 30 })).snap.main).toBe('trunk')
+  expect(PULLS).toContain('defaultBranchRef { name }')
+})
+
 test('a merged pull request keeps the GitHub login that merged it (for auto-merge, whoever enabled it)', () => {
   const n = { number: 1, title: 't', state: 'MERGED', headRefName: 'work/1-x', createdAt: '2026-11-01T00:00:00Z', url: 'u' }
   expect(normalisePull({ ...n, mergedBy: { login: 'octo' } }).merger).toBe('octo')

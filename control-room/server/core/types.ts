@@ -245,6 +245,7 @@ export const PullSchema = z.object({
 
 export const GitHubDataSchema = z.object({
   repo: optionalString,
+  defaultBranch: optionalString, // the repository's default branch on GitHub
   issues: z.array(IssueSchema),
   pulls: z.array(PullSchema),
 })

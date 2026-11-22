@@ -45,7 +45,7 @@ export async function loadSnapshot(repo: string, gh: { data?: GitHubData; status
   const notices: Notice[] = []
   const isGit = await g.isRepo(repo)
   const head = isGit ? await g.headBranch(repo) : null
-  const main = isGit ? await g.mainRef(repo) : null
+  const main = isGit ? ((gh.data?.defaultBranch && (await g.mainRef(repo, gh.data.defaultBranch))) || (await g.mainRef(repo))) : null
   if (!isGit) notices.push({ level: 'info', source: 'git', message: 'not a git repository: showing the working tree only (no branches, commits or main)' })
   else if (!main) notices.push({ level: 'warn', source: 'git', message: 'no main or master branch found' })
 

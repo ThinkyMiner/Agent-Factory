@@ -21,8 +21,10 @@ const ok = async (p: Promise<string>) => p.then((s) => s, () => null)
 export const isRepo = async (repo: string) => (await ok(git(repo, ['rev-parse', '--is-inside-work-tree'])))?.trim() === 'true'
 export const headBranch = async (repo: string) => (await ok(git(repo, ['symbolic-ref', '--short', '-q', 'HEAD'])))?.trim() || null
 
-export async function mainRef(repo: string): Promise<string | null> {
-  for (const r of ['refs/heads/main', 'refs/heads/master', 'refs/remotes/origin/main', 'refs/remotes/origin/master']) {
+/** The main branch: GitHub's default branch when known, else main or master; local first, then origin's. */
+export async function mainRef(repo: string, preferred?: string): Promise<string | null> {
+  const names = preferred && /^[\w./-]+$/.test(preferred) ? [preferred] : ['main', 'master']
+  for (const r of [...names.map((n) => `refs/heads/${n}`), ...names.map((n) => `refs/remotes/origin/${n}`)]) {
     if (await ok(git(repo, ['rev-parse', '--verify', '-q', r]))) return r.replace(/^refs\/(heads|remotes)\//, '')
   }
   return null

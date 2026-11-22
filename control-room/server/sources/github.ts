@@ -32,6 +32,7 @@ export const ISSUES = `query($owner: String!, $name: String!, $endCursor: String
 }`
 export const PULLS = `query($owner: String!, $name: String!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
+    defaultBranchRef { name }
     pullRequests(first: 30, after: $endCursor, orderBy: {field: UPDATED_AT, direction: DESC}) {
       pageInfo { hasNextPage endCursor }
       nodes {
@@ -60,11 +61,11 @@ const TIMELINE: Record<string, string> = {
   MergedEvent: 'merged', ClosedEvent: 'closed', ReopenedEvent: 'reopened',
 }
 
-async function pages(query: string, owner: string, name: string, cwd: string, key: 'issues' | 'pullRequests', maxPages: number): Promise<Node[]> {
+async function pages(query: string, owner: string, name: string, cwd: string, key: 'issues' | 'pullRequests', maxPages: number): Promise<{ nodes: Node[]; repository?: Node }> {
   // --paginate --slurp returns an array of page responses; gh follows $endCursor itself
   const out = await gh(['api', 'graphql', '--paginate', '--slurp', '-f', `query=${query}`, '-F', `owner=${owner}`, '-F', `name=${name}`], cwd, 60000)
   const parsed = JSON.parse(out) as Node[]
-  return parsed.slice(0, maxPages).flatMap((p) => p.data?.repository?.[key]?.nodes ?? [])
+  return { nodes: parsed.slice(0, maxPages).flatMap((p) => p.data?.repository?.[key]?.nodes ?? []), repository: parsed[0]?.data?.repository }
 }
 
 export function normaliseIssue(n: Node): Issue {
@@ -110,5 +111,5 @@ export async function fetchGitHub(cwd: string, slug: string, maxPages = 10): Pro
     pages(PULLS, owner, name, cwd, 'pullRequests', maxPages),
   ])
   // GitHub's data is input like any other: validate it
-  return GitHubDataSchema.parse({ repo: slug, issues: issues.map(normaliseIssue), pulls: pulls.map(normalisePull) })
+  return GitHubDataSchema.parse({ repo: slug, defaultBranch: pulls.repository?.defaultBranchRef?.name ?? undefined, issues: issues.nodes.map(normaliseIssue), pulls: pulls.nodes.map(normalisePull) })
 }
