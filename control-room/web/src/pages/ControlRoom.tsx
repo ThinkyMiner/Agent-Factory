@@ -111,7 +111,7 @@ const HINT: Record<string, React.ReactNode> = {
   'pr-approve': <>Pull request rows: read it on GitHub, add the <Mono>human-approved</Mono> label, wait for its checks to pass, then merge it (with auto-merge on, it then merges itself).</>,
   'pr-merge': <>Pull request rows marked {NEEDS.merge.label}: merge it on GitHub.</>,
   'pr-failed': <>Pull request rows marked {NEEDS.failed.label}: a required check fails on GitHub; whoever owns the branch fixes it.</>,
-  'pr-info': <>Pull request rows marked {NEEDS.info.label}: approved, with auto-merge on: GitHub merges it when CI is green.</>,
+  'pr-info': <>Pull request rows marked {NEEDS.info.label}: nothing to do yet: its checks are still running (after your label, the risk-gate reruns), or auto-merge merges it once they pass; the row says which.</>,
   decision: <>Planning records marked needs-human: decide them in the cycle's <Mono>DECISIONS.md</Mono> (or tell the orchestrator); see Planning.</>,
   cycle: <>Planning rows: the round waits for your label or merge on the cycle's pull request; see Planning.</>,
   sweep: <>Sweep rows: what the sweep (the factory's watchdog) saw in the team sessions, in its words; it clears when the sweep stops seeing it.</>,

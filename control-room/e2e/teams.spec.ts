@@ -162,7 +162,8 @@ test('Needs you footers say what clears a merge or a red check, not that a pendi
     const res = await route.fetch()
     const body = await res.json()
     body.needsYou.push({ id: '20', kind: 'merge', title: 'Reading list API', summary: 'R1 · checks pending · auto-merge was not enabled', since: new Date().toISOString() },
-      { id: '24', kind: 'failed', title: 'Copy a share link', summary: 'CI failing: factory-tests', since: new Date().toISOString() })
+      { id: '24', kind: 'failed', title: 'Copy a share link', summary: 'CI failing: factory-tests', since: new Date().toISOString() },
+      { id: 'pr-90', label: 'PR #90', kind: 'info', title: 'Kit sync', summary: 'factory/kit · approved: wait for the risk-gate rerun after the label to pass · R2', since: new Date().toISOString() })
     await route.fulfill({ response: res, json: body })
   })
   await page.goto(TEAMS_URL + '/')
@@ -170,6 +171,7 @@ test('Needs you footers say what clears a merge or a red check, not that a pendi
   await expect(hints).toContainText('merge it on GitHub once its checks pass')
   await expect(hints).not.toContainText('the pull request is ready')
   await expect(hints).toContainText('a red check on its pull request is fixed by the team that owns the branch')
+  await expect(hints).toContainText('nothing to do yet: its checks are still running (after your label, the risk-gate reruns)') // a PR row that waits never says merge
   expect(errors).toEqual([])
 })
 

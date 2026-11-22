@@ -12,7 +12,7 @@ const COLUMNS: { key: Column; label: string; hint: string }[] = [
   { key: 'proposed', label: 'Proposed', hint: 'Issues labelled factory:proposed' },
   { key: 'ready', label: 'Ready', hint: 'Labelled factory:ready, or dispatched to a team (team mode); not started' },
   { key: 'in-progress', label: 'In progress', hint: 'A run is moving through the stages' },
-  { key: 'pr-open', label: 'Pull request open', hint: 'Open with auto-merge, which merges it when CI passes; or a draft its author has not marked ready' },
+  { key: 'pr-open', label: 'Pull request open', hint: 'Open and waiting: for its checks (after your label, the risk-gate reruns), for auto-merge, or for its author to mark a draft ready' },
   { key: 'waiting', label: 'Waiting for me', hint: 'A pull request held at the human gate' },
   { key: 'stopped', label: 'Stopped', hint: 'Stopped with a question (BLOCKED.md), a failed stage or a red check on its open pull request, or closed' },
   { key: 'merged', label: 'Merged', hint: "The item's pull request merged into its base: main, or in team mode its feature branch (main gets it with the feature)" },
