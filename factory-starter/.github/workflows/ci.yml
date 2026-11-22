@@ -210,6 +210,17 @@ jobs:
             R0|R1)
               echo "No human gate for $TIER." ;;
             R2)
+              # AUTONOMY=on in main's policy: no label for a change that leaves the factory as main
+              # has it (autonomy-gate.sh). Main's copy only, never the pull request's: a PR must
+              # not bring the gate that lets itself through.
+              if git cat-file -e "$RULES:factory/scripts/autonomy-gate.sh" 2>/dev/null; then
+                git show "$RULES:factory/scripts/autonomy-gate.sh" > /tmp/autonomy-gate.sh
+                if out=$(bash /tmp/autonomy-gate.sh "$BASE" "$RULES" "$TIER" 2>&1); then
+                  echo "$out"
+                  exit 0
+                fi
+                echo "$out"
+              fi
               # The label must be yours and newer than the last push (check-approval.sh), using
               # main's copy of the check, like the classifier.
               if git cat-file -e "$RULES:factory/scripts/check-approval.sh" 2>/dev/null; then

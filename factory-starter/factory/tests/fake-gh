@@ -107,7 +107,8 @@ case "${1:-} ${2:-}" in
     jq --arg a "$add" '.labels = ((.labels // []) + ($a | split("\n") | map(select(length > 0)) | map({name: .})) | unique_by(.name))' "$f" > "$f.new" && mv "$f.new" "$f" ;;
   "pr merge")
     f="$S/pulls/$3.json"; [ -f "$f" ] || { echo "no pull request $3" >&2; exit 1; }
-    jq '.auto_merge = {merge_method: "squash"}' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+    m=squash; case " $* " in *" --merge "*) m=merge ;; *" --rebase "*) m=rebase ;; esac
+    jq --arg m "$m" '.auto_merge = {merge_method: $m}' "$f" > "$f.new" && mv "$f.new" "$f" ;;
   "pr ready")
     f="$S/pulls/$3.json"; [ -f "$f" ] || { echo "no pull request $3" >&2; exit 1; }
     jq '.draft = false' "$f" > "$f.new" && mv "$f.new" "$f" ;;

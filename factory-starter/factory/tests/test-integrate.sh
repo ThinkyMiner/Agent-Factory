@@ -520,6 +520,25 @@ test_pr_opens_one_pull_request_and_close_cleans_up() {
   expect_eq "$(events integration | tail -1 | jq -r '[.step, .status] | join(" ")')" "closed done"
 }
 
+test_with_autonomy_the_pull_request_to_main_merges_itself_up_to_r2() {
+  integ_setup; saved_tests
+  fix_lands; orch run "$F"; expect_rc 0; review accept
+  push_to human main factory/policy.env "$(printf 'AUTO_MERGE_MAX_TIER=none\nAUTONOMY=on')"
+  orch pr "$F"; expect_rc 0; expect_out "auto-merge is on: R2 is within AUTONOMY=on (up to R2)"
+  p=$(ls "$FAKE_GH/pulls" | head -1)
+  expect_eq "$(jq -r .auto_merge.merge_method "$FAKE_GH/pulls/$p")" squash
+}
+
+test_with_autonomy_an_r3_pull_request_to_main_still_waits() {
+  integ_setup; saved_tests
+  fix_lands; push_to backend "feature/$F" server/secret-store.txt "where keys live"
+  orch run "$F"; expect_rc 0; review accept
+  push_to human main factory/policy.env "$(printf 'AUTO_MERGE_MAX_TIER=R3\nAUTONOMY=on')"
+  orch pr "$F"; expect_rc 0; expect_out "R3 is above AUTONOMY=on (up to R2): the pull request waits for the human"
+  p=$(ls "$FAKE_GH/pulls" | head -1)
+  expect_eq "$(jq -r '.auto_merge // "off"' "$FAKE_GH/pulls/$p")" off
+}
+
 test_one_integrate_at_a_time() {
   integ_setup; saved_tests
   mkdir -p "$MAIN/.factory"
@@ -572,6 +591,28 @@ test_sync_merges_main_into_the_feature_branch_without_touching_the_checkout() {
   expect_eq "$(git -C "$o" show "sync/$F:factory/notes.txt")" "a second kit fix"
   git -C "$o" update-ref "refs/heads/feature/$F" "sync/$F"                                  # merged with a merge commit
   orch sync "$F"; expect_rc 0; expect_out "nothing to sync"
+}
+
+test_with_autonomy_a_sync_merges_itself_with_a_merge_commit() {
+  integ_setup
+  push_to human main factory/notes.txt "a kit fix"
+  orch sync "$F"; expect_rc 0; expect_out "gh pr merge 1 --merge"                  # off: the human merges it
+  gh_log | grep -q '^pr merge' && fail "auto-merge with AUTONOMY off: $(gh_log | grep '^pr merge')"
+  p=$(ls "$FAKE_GH/pulls" | head -1); p=${p%.json}
+  local v
+  for v in ON yes '"on"' 'on; touch pwned' '$(touch pwned)' onn; do                  # anything but exactly on is off
+    push_to human main factory/policy.env "AUTONOMY=$v"
+    orch sync "$F"; expect_rc 0; expect_out "gh pr merge $p --merge"
+    expect_eq "$(jq -r '.auto_merge // "off"' "$FAKE_GH/pulls/$p.json")" off "AUTONOMY=$v"
+  done
+  [ ! -e pwned ] && [ ! -e "$MAIN/pwned" ] || fail "a policy value was executed"
+  echo 'pr merge' > "$FAKE_GH/fail"                                                # GitHub refuses auto-merge
+  push_to human main factory/policy.env "AUTONOMY=on"
+  orch sync "$F"; expect_rc 0; expect_out "gh pr merge $p --merge"
+  rm "$FAKE_GH/fail"
+  orch sync "$F"; expect_rc 0; expect_out "AUTONOMY=on: it merges itself with a merge commit once CI is green"
+  expect_eq "$(jq -r .auto_merge.merge_method "$FAKE_GH/pulls/$p.json")" merge
+  gh_log | grep -qxF "pr merge $p --auto --merge" || fail "no auto-merge call: $(gh_log | grep '^pr merge')"
 }
 
 test_sync_refuses_when_main_and_the_feature_both_changed_a_file() {

@@ -120,7 +120,13 @@ if [ "$cmd" = sync ]; then
     n=${url##*/}; [[ "$n" =~ ^[0-9]+$ ]] || die "unexpected answer from gh: $url"; pushed=" (opened)"
   fi
   say "sync/$f -> feature/$f: pull request #$n$pushed"
-  say "the human approves it (human-approved) and merges it with a merge commit, not a squash, so main becomes part of feature/$f: gh pr merge $n --merge"
+  # AUTONOMY=on: nobody is waited for; CI's risk-gate passes it without a label, as every path in
+  # it is main's (autonomy-gate.sh).
+  if [ "$(autonomy "$home")" = on ] && gh pr merge "$n" --auto --merge </dev/null >/dev/null; then
+    say "AUTONOMY=on: it merges itself with a merge commit once CI is green"
+  else
+    say "the human approves it (human-approved) and merges it with a merge commit, not a squash, so main becomes part of feature/$f: gh pr merge $n --merge"
+  fi
   exit 0
 fi
 if c=$(active_cycle "$home"); then
@@ -451,11 +457,14 @@ pr)
     say "pull request #$n ($I -> main) is already open; risk:$tier"
   fi
   max=$(git show origin/main:factory/policy.env 2>/dev/null | sed -n 's/^AUTO_MERGE_MAX_TIER=//p' | tail -1 | tr -d '[:space:]' || true)
+  lim="AUTO_MERGE_MAX_TIER=${max:-none}"
+  # AUTONOMY=on: up to R2 merges itself, whatever AUTO_MERGE_MAX_TIER says; R3 never.
+  if [ "$(autonomy "$home")" = on ]; then max=R2; lim="AUTONOMY=on (up to R2)"; fi
   if [[ "$max" =~ ^R[0-3]$ ]] && [ "${tier#R}" -le "${max#R}" ]; then
-    gh pr merge "$n" --auto --squash >/dev/null && say "auto-merge is on: $tier is within AUTO_MERGE_MAX_TIER=$max" ||
+    gh pr merge "$n" --auto --squash >/dev/null && say "auto-merge is on: $tier is within $lim" ||
       say "could not turn on auto-merge for #$n; it waits for the human"
   else
-    say "$tier is above AUTO_MERGE_MAX_TIER=${max:-none}: the pull request waits for the human"
+    say "$tier is above $lim: the pull request waits for the human"
   fi
   event integration feature="$f" step=pr status=opened round="$round"
   ;;
