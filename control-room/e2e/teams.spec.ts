@@ -175,6 +175,21 @@ test('Needs you footers say what clears a merge or a red check, not that a pendi
   expect(errors).toEqual([])
 })
 
+test('planning: an open amendment to the cycle shows with who takes its next step', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.route('**/api/teams', async (route) => {
+    const res = await route.fetch()
+    const body = await res.json()
+    body.cycle.amendments = [{ number: 41, url: 'https://github.invalid/harbor/pull/41', title: 'Amend D01', head: 'planning/c002-share-links', who: 'you', what: 'add human-approved, wait for the checks to pass, then merge' }]
+    await route.fulfill({ response: res, json: body })
+  })
+  await page.goto(TEAMS_URL + '/planning')
+  const cycle = page.getByRole('region', { name: /planning cycle/i })
+  await expect(cycle).toContainText('open amendment from planning/c002-share-links · Amend D01 · next: you add human-approved, wait for the checks to pass, then merge')
+  await expect(cycle.getByRole('link', { name: '#41' })).toHaveAttribute('href', 'https://github.invalid/harbor/pull/41')
+  expect(errors).toEqual([])
+})
+
 test('quality: an empty chart says whether nothing happened or it cannot be measured', async ({ page }) => {
   const errors = watchErrors(page)
   await page.goto(TEAMS_URL + '/quality')

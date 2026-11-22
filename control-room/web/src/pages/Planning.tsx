@@ -84,6 +84,13 @@ function Cycle({ c }: { c: CycleView }) {
             ) : (
               <span className="text-muted">none yet</span>
             )}
+            {c.amendments.map((a) => (
+              <span key={a.number} className="block text-[12.5px]">
+                <a href={a.url} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">#{a.number}</a>{' '}
+                <span className="text-muted">open amendment from <Mono>{a.head}</Mono> · {a.title} · next: </span>
+                <Mono className={a.who === 'you' ? 'font-semibold text-attention' : ''}>{a.who}</Mono> {a.what}
+              </span>
+            ))}
             {c.blocking.map((b) => (
               <span key={b.number} className="block text-[12.5px]">
                 <a href={b.url} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">#{b.number}</a>{' '}

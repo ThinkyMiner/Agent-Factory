@@ -64,10 +64,13 @@ export const StageEventSchema = z
     detail: optionalString,
     tier: z.enum(TIERS).optional().catch(undefined),
     pr: optionalNumber.catch(undefined),
+    // waits=#<n>: the stage waits on someone else's pull request or ticket ("#20", "20", "#20,#21"); anything else is dropped
+    waits: z.preprocess((v) => (typeof v === 'number' ? String(v) : v), z.string().regex(/^\s*#?\d{1,7}(\s*,\s*#?\d{1,7})*\s*$/).transform((v) => v.split(',').map((x) => Number(x.trim().replace('#', ''))))).optional().catch(undefined),
   })
   .transform((e) => {
     const as = STAGE_ALIAS[e.stage]
-    return as ? { ...e, stage: as, detail: e.detail ? `${e.stage}: ${e.detail}` : e.stage } : { ...e, stage: e.stage as Stage }
+    // alias: the stage as the event wrote it, when it is shown under another (ui-review under review)
+    return as ? { ...e, stage: as, alias: e.stage as string | undefined, detail: e.detail ? `${e.stage}: ${e.detail}` : e.stage } : { ...e, stage: e.stage as Stage, alias: undefined as string | undefined }
   })
 
 export const LifecycleEventSchema = z.object({
@@ -84,7 +87,7 @@ export const LifecycleEventSchema = z.object({
   message: optionalString,
 })
 
-export type StageEvent = z.infer<typeof StageEventSchema> & { key: string }
+export type StageEvent = Omit<z.infer<typeof StageEventSchema>, 'alias'> & { alias?: string; key: string }
 export type LifecycleEvent = z.infer<typeof LifecycleEventSchema> & { key: string }
 export interface UnknownEvent {
   type: 'unknown'

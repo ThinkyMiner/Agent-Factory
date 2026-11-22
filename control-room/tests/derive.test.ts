@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { buildStages, deriveAll, deriveItem, expireRuns, indexLifecycle, type Context, type ItemInputs } from '../server/core/derive.ts'
 import { parseRiskRules } from '../server/core/risk.ts'
-import { currentChecks, type Issue, type LifecycleEvent, type Pull, type Stage, type StageEvent, type Status } from '../server/core/types.ts'
+import { currentChecks, StageEventSchema, type Issue, type LifecycleEvent, type Pull, type Stage, type StageEvent, type Status } from '../server/core/types.ts'
 
 const NOW = Date.parse('2026-11-13T12:00:00Z')
 const ago = (min: number) => new Date(NOW - min * 60_000).toISOString()
@@ -122,6 +122,16 @@ describe('blocked', () => {
     // a BLOCKED.md makes it a question, live agents or not
     const asked = derive({ stageEvents: [se('build', 'started', 25), se('build', 'blocked', 8)], lifecycle: life, files: { 'BLOCKED.md': file('# Blocked\n\nWhich?', 8, 'worktree') } })
     expect(asked).toMatchObject({ state: 'blocked', needs: { kind: 'answer', summary: 'Which?' } })
+  })
+  test('a blocked stage that names an open PR or ticket it waits on (waits=#<n>) waits; it is not a question for you', () => {
+    const ev = [se('build', 'passed', 30), se('review', 'blocked', 10, 0, { alias: 'ui-review', detail: 'ui-review: needs the new ui shots', waits: [20] })]
+    const r = derive({ stageEvents: ev }, { openRefs: new Set([20]) })
+    expect(r).toMatchObject({ state: 'in-progress', reason: 'ui-review waits for #20', waitsOn: { refs: [20], stage: 'ui-review' } })
+    expect(r.needs).toBeUndefined()
+    const parse = (waits: unknown) => StageEventSchema.parse({ ts: ago(1), type: 'stage', work_id: '9', stage: 'ui-review', status: 'blocked', round: '0', waits }).waits
+    expect([parse('#20'), parse('20'), parse('#20,#21'), parse(20), parse('PR 20'), parse('#2a')]).toEqual([[20], [20], [20, 21], [20], undefined, undefined]) // anything else is dropped
+    // #20 is not an open PR or ticket: the event is a stop like any other
+    expect(derive({ stageEvents: ev }, { openRefs: new Set([7]) })).toMatchObject({ state: 'blocked', waitsOn: undefined })
   })
   test('a BLOCKED.md older than a re-run is stale: the item is in progress, flagged', () => {
     const r = derive({ stageEvents: [se('spec', 'blocked', 3000), se('spec', 'started', 30, 1), se('spec', 'passed', 25, 1), se('tests', 'started', 5)], files: { 'BLOCKED.md': file('Which?', 2990) } })

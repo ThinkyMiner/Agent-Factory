@@ -28,7 +28,10 @@ export async function computeState(repo: string, gh: GitHubInput, opts: { now?: 
     if (!Number.isNaN(x) && x > (lastByItem.get(e.work_id) ?? -Infinity)) lastByItem.set(e.work_id, x)
   }
   expireRuns(runs, sessions, lastByItem, now, opts.staleMinutes)
-  const ctx: Context = { now, staleMinutes: opts.staleMinutes, autoMergeMax: snap.autoMergeMax, rules: snap.rules, sessions, runs }
+  // what a waits=#<n> may name: an open PR, or an open ticket not declined, done or verified
+  const openRefs = new Set([...(gh.data?.pulls ?? []).filter((p) => p.state === 'OPEN').map((p) => p.number),
+    ...(gh.data?.issues ?? []).filter((i) => i.state === 'OPEN' && i.labels.includes('ticket') && !i.labels.some((l) => ['state:declined', 'state:done', 'state:verified'].includes(l))).map((i) => i.number)])
+  const ctx: Context = { now, staleMinutes: opts.staleMinutes, autoMergeMax: snap.autoMergeMax, rules: snap.rules, sessions, runs, openRefs: gh.data ? openRefs : undefined }
   const d = deriveAll(snap.inputs, ctx)
   // team mode: the cycle, features, teams and sessions, and what in them needs you
   const teamsIn = await loadTeams(snap)
@@ -42,7 +45,15 @@ export async function computeState(repo: string, gh: GitHubInput, opts: { now?: 
   // every open PR that waits for you and is not an item's or the planning cycle's (those say it themselves)
   const shown = new Set([...d.items.flatMap((i) => (i.pr ? [i.pr.number] : [])), ...(t?.view.cycle?.pr ? [t.view.cycle.pr.number] : [])])
   const waits = new Map((t?.view.cycle?.blocking ?? []).map((b) => [b.number, `planning ${t!.view.cycle!.name} waits: ${b.why}`]))
-  const needsYou = [...d.needsYou, ...pullNeeds(gh.data?.pulls ?? [], snap.rules, snap.autoMergeMax, shown, waits, !!t), ...(t?.needs ?? []), ...findingNeeds(snap.findings)].sort(byNeeds)
+  // what each PR unblocks: items whose latest stage says waits=#<n> (the only cross-link; nothing is guessed)
+  const unblocks = new Map<number, string[]>()
+  for (const f of t?.view.features ?? []) for (const i of f.items) for (const w of i.item?.waitsOn ?? []) if (w.kind === 'PR') unblocks.set(w.n, [...(unblocks.get(w.n) ?? []), `#${i.number} (${w.stage})`])
+  for (const [n, xs] of unblocks) waits.set(n, [waits.get(n), `unblocks ${xs.join(', ')}`].filter(Boolean).join(' · '))
+  const itemRows = d.needsYou.map((e) => {
+    const n = d.byId.get(e.id)?.pr?.number
+    return n !== undefined && unblocks.has(n) ? { ...e, summary: `${e.summary} · unblocks ${unblocks.get(n)!.join(', ')}` } : e
+  })
+  const needsYou = [...itemRows, ...pullNeeds(gh.data?.pulls ?? [], snap.rules, snap.autoMergeMax, shown, waits, !!t), ...(t?.needs ?? []), ...findingNeeds(snap.findings)].sort(byNeeds)
   return { snap, meta, ctx, runs, sessions, ...d, needsYou, teams: t?.view ?? null }
 }
 export type FactoryState = Awaited<ReturnType<typeof computeState>>

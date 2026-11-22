@@ -216,6 +216,8 @@ export interface CycleView {
   pr?: { number: number; url?: string; state?: Pull['state']; isDraft?: boolean; labels: string[] }
   /** other open PRs that change planning/<cycle>/ (a fix to DECISIONS.md...): the cycle waits on them */
   blocking: { number: number; url: string; title: string; head: string; labels: string[]; why: string }[]
+  /** a dispatched cycle's open PRs that change planning/<cycle>/ (an amendment to its records), with their next step */
+  amendments: { number: number; url: string; title: string; head: string; who: string; what: string }[]
 }
 
 export interface DispatchRow {
@@ -269,7 +271,8 @@ export interface FeatureView {
     ticketState?: string // open | accepted | declined | done | verified: its state: label, else its last ticket event
     from?: string // a ticket's sender
     open: boolean
-    item?: { state: ItemView['state']; pr?: number; prUrl?: string; autoMerge?: boolean; tier?: Tier; needs?: { kind: NeedsEntry['kind']; summary: string }; active?: boolean; last?: { stage: string; status: string; at?: string; detail?: string } }
+    item?: { state: ItemView['state']; pr?: number; prUrl?: string; autoMerge?: boolean; tier?: Tier; needs?: { kind: NeedsEntry['kind']; summary: string }; active?: boolean; last?: { stage: string; status: string; at?: string; detail?: string }
+      waitsOn?: { kind: 'PR' | 'ticket'; n: number; url: string; stage: string }[] } // its latest stage's waits=#<n>, open PRs and tickets only
     dispatch?: DispatchRow
     waitsFor?: string
   }[]
@@ -396,6 +399,13 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
       .filter((p) => p.state === 'OPEN' && (state ? p.number !== state.pr : p.headRefName !== src) && touches(p))
       .sort((a, b) => a.number - b.number)
       .map((p) => ({ number: p.number, url: p.url, title: p.title, head: p.headRefName, labels: p.labels, why: `PR #${p.number} must merge${state?.status === 'approval' ? ', then /dispatch' : ''}` }))
+    const amendments = !settled ? [] : gh.pulls
+      .filter((p) => p.state === 'OPEN' && p.number !== state?.pr && touches(p))
+      .sort((a, b) => a.number - b.number)
+      .map((p) => {
+        const n = next(p, 'R2')
+        return { number: p.number, url: p.url, title: p.title, head: p.headRefName, who: n.who, what: n.what }
+      })
     const events: CycleView['events'] = []
     for (const e of inp.events) {
       if (e.type !== 'unknown') continue
@@ -422,6 +432,7 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
       events: events.sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts)),
       pr: state?.pr ? { number: state.pr, url: pull?.url, state: pull?.state, isDraft: pull?.isDraft, labels: pull?.labels ?? [] } : undefined,
       blocking,
+      amendments,
     }
 
     // what in it needs the human, and whose turn it is outside the timed rounds
@@ -495,12 +506,24 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
           : `${team ?? 'its team'} to start it: the sweep types the command when that session is free, lowest number first`
         waits.set(String(i.number), waitsFor)
       }
+      // waits=#<n> on its latest stage event: only an open PR, or a ticket still to be done, counts (no guessing from files)
+      const waitsOn = (it?.waitsOn?.refs ?? []).flatMap((n): { kind: 'PR' | 'ticket'; n: number; url: string; stage: string }[] => {
+        const pr = gh.pulls.find((p) => p.number === n && p.state === 'OPEN')
+        if (pr) return [{ kind: 'PR', n, url: pr.url, stage: it!.waitsOn!.stage }]
+        const t = gh.issues.find((x) => x.number === n && x.state === 'OPEN' && x.labels.includes('ticket'))
+        const tState = t && (ticketEvents.get(String(n)) ?? label(t.labels, 'state:'))
+        return t && !['declined', 'done', 'verified'].includes(tState ?? '') ? [{ kind: 'ticket', n, url: t.url, stage: it!.waitsOn!.stage }] : []
+      })
+      if (waitsOn.length) {
+        waitsFor = `${waitsOn.map((w) => `${w.kind} #${w.n}`).join(', ')} (${waitsOn[0]!.stage})`
+        waits.set(String(i.number), waitsFor)
+      }
       return {
         number: i.number, title: i.title, url: i.url, team, ticket,
         ticketState: ticket ? ticketEvents.get(String(i.number)) ?? label(i.labels, 'state:') : undefined, // as deriveItem: the event, else the label
         from: ticket ? label(i.labels, 'from:') : undefined,
         open: i.state === 'OPEN',
-        item: it ? { state: it.state, pr: it.pr?.number, prUrl: it.pr?.url, autoMerge: it.pr?.autoMerge, tier: it.tier, needs: it.needs && { kind: it.needs.kind, summary: it.needs.summary }, active: !!it.active, last: lastStage(it) } : undefined,
+        item: it ? { state: it.state, pr: it.pr?.number, prUrl: it.pr?.url, autoMerge: it.pr?.autoMerge, tier: it.tier, needs: it.needs && { kind: it.needs.kind, summary: it.needs.summary }, active: !!it.active, last: lastStage(it), waitsOn: waitsOn.length ? waitsOn : undefined } : undefined,
         dispatch,
         waitsFor,
       }
@@ -644,7 +667,8 @@ function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefine
       const wait = who === 'you' ? 'waiting on you' : s?.kind === 'failed' ? 'with failing checks' : pull?.isDraft ? 'in draft' : !pull || currentChecks(pull.checks).some((c) => checkState(c) === 'pending') ? 'waiting on checks' : 'merging'
       out.push({ n, who, what: `#${n}${it.pr ? ` (PR #${it.pr})` : ''}: ${what}`, wait })
     }
-    if (it.state === 'in-progress') {
+    if (it.state === 'in-progress' && it.waitsOn) out.push({ n, who: team, what: `#${n} waits for ${it.waitsOn.map((w) => `${w.kind} #${w.n}`).join(', ')} (${it.waitsOn[0]!.stage})`, active: !!it.active, quiet: !it.active })
+    else if (it.state === 'in-progress') {
       const l = it.last
       const last = l && `${l.stage} ${l.status}${l.at ? ` ${new Date(l.at).toISOString().slice(11, 16)} UTC` : ''}`
       if (it.needs?.kind === 'waiting-input') out.push({ n, who: 'you', what: `#${n}: ${it.needs.summary}` })
@@ -658,8 +682,19 @@ function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefine
     if (it.state === 'failed' && !pull) out.push({ n, who: 'you', what: `#${n} stopped: ${it.needs?.summary ?? 'see the item'}` })
     return out
   })
-  // one line per item step, each with its own link; yours first
-  const lines = [...steps].sort((a, b) => Number(b.who === 'you') - Number(a.who === 'you')).map((x) => ({ who: x.who, what: x.what, href: `/items/${x.n}` }))
+  // what an item's stage waits on (waits=#<n>): that PR's or ticket's owner comes first
+  const waited = doing.flatMap((i) => (i.item!.waitsOn ?? []).map((w) => {
+    const why = `#${i.number}'s ${w.stage} waits on it`
+    const pull = w.kind === 'PR' ? pulls.find((p) => p.number === w.n) : undefined
+    if (pull) {
+      const s = stepOf(pull)
+      return { who: s.who, what: `PR #${w.n} (${s.what}); ${why}`, href: pull.url || `/items/${i.number}` }
+    }
+    const t = f.items.find((x) => x.number === w.n)
+    return { who: t?.team ?? '?', what: `ticket #${w.n} (${t?.ticketState ?? 'open'}); ${why}`, href: w.url || `/items/${i.number}` }
+  }))
+  // then one line per item step, each with its own link; yours first
+  const lines = [...waited, ...[...steps].sort((a, b) => Number(b.who === 'you') - Number(a.who === 'you')).map((x) => ({ who: x.who, what: x.what, href: `/items/${x.n}` }))]
   const ready = work.filter((i) => i.item?.state === 'ready' && i.waitsFor && !/^#/.test(i.waitsFor))
   const next = lines[0] ?? (ready.length ? { who: ready[0]!.team ?? '?', what: `start #${ready[0]!.number} (the sweep types it when the session is free)`, href: `/items/${ready[0]!.number}` } : undefined)
   const inProgress = steps.filter((x) => x.active).length

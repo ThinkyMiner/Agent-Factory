@@ -154,7 +154,7 @@ function Card({ i }: { i: ItemSummary }) {
         <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted">
           {i.column === 'in-progress' && <StageLabel stage={i.stage} round={i.round} status={i.stageStatus} />}
           {i.column === 'in-progress' && !i.active && <span className="w-full text-[11.5px]">no agent active{!i.lastActivity ? ' (no event recorded)' : ago(i.lastActivity, now) === 'just now' ? '' : ` for ${ago(i.lastActivity, now)}`}</span>}
-          {i.column === 'ready' && i.waitsFor && <span className="w-full text-[11.5px]">waits for {i.waitsFor}</span>}
+          {(i.column === 'ready' || i.column === 'in-progress') && i.waitsFor && <span className="w-full text-[11.5px]">waits for {i.waitsFor}</span>}
           {(i.column === 'waiting' || i.column === 'stopped') && !i.needs && <StateBadge state={i.state} className="px-1.5 py-0 text-[11.5px]" />}
           {i.column === 'pr-open' && i.pr && <span>PR #{i.pr.number}</span>}
           {i.column === 'merged' && <span>{i.mergedBy === 'auto' ? 'auto-merged' : i.mergedBy === 'human' ? `approved by you; merged by ${i.merger ?? 'unknown'}` : i.merger ? `merged by ${i.merger}` : 'merged'}{i.mergedInto && i.mergedInto !== 'main' && <> into <span className="font-mono text-[11px]">{i.mergedInto}</span></>}</span>}

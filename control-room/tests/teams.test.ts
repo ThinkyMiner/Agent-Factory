@@ -558,6 +558,41 @@ describe('missing and damaged inputs', () => {
     expect(brief(s)).toEqual([planning]) // on main: what is under way is the next cycle
   })
 
+  test('waits=#<n> on an item\'s latest stage: the owner of that PR or ticket comes first, and its row says what it unblocks', async () => {
+    const fx = makeTeamsFactory(join(root, 'waits'))
+    process.env.PATH = `${fx.bin}:${PATH}`
+    const gh = await readDemoGitHub(fx.github)
+    const ago = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
+    const ev = (h: number, stage: string, status: string, waits?: string) => JSON.stringify({ ts: ago(h), type: 'stage', work_id: '21', branch: 'work/21-list-page', stage, status, round: '0', team: 'frontend', detail: 'needs the new ui shots', ...(waits !== undefined && { waits }) })
+    const evs = join(fx.repo, '.factory/events.jsonl')
+    writeFileSync(evs, readFileSync(evs, 'utf8') + [ev(2, 'intake', 'passed'), ev(1.5, 'build', 'passed'), ev(1, 'ui-review', 'blocked', '#40, 999, #26')].join('\n') + '\n')
+    gh.data!.pulls = gh.data!.pulls.filter((p) => p.number !== 25) // before the PR to main: the feature is building
+    gh.data!.issues = gh.data!.issues.filter((i) => i.number !== 23)
+    gh.data!.pulls.push({ ...gh.data!.pulls.find((p) => p.number === 22)!, number: 40, title: 'Kit sync', headRefName: 'factory/kit-1', state: 'OPEN', mergedAt: undefined, labels: ['risk:R2'], url: 'https://github.invalid/harbor/pull/40', files: [{ path: 'factory/x.mjs', additions: 1, deletions: 0 }] })
+    const s = await computeState(fx.repo, gh, { staleMinutes: 30 })
+    const p = s.teams!.phases.find((x) => x.step === 'building')!
+    const lines = [p.next!, ...(p.more ?? [])]
+    // #999 is no open PR or ticket; #26 is a ticket, but declined: only PR #40 counts
+    expect(lines[0]).toEqual({ who: 'you', what: "PR #40 (add human-approved, wait for the checks to pass, then merge); #21's ui-review waits on it", href: 'https://github.invalid/harbor/pull/40' })
+    expect(lines).toContainEqual({ who: 'frontend', what: '#21 waits for PR #40 (ui-review)', href: '/items/21' })
+    expect(s.needsYou.find((n) => n.id === 'pr-40')!.summary).toContain('unblocks #21 (ui-review)')
+    expect(s.teams!.features[0]!.items.find((i) => i.number === 21)!.waitsFor).toBe('PR #40 (ui-review)') // Planning's row
+    expect(s.byId.get('21')!.waitsFor).toBe('PR #40 (ui-review)')
+  })
+
+  test('a dispatched cycle lists its open planning PRs (an amendment), with who takes the next step', async () => {
+    const fx = makeTeamsFactory(join(root, 'amend'))
+    process.env.PATH = `${fx.bin}:${PATH}`
+    rmSync(join(fx.repo, '.factory/planning/active'))
+    fx.git('switch', '-q', 'main')
+    fx.git('branch', '-q', '-D', 'planning/c002-share-links')
+    const gh = await readDemoGitHub(fx.github)
+    gh.data!.pulls.push({ ...gh.data!.pulls.find((p) => p.number === 22)!, number: 41, title: 'Amend D01', headRefName: 'planning/c001-reading-list', state: 'OPEN', mergedAt: undefined, labels: ['risk:R2'], url: 'https://github.invalid/harbor/pull/41', files: [{ path: 'planning/c001-reading-list/DECISIONS.md', additions: 2, deletions: 1 }] })
+    const s = await computeState(fx.repo, gh, { staleMinutes: 30 })
+    expect(s.teams!.cycle).toMatchObject({ name: 'c001-reading-list', state: { status: 'dispatched' } })
+    expect(s.teams!.cycle!.amendments).toEqual([{ number: 41, url: 'https://github.invalid/harbor/pull/41', title: 'Amend D01', head: 'planning/c001-reading-list', who: 'you', what: 'add human-approved, wait for the checks to pass, then merge' }])
+  })
+
   test('the brief and the approval rounds need you while their pull request is open', async () => {
     const fx = makeTeamsFactory(join(root, 'four'))
     process.env.PATH = `${fx.bin}:${PATH}`

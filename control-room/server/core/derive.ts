@@ -93,6 +93,7 @@ export interface Context {
   rules: RiskRule[]
   sessions: Map<string, Session>
   runs: AgentRun[]
+  openRefs?: Set<number> // open pull requests and tickets still to be done: what a waits=#<n> may name
 }
 
 // ---------- outputs ----------
@@ -184,6 +185,7 @@ export interface ItemView {
   branch?: string
   live?: { agentType: string; since?: string }
   active?: boolean // an agent or session of it is in Running now (set by deriveAll)
+  waitsOn?: { refs: number[]; stage: string } // its latest stage event's waits=#<n>: someone else's PR or ticket (checked against GitHub by deriveTeams)
   feature?: string // team mode: the feature it was dispatched in
   waitsFor?: string // team mode, ready: what it waits for (the dispatch "after" column), set with the teams view
   mergedAt?: string
@@ -424,6 +426,7 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
   const fixRounds = Object.values(fixByStage).reduce((a, b) => a + b, 0)
   const pipeline = events.filter((e) => e.stage !== 'observe') // the observer runs after every stop, so it never decides state
   const lastPipe = pipeline.at(-1)
+  const waitsOpen = (lastPipe?.waits ?? []).filter((n) => !ctx.openRefs || ctx.openRefs.has(n)) // only open PRs and tickets count
   const lastStage = lastPipe ?? events.at(-1)
   const activityTimes = [...events.map((e) => t(e.ts)), ...lifecycle.map((e) => t(e.ts))].filter((x) => !Number.isNaN(x))
   const lastActivity = activityTimes.length ? Math.max(...activityTimes) : undefined
@@ -503,6 +506,11 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
     state = 'closed'
     since = pr?.state === 'CLOSED' ? pr.closedAt : issue?.closedAt
     reason = pr?.state === 'CLOSED' ? `PR #${pr.number} closed without merging` : `issue closed${issue?.stateReason ? ` (${issue.stateReason.toLowerCase().replace('_', ' ')})` : ''}`
+  } else if (!(blocked && !blocked.stale) && lastPipe?.status === 'blocked' && pr?.state !== 'OPEN' && waitsOpen.length) {
+    // a bare "blocked" event that names what it waits on (waits=#<n>, an open PR or ticket): that owner's step, not a question for you
+    state = 'in-progress'
+    since = lastPipe.ts
+    reason = `${lastPipe.alias ?? lastPipe.stage} waits for ${waitsOpen.map((n) => `#${n}`).join(', ')}`
   } else if (!(blocked && !blocked.stale) && lastPipe?.status === 'blocked' && pr?.state !== 'OPEN' && liveRun) {
     // a bare "blocked" event (no BLOCKED.md) while the item's agents still run: not a question for you yet
     state = 'in-progress'
@@ -657,6 +665,7 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
     mergedInto: state === 'merged' ? (pr?.state === 'MERGED' ? pr.baseRefName : undefined) ?? (inp.onMain ? 'main' : undefined) : undefined,
     readyAt,
     mergedBy,
+    waitsOn: lastPipe && waitsOpen.length && state !== 'merged' && state !== 'closed' ? { refs: waitsOpen, stage: lastPipe.alias ?? lastPipe.stage } : undefined,
     merger: pr?.state === 'MERGED' ? pr.merger : undefined,
     firstPass: state === 'merged' ? fixRounds === 0 && !inp.earlierAttempts : undefined,
     reverted: inp.revertedBy,
