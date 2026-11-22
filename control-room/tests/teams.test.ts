@@ -640,7 +640,7 @@ describe('missing and damaged inputs', () => {
       ['approve', 'pr-25', 'integrate/f001-reading-list · add human-approved, wait for the checks to pass, then merge · R2', 'https://github.invalid/harbor/pull/25'],
       ['approve', 'pr-31', 'planning/c002-share-links-fix · add human-approved, wait for the checks to pass, then merge · R2', 'https://github.invalid/harbor/pull/31'],
       ['failed', 'pr-36', 'planning/fix · approved, but failing: ownership', 'https://github.invalid/harbor/pull/36'],
-      ['merge', 'pr-32', 'factory/csp · approved: merge it · R2', 'https://github.invalid/harbor/pull/32'], // approved, not merged: it still waits on you
+      ['merge', 'pr-32', 'factory/csp · approved: merge it · R2 · a kit change: teams get it after it merges and their feature syncs (integrate.sh sync); items may wait on it', 'https://github.invalid/harbor/pull/32'], // approved, not merged: it still waits on you
       ['merge', 'pr-35', 'sync/f001-reading-list · merge it · R1', 'https://github.invalid/harbor/pull/35'],
     ]) // #12 is the cycle's own PR: its row says what the round needs
   })

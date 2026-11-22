@@ -123,7 +123,7 @@ export function prNext(p: Pull, tier: Tier | undefined, autoMergeMax: Tier | 'no
  *  feature's PR to main) need you like any item's PR when above the auto-merge tier. `skip`: PRs shown
  *  elsewhere (work items, the planning cycle's own PR). `waits`: what waits on a PR (the planning cycle),
  *  said on its row; such a PR is shown even at or below the auto-merge tier, so nothing waits unseen. */
-export function pullNeeds(pulls: Pull[], rules: RiskRule[], autoMergeMax: Tier | 'none', skip: Set<number> = new Set(), waits: Map<number, string> = new Map()): NeedsEntry[] {
+export function pullNeeds(pulls: Pull[], rules: RiskRule[], autoMergeMax: Tier | 'none', skip: Set<number> = new Set(), waits: Map<number, string> = new Map(), teamMode = false): NeedsEntry[] {
   return pulls
     .filter((p) => p.state === 'OPEN' && !p.isDraft && !skip.has(p.number))
     .flatMap((p): NeedsEntry[] => {
@@ -141,7 +141,7 @@ export function pullNeeds(pulls: Pull[], rules: RiskRule[], autoMergeMax: Tier |
       return [{
         id: `pr-${p.number}`, label: `PR #${p.number}`, title: p.title, tier, since: p.createdAt,
         kind: n.kind,
-        summary: `${[head, what].filter(Boolean).join(' · ')}${tail}${wait ? ` · ${wait}` : ''}`,
+        summary: `${[head, what].filter(Boolean).join(' · ')}${tail}${wait ? ` · ${wait}` : ''}${teamMode && p.headRefName.startsWith('factory/') ? ' · a kit change: teams get it after it merges and their feature syncs (integrate.sh sync); items may wait on it' : ''}`,
         href: improvement ? '/improvement' : p.url || '/',
       }]
     })

@@ -77,6 +77,12 @@ describe('over the demo', async () => {
     expect(pullNeeds([open], s.snap.rules, 'R1')[0]!.summary).toBe('factory/x · add human-approved, wait for the checks to pass, then merge · R2')
     expect(pullNeeds([{ ...open, autoMerge: true }], s.snap.rules, 'R1')[0]!.summary).toBe('factory/x · add human-approved; auto-merge then merges it once the checks pass · R2')
   })
+  test('a kit change (factory/*) says the teams get it only after it merges and each feature syncs', () => {
+    const pr = gh.data!.pulls.find((p) => p.number === 141)!
+    const kit = { ...pr, labels: ['risk:R2'], headRefName: 'factory/ui-states', checks: [] }
+    expect(pullNeeds([kit], s.snap.rules, 'R1')[0]!.summary).toBe('factory/ui-states · add human-approved, wait for the checks to pass, then merge · R2') // not team mode: it applies on merge
+    expect(pullNeeds([kit], s.snap.rules, 'R1', new Set(), new Map(), true)[0]!.summary).toBe('factory/ui-states · add human-approved, wait for the checks to pass, then merge · R2 · a kit change: teams get it after it merges and their feature syncs (integrate.sh sync); items may wait on it')
+  })
   test('a failing check beats auto-merge: auto-merge never merges a red PR', () => {
     const pr = gh.data!.pulls.find((p) => p.number === 141)!
     const red = { ...pr, labels: ['risk:R1'], autoMerge: true, checks: [{ name: 'factory-tests', status: 'COMPLETED', conclusion: 'FAILURE' }, { name: 'risk-gate', status: 'COMPLETED', conclusion: 'SUCCESS' }] }
