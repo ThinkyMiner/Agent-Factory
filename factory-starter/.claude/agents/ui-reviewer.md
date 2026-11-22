@@ -42,6 +42,8 @@ What counts as blocking: an acceptance criterion not visible on screen, a broken
 either scheme or at either width, unreadable contrast, a lost or illogical focus order, any
 critical or serious axe violation. Taste is non-blocking. Use `escalate` when the decision needs
 a human: a product or design call, or a spec that is itself wrong.
+With rigor `mvp`, a layout flaw blocks only when it hides, cuts or breaks something a user
+meets on an ordinary screen; pixel polish and rare inputs are non-blocking follow-ups.
 
 If `make ui-shots` fails, writes no screenshot, or there is nothing to render (no URL, or the
 item changes nothing visible), you cannot review it: say so under BLOCKING and NOT VERIFIED and

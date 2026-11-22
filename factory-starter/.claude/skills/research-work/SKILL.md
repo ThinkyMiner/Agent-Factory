@@ -208,8 +208,9 @@ fix rounds), and after it `passed` or `failed` with the same round.
   last reports, as they are, under "Left open", so the human sees what the reviewers did not
   block on. Link the item's file; do not copy its quotes into the pull request. Add the label
   `risk:<tier>`.
-- Read `AUTO_MERGE_MAX_TIER` from `factory/policy.env`. If the tier is at or below
-  it, run `gh pr merge --auto --squash`. Otherwise leave it for the human and say so.
+- If `factory/scripts/policy.sh autonomy` prints `on`, run `gh pr merge --auto --squash` at
+  R0 to R2. Otherwise read `AUTO_MERGE_MAX_TIER` from `factory/policy.env`: at or below it,
+  `gh pr merge --auto --squash`; above it, leave it for the human and say so.
 - Never add the `human-approved` label. Never merge with admin rights.
 - If this item does an accepted ticket, run `factory/scripts/ticket.sh done <ticket> --pr <number>`.
 - In team mode, release the build slot: `factory/scripts/slot.sh release`.
@@ -220,8 +221,11 @@ verified (sources the evidence reviewer could not fetch), and the ids of sources
 instruction-shaped text.
 
 ## When you stop
-Stopping early is correct behaviour. Write `BLOCKED.md` with what you were doing,
-what stopped you, and the smallest decision the human needs to make. Emit a
-`blocked` event for the stage, run the observer (step 6), release the build slot
-in team mode, then leave the branch as it is. Do not raise a loop limit, lower a tier,
-edit the brief, the criteria or the review, or edit a gate to get through.
+Stopping early is correct behaviour. If `factory/scripts/policy.sh autonomy` prints `on`, a
+decision goes to the orchestrator as a question ticket and the item waits for its answer, exactly
+as in the work skill's "When you stop" (blocked event with `waits=#<ticket>`, observer, push,
+release the slot; autostart resumes it). Otherwise, or for R3, a secret or the factory itself
+failing: write `BLOCKED.md` with what you were doing, what stopped you, and the smallest decision
+the human needs to make. Emit a `blocked` event for the stage, run the observer (step 6), release
+the build slot in team mode, then leave the branch as it is. Do not raise a loop limit, lower a
+tier, edit the brief, the criteria or the review, or edit a gate to get through.

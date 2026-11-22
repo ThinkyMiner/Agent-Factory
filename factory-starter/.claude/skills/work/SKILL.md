@@ -30,8 +30,8 @@ control room and the audit can read the run without parsing prose:
 
 Stage names: intake, spec, design, tests, build, gate, review, ui-review, security,
 db-review, pr, observe.
-Statuses: started, passed, failed, blocked, skipped. `blocked` means the item stopped for the
-human (`BLOCKED.md` or an escalation); the control room asks the human to answer it, so never use
+Statuses: started, passed, failed, blocked, skipped. `blocked` means the item stopped: for the
+human (`BLOCKED.md`), or with `waits=#<ticket>` for a ticket's answer ("When you stop"); never use
 it for something the team settles itself. Use `round` for fix rounds (0 for the first attempt).
 When a stage cannot go on until something outside the team happens (a pull request the human
 must approve, a ticket to another team), add `waits=#<n>` naming it: the control room shows the
@@ -50,6 +50,13 @@ item as waiting on it, so its owner sees what their step unblocks. On the pr sta
   is taken yet); `integrate.sh` rings this team when the tests are in. Unless
   `factory/scripts/policy.sh rigor` prints `mvp`: then it starts at once, and its e2e tests come
   at integration.
+- Resuming: if a `work/<id>-*` branch exists (`git branch --list 'work/<id>-*'`, or on origin),
+  this run continues it instead of starting over: switch to it and read its work folder (log.md,
+  its last events, BLOCKED.md if any). For each ticket it waited on (`waits=` in its events), read
+  the answer (`gh issue view <ticket> --json comments`), record it in log.md, and where it changes
+  what to build, in spec.md as a decision citing the ticket. Then take a slot and go on from the
+  stage that stopped, with the answer in hand. An answer that allows one more fix round is that
+  decision, not you raising the limit.
 - Require a clean working tree. If it is not, stop and say so.
 - In team mode, take a build slot: `factory/scripts/slot.sh acquire`. Exit 3 means every
   slot is taken: stop at once and say so (nothing else to clean up). Once you hold a slot,
@@ -59,7 +66,8 @@ item as waiting on it, so its owner sees what their step unblocks. On the pr sta
   worktree, where `main` itself is checked out elsewhere), and folder `work/<id>-<slug>/`.
 
 ## 1. Spec
-- Delegate to `spec-writer` with the issue text and the work folder path. In team
+- Delegate to `spec-writer` with the issue text, the work folder path and `rigor: <what
+  factory/scripts/policy.sh rigor prints>`. In team
   mode (`$FACTORY_TEAM` is set) also give it the team: the spec's `team:` line decides
   whose paths the item may change. Outside team mode the spec has no `team:` line.
   An item dispatched from a planning cycle names its feature and decision records in
@@ -112,7 +120,7 @@ rounds), and after it `passed` or `failed` with the same round.
   fails, stop.
 
 ## 5. Review
-Every reviewer is a new subagent given the spec path and base ref `<base>`, and
+Every reviewer is a new subagent given the spec path, base ref `<base>` and the rigor, and
 its reply is saved verbatim in the work folder and committed at once:
 `risk-tier.sh` reads committed files only. A report passes only when its VERDICT line
 is exactly `VERDICT: pass`.
@@ -153,8 +161,10 @@ is exactly `VERDICT: pass`.
 - Push the branch and open a pull request using `factory/templates/pr-body.md`, into the
   base's branch: `--base feature/<f>` for a feature item (CI refuses a feature item aimed at
   main), `main` otherwise. Add the label `risk:<tier>`.
-- Read `AUTO_MERGE_MAX_TIER` from `factory/policy.env`. If the tier is at or below
-  it, run `gh pr merge --auto --squash`. Otherwise leave it for the human and say so.
+- If `factory/scripts/policy.sh autonomy` prints `on`, run `gh pr merge --auto --squash` at
+  R0 to R2 (CI lets it merge once green). Otherwise read `AUTO_MERGE_MAX_TIER` from
+  `factory/policy.env`: at or below it, `gh pr merge --auto --squash`; above it, leave it for the
+  human and say so.
 - Never add the `human-approved` label. Never merge with admin rights.
 - If this item does an accepted ticket, run `factory/scripts/ticket.sh done <ticket> --pr <number>`.
 - In team mode, release the build slot: `factory/scripts/slot.sh release`.
@@ -165,8 +175,28 @@ anything not verified, and one suggested change to the factory (a prompt, rule o
 test) if any stage needed a fix round.
 
 ## When you stop
-Stopping early is correct behaviour. Write `BLOCKED.md` with what you were doing,
-what stopped you, and the smallest decision the human needs to make. Emit a
-`blocked` event for the stage, run the observer (step 6), release the build slot
-in team mode, then leave the branch as it is. Do not raise a loop limit, lower a tier, or edit a gate to
-get through.
+Stopping early is correct behaviour. Every "stop" above ends here. First run
+`factory/scripts/policy.sh autonomy`.
+
+`off`: write `BLOCKED.md` with what you were doing, what stopped you, and the smallest decision
+the human needs to make. Emit a `blocked` event for the stage, run the observer (step 6), release
+the build slot in team mode, then leave the branch as it is.
+
+`on` (team mode): nobody waits at a desk. The orchestrator makes product calls and each team owns
+its paths, so ask with a ticket instead of BLOCKED.md:
+- A decision: blocking spec questions, a dispute the second test-author does not settle, an
+  `escalate` verdict, a gate or review fix-round limit reached, a migration, secret or destructive
+  step the spec does not name. `factory/scripts/ticket.sh create --to orchestrator --type question
+  --needs "<the decision, the options and what each costs>" --why "<what stopped you, with the
+  report or output>" --blocks "#<id>" --done "<what the answer must settle>"` (add `--feature <f>` for a feature
+  item). For a fix-round
+  limit, the options are one more round, a criterion changed (say to what), or the item dropped.
+- A path another team owns: a request ticket to that team, as in step 3, with `--feature <f>` for
+  a feature item, so autostart types `/work` for that team once it accepts.
+Then emit the stage's `blocked` event with `waits=#<ticket>`, run the observer, commit the work
+folder to the branch and push it, release the build slot, and stop. Autostart types `/work <id>`
+again once the ticket is answered ("Resuming" in step 0). BLOCKED.md is only for what no agent
+may decide: R3, a secret or credential, or the factory itself failing (a script, hook or tool
+that cannot run).
+
+In both: do not raise a loop limit, lower a tier, or edit a gate to get through.

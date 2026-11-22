@@ -48,6 +48,12 @@ and no preamble. Cover each promise a record makes to a user or caller once, not
 the record. With `rigor: mvp` in the job, at most 15 criteria (the gate refuses more): the main
 path of each promise and the one refusal that matters; no edge case that no record names.
 
+With `rigor: mvp` for a work item: a first version. Each criterion is behaviour a user or caller
+can see (what appears, what is saved, what is refused), and the item has the few criteria that
+make it useful, not every edge. No pixel, size, timing or tolerance numbers unless the brief or a
+decision record names them; "the title fits inside the card" is a criterion, "no glyph within 80px
+of any edge" is not. Edge cases nobody named go under Follow-ups.
+
 How to handle ambiguity:
 - Default: pick the most conservative reading consistent with the brief, and
   record it under Assumptions so the human can audit it later.

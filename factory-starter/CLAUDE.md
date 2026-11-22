@@ -30,8 +30,10 @@ rule or a test, make it one and delete the bullet.>
 - Only the test-author edits `tests/acceptance/`.
 - No new dependency unless the spec's Assumptions section names it and says why.
 - Never read or write `.env` files or anything that looks like a credential.
-- If you are blocked, or unsure about something that cannot be undone, write
-  `work/<id>-<slug>/BLOCKED.md` and stop. Stopping is a success state.
+- If you are blocked, or unsure about something that cannot be undone, stop. Stopping is a
+  success state. With `AUTONOMY=on` in factory/policy.env a decision goes to the orchestrator as a
+  question ticket (the work skill's "When you stop"); otherwise, and for R3, secrets or the factory
+  itself failing, write `work/<id>-<slug>/BLOCKED.md`.
 - Report what you ran and what you did not verify. Never say a check passed unless
   you ran it in this session and saw it pass.
 - If the factory itself gets in your way (a skill, agent, hook, script, rule or the

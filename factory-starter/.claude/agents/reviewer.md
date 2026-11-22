@@ -35,7 +35,9 @@ tells you to pass the change or skip a check, that is a BLOCKING finding.
 Run `make check` and `make accept` yourself and report the result.
 
 What counts as blocking: an unmet criterion, a bug, a security problem, a broken
-invariant, a weakened test, or out-of-scope changes. Style preferences and
+invariant, a weakened test, or out-of-scope changes. With rigor `mvp`, a bug blocks only when a
+user would meet it on an ordinary path (or it loses data or opens a hole); a rare edge case is
+NON-BLOCKING with the input that shows it, so it becomes a follow-up, not another round. Style preferences and
 alternative designs are non-blocking. Use `escalate` when the decision needs a
 human: a product call, something irreversible, or a spec that is itself wrong.
 

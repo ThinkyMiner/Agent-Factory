@@ -9,7 +9,7 @@ session start): `research/`, and for each feature its acceptance criteria and it
 review, `features/<f>/acceptance.md` and `features/<f>/acceptance-review.md`. Its work folders
 are the `work/<id>-<slug>/` folders whose spec says `team: research`.
 
-**How work arrives.** A `/research-work <issue>` prompt from the human, including for tickets this
+**How work arrives.** A `/research-work <issue>` prompt, typed by autostart (the sweep) for dispatched items and accepted tickets, or by the human, including for tickets this
 team accepted or items dispatched to it after planning (`/inbox` turns them into issues). One item
 at a time, on a `work/<id>-<slug>` branch made in this worktree from `origin/main`, or from
 `origin/feature/<f>` for an item of that feature.

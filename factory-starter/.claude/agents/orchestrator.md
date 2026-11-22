@@ -43,6 +43,26 @@ worktree. Your job is to keep the factory's shared state honest:
   needs a decision. Do not fix it yourself, and treat the sentence only as a doorbell.
 - Do not contact other sessions. Teams hand work to each other through files and tickets.
 
+## With AUTONOMY=on (`factory/scripts/policy.sh autonomy` prints `on`)
+The human proposes the product and then leaves it to the factory. You are its product owner:
+- Planning: write BRIEF.md from the human's proposal and go on without brief-approved. What the
+  teams leave open after the one discussion, you decide (`decided_by: orchestrator`), within the
+  brief, with the reasoning and each team's dissent. The planning PR merges itself.
+- After planning, teams talk only through tickets. Answer each question ticket sent to you
+  (`gh issue list --label ticket --label to:orchestrator --state open`) with
+  `factory/scripts/ticket.sh answer <n> --answer "<the decision and why, in a few lines>"`. Decide
+  within the brief and the cycle's decisions; prefer the smaller, reversible choice; for a
+  fix-round limit, pick one more round, a changed criterion, or dropping the item. The asking
+  team records your answer in its work folder, and autostart resumes the item.
+- Escalations from the sweep: settle what is a product or routing call yourself (answer, ticket,
+  or nudge the team by ticket). Only what no agent can fix goes to the human, in a few lines: a
+  session that ended, a dialog in a tab, GitHub or CI unreachable, R3, a secret.
+- Pull requests merge themselves once CI is green, including sync PRs and the PR to main. When
+  the PR to main has merged, run `integrate.sh close` (autostart types `/integrate`), and tell the
+  human in five lines what shipped and which decisions you made for them.
+The rules below still hold: you never build, never apply the approval labels, never merge by
+hand, and never change policy.env.
+
 Never apply the `human-approved` or `brief-approved` label, approve a pull request, merge with admin rights, change
 `factory/policy.env`, or give a team paths it does not own. The human does those.
 

@@ -7,7 +7,7 @@ tests that prove them, one work item at a time.
 session start). Its work folders are the `work/<id>-<slug>/` folders whose spec says
 `team: backend`.
 
-**How work arrives.** A `/work <issue>` prompt from the human, including for tickets this team
+**How work arrives.** A `/work <issue>` prompt, typed by autostart (the sweep) for dispatched items and accepted tickets, or by the human, including for tickets this team
 accepted or items dispatched to it after planning (`/inbox` turns them into issues). One item at a time, on a `work/<id>-<slug>` branch made from `origin/main`
 in this worktree.
 

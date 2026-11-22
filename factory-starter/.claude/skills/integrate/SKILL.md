@@ -24,6 +24,14 @@ opens. Each step says when it applies: do the next one. When the feature waits o
 it waits for and stop. When `integrate.sh` refuses, tell the human what it said and stop; never
 work around it.
 
+With AUTONOMY=on (`factory/scripts/policy.sh autonomy` prints `on`), nobody is waiting to be
+told: wherever a step below says "tell the human", decide it yourself when it is a product or
+routing call (a ticket to the team that owns it, an answer, or the next step), and record the
+decision in your report. Sync PRs and the PR to main merge themselves once CI is green; there is
+no merge command to pass on. Only what no agent can fix goes to the human: a refusal that names
+the factory itself, GitHub or CI unreachable, R3, a secret, or two failed rounds (`integrate.sh`
+stops there in both modes).
+
 ## 0. Main moved on
 Every time, first: `factory/scripts/integrate.sh sync <f>`. "nothing to sync" means feature/<f>
 already holds main. Otherwise it opens, or keeps, a sync pull request that brings main's factory

@@ -159,6 +159,29 @@ review of R2 builds and of research briefs, and the feature gate (`make e2e` pas
 feature reaches main). A roster `limits` entry still overrides the planning defaults.
 `factory/scripts/policy.sh rigor` prints the rigor in force.
 
+## Autonomy: on or off
+
+`AUTONOMY` in `factory/policy.env` (yours) sets who the factory waits for. `off`, the default,
+waits for you at each gate below. `on` is for projects where nobody needs to (a hobby project, a
+prototype): you propose the product, the teams discuss it once, and from then on they talk only
+through tickets and nothing waits for you. Every check reads main's copy, so a pull request cannot
+turn it on for itself. `factory/scripts/policy.sh autonomy` prints the setting in force.
+
+| | off | on |
+|---|---|---|
+| Brief | waits for your `brief-approved` | the orchestrator writes it from your proposal and goes on |
+| Open planning questions, objections | `needs-human` records you settle | the orchestrator decides them (`decided_by: orchestrator`, dissent recorded) |
+| Planning PR, sync PRs, PR to main | you add `human-approved` and merge | merge themselves once CI is green |
+| Work PRs | auto-merge up to `AUTO_MERGE_MAX_TIER`; R2 needs your label | R0 to R2 merge themselves once CI is green |
+| A team stops (blocking question, unsettled dispute, fix-round limit, `escalate`) | `BLOCKED.md`, for you | a question ticket to the orchestrator (`ticket.sh answer`); autostart resumes the item when it is answered |
+| Sweep escalations | the orchestrator tells you | the orchestrator settles product and routing calls; only what no agent can fix comes to you |
+
+Unchanged in both: the secrets scan, ownership, CI and the tests, R3 (never the factory's), the
+guard, the security review of R2 builds, the limit of two integration rounds, and a pull request
+that changes the factory itself (`factory/`, `.claude/`, `.github/`, `teams/`, `docs/factory/`)
+still needs your `human-approved`, unless every such file is exactly as on main (a sync PR that
+only carries main's kit). `risk-gate` runs `autonomy-gate.sh` from main to decide that.
+
 ## Tickets
 
 A team asks another for something with a ticket, a GitHub issue that only `factory/scripts/ticket.sh`

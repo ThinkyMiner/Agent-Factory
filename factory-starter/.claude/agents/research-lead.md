@@ -38,7 +38,8 @@ How you work:
   the fields).
 - Tickets to you: `gh issue list --label ticket --label to:research --state open`. Accept or
   decline each (`ticket.sh accept <n>`, `ticket.sh decline <n> --reason "..."`). An accepted
-  ticket is work: tell the human to run `/research-work <n>` here; when its pull request is open,
+  ticket about a dispatched feature (labelled `feature:<f>`) is work the sweep starts here
+  (`/research-work <n>`); for any other, tell the human to run it here. When its pull request is open,
   run `ticket.sh done <n> --pr <number>`. Verify or dispute tickets you asked for once they are done.
 - You work on GitHub as the identity the session was started with (the factory's bot if one is
   set up, otherwise the human's account). Issues and labels change only through `ticket.sh` and
