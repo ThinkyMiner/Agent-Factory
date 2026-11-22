@@ -323,7 +323,7 @@ export interface PipelineRun {
 }
 
 /** Split an item's events into /work invocations: each run starts at an intake event. */
-export function pipelineRuns(events: StageEvent[], itemState: State): PipelineRun[] {
+export function pipelineRuns(events: StageEvent[], itemState: State, live = false): PipelineRun[] {
   const sorted = sortEvents(events)
   const groups: StageEvent[][] = []
   for (const e of sorted) {
@@ -337,7 +337,7 @@ export function pipelineRuns(events: StageEvent[], itemState: State): PipelineRu
     const end = g.filter((e) => e.stage !== 'observe').at(-1)
     const outcome: PipelineRun['outcome'] = g.some((e) => e.stage === 'pr' && e.status === 'passed')
       ? 'pr'
-      : last && itemState === 'in-progress'
+      : last && (itemState === 'in-progress' || live) // a run ends only when no agent of it is live
         ? 'running'
         : end?.status === 'blocked' || (last && itemState === 'blocked')
           ? 'blocked'
@@ -664,7 +664,7 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
     reviews,
     blocked,
     notVerified,
-    pipelineRuns: pipelineRuns(events, state),
+    pipelineRuns: pipelineRuns(events, state, ctx.runs.some((r) => r.workId === inp.id && r.outcome === 'running')),
     testRefs,
     files: inp.files,
     lastActivity: lastActivity !== undefined ? new Date(lastActivity).toISOString() : undefined,

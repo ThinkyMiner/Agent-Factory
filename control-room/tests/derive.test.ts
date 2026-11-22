@@ -317,6 +317,14 @@ describe('pipelineRuns', () => {
     const dead = derive({ stageEvents: [se('intake', 'started', 300), se('gate', 'failed', 200)] })
     expect(dead.pipelineRuns).toMatchObject([{ outcome: 'failed', stage: 'gate' }])
   })
+  test('a run ends only when no agent of it is live: a question written while agents work is a stop only once they end', () => {
+    const blocked = { stageEvents: [se('intake', 'started', 40), se('build', 'blocked', 8)], files: { 'BLOCKED.md': file('# Blocked\n\nWhich?', 8, 'worktree') } }
+    const live = derive({ ...blocked, lifecycle: [le('SessionStart', 45), le('SubagentStart', 10, { agent_id: 'b1', agent_type: 'builder' })] })
+    expect(live.state).toBe('blocked')
+    expect(live.pipelineRuns.map((x) => x.outcome)).toEqual(['running'])
+    const ended = derive({ ...blocked, lifecycle: [le('SessionStart', 45), le('SubagentStart', 10, { agent_id: 'b1', agent_type: 'builder' }), le('SubagentStop', 5, { agent_id: 'b1', agent_type: 'builder' }), le('SessionEnd', 4)] })
+    expect(ended.pipelineRuns.map((x) => [x.outcome, x.stage])).toEqual([['blocked', 'build']])
+  })
   test('a run ends in its last state: a blocked event the run went on from is not a stop', () => {
     const resolved = [se('intake', 'started', 300), se('build', 'blocked', 290), se('build', 'passed', 289), se('review', 'started', 288)]
     expect(derive({ stageEvents: resolved }).pipelineRuns.map((x) => [x.outcome, x.stage])).toEqual([['running', undefined]]) // still at review
