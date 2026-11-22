@@ -41,6 +41,10 @@ test('board: columns, cards, filters', async ({ page }) => {
   }
   const waiting = page.getByRole('region', { name: /Waiting for me/ })
   await expect(waiting.getByRole('listitem')).toHaveCount(2)
+  // in progress by the test Running now uses: the quiet #29 says no agent is active; #31's builder is
+  const doing = page.getByRole('region', { name: /^In progress/ })
+  await expect(doing.getByRole('link', { name: /#29/ })).toContainText(/no agent active for \d+h/)
+  await expect(doing.getByRole('link', { name: /#31/ })).not.toContainText('no agent active')
   await shot(page, 'board')
   await page.getByRole('button', { name: 'Tier R2' }).click()
   await expect(page).toHaveURL(/tier=R2/)

@@ -11,7 +11,7 @@ import { ItemId, LiveDot, NEEDS, NeedsTag, StageDots, StageLabel, StateBadge, TI
 const COLUMNS: { key: Column; label: string; hint: string }[] = [
   { key: 'proposed', label: 'Proposed', hint: 'Issues labelled factory:proposed' },
   { key: 'ready', label: 'Ready', hint: 'Labelled factory:ready, or dispatched to a team (team mode); not started' },
-  { key: 'in-progress', label: 'In progress', hint: 'A run is moving through the stages' },
+  { key: 'in-progress', label: 'In progress', hint: 'Started, not finished; a card says when no agent of it is active (the test Running now uses)' },
   { key: 'pr-open', label: 'Pull request open', hint: 'Open and waiting: for its checks (after your label, the risk-gate reruns), for auto-merge, or for its author to mark a draft ready' },
   { key: 'waiting', label: 'Waiting for me', hint: 'A pull request held at the human gate' },
   { key: 'stopped', label: 'Stopped', hint: 'Stopped with a question (BLOCKED.md), a failed stage or a red check on its open pull request, or closed' },
@@ -153,6 +153,7 @@ function Card({ i }: { i: ItemSummary }) {
         <div className="mt-1 leading-snug font-medium">{i.title}</div>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted">
           {i.column === 'in-progress' && <StageLabel stage={i.stage} round={i.round} status={i.stageStatus} />}
+          {i.column === 'in-progress' && !i.active && <span className="w-full text-[11.5px]">no agent active{!i.lastActivity ? ' (no event recorded)' : ago(i.lastActivity, now) === 'just now' ? '' : ` for ${ago(i.lastActivity, now)}`}</span>}
           {i.column === 'ready' && i.waitsFor && <span className="w-full text-[11.5px]">waits for {i.waitsFor}</span>}
           {(i.column === 'waiting' || i.column === 'stopped') && !i.needs && <StateBadge state={i.state} className="px-1.5 py-0 text-[11.5px]" />}
           {i.column === 'pr-open' && i.pr && <span>PR #{i.pr.number}</span>}
