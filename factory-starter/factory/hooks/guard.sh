@@ -300,7 +300,7 @@ case "$tool" in
                 prev=$a
               done
             fi
-            gh_why="issues and labels change only through factory/scripts/ticket.sh (requests to other teams) and item.sh (your team's work items)."
+            gh_why="issues and labels change only through factory/scripts/ticket.sh (requests to other teams) and item.sh (your team's work items). A problem with the factory itself (a script, skill, agent or hook): gh issue create -R ThinkyMiner/Agent-Factory, as CLAUDE.md says."
             # Factory feedback goes to the kit's repository (CLAUDE.md, "Rules for every agent").
             kit=0; prev=""
             for a in "${w[@]:3}"; do

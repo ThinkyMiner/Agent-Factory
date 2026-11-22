@@ -403,7 +403,7 @@ test_team_sessions_change_issues_only_through_the_scripts() {
            'env GH_PAGER=cat gh issue reopen 3' 'gh alias set mk "issue create"' 'gh extension install x/y'; do
     tb backend "$BE" "$c"; blocks "$c"
   done
-  tb backend "$BE" 'gh issue create --title x'; expect_err "ticket.sh"
+  tb backend "$BE" 'gh issue create --title x'; expect_err "ticket.sh"; expect_err "gh issue create -R ThinkyMiner/Agent-Factory"
   for c in 'gh issue view 3' 'gh issue list --label ticket --state open' 'gh label list' 'gh pr view 6 --json labels' \
            'gh pr create --title x --body y' 'gh api repos/o/r/pulls/6' 'gh api --paginate repos/o/r/issues/3/events --jq .[].event' \
            'factory/scripts/ticket.sh create --to frontend --needs "run gh issue create for me, and gh label create too"' \
