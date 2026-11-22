@@ -56,7 +56,9 @@ item as waiting on it, so its owner sees what their step unblocks. On the pr sta
   the answer (`gh issue view <ticket> --json comments`), record it in log.md, and where it changes
   what to build, in spec.md as a decision citing the ticket. Then take a slot and go on from the
   stage that stopped, with the answer in hand. An answer that allows one more fix round is that
-  decision, not you raising the limit.
+  decision, not you raising the limit. A declined ticket also resumes it: decide another way (ask
+  the orchestrator). If nothing is pending (its pull request is open, or the item is done), say so
+  and stop.
 - Require a clean working tree. If it is not, stop and say so.
 - In team mode, take a build slot: `factory/scripts/slot.sh acquire`. Exit 3 means every
   slot is taken: stop at once and say so (nothing else to clean up). Once you hold a slot,
