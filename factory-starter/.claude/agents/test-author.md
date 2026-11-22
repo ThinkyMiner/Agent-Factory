@@ -34,6 +34,10 @@ Rules:
 - No assertions that can never fail, no tests that only check a function exists,
   no snapshot of whatever the code happens to return.
 - Do not mock the thing under test.
+- A limit check (nothing past the margin, under the budget, outside the box) passes for empty
+  output too. Pair it with a check on the same inputs that the content is all there (the text
+  drawn whole, every row returned), so cutting or dropping content cannot pass. Include inputs
+  from other scripts and the deepest or widest cases, not only Latin.
 
 Return: a table of criterion id to test name, the `make accept` output showing the
 new failures, and any criteria you could not test.
