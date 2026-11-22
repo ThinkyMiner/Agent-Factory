@@ -18,6 +18,8 @@
 # escalated once while it lasts; a doorbell that could not ring is retried next pass.
 # It also rings each team owed a doorbell that could not ring when it was sent (.factory/rings/),
 # and rings the orchestrator once when the human has approved a cycle's brief (nothing else tells it).
+# Each pass first fast-forwards the main checkout to origin/main when it is on main and clean (the
+# orchestrator's rule too), so a factory change merged into main runs from the next pass on.
 # State: .factory/sweep.json. Only reads GitHub.
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -34,6 +36,12 @@ top=$(git rev-parse --show-toplevel 2>/dev/null) || die "run this inside the fac
 home=$(factory_home "$top")
 teams=$(teams_file "$home") || die "the sweep is for team mode, and this factory has no factory/teams.json"
 dir="$home/.factory"; mkdir -p "$dir"; sf="$dir/sweep.json"
+# Fast-forward only, and only a clean main: never a branch, a local commit or a change in progress.
+if [ "$(git -C "$home" symbolic-ref -q --short HEAD 2>/dev/null)" = main ] &&
+   [ -z "$(git -C "$home" status --porcelain --untracked-files=no 2>/dev/null)" ] &&
+   git -C "$home" fetch -q origin main 2>/dev/null; then
+  git -C "$home" merge -q --ff-only refs/remotes/origin/main >/dev/null 2>&1 || true
+fi
 typedto=$("$here/autostart.sh") || true
 [ -z "$typedto" ] || printf '%s\n' "$typedto"
 # Doorbells that could not ring when they were sent (the tab was busy): ring them now, with the

@@ -245,4 +245,20 @@ test_a_team_whose_session_ended_is_escalated_once() {
   echo bash > "$TEST_TMP/hc-agent-t1"; run "$W"; expect_out "the orchestrator session has ended"
 }
 
+test_each_pass_fast_forwards_a_clean_main_checkout_and_nothing_else() {
+  setup
+  git clone -q --bare "$MAIN" "$TEST_TMP/o.git"; git remote add origin "$TEST_TMP/o.git"; git fetch -q origin; git branch -q -u origin/main main
+  git clone -q "$TEST_TMP/o.git" "$TEST_TMP/elsewhere"
+  ahead() { echo "$1" > "$TEST_TMP/elsewhere/kit-$1"; git -C "$TEST_TMP/elsewhere" add -A; git -C "$TEST_TMP/elsewhere" commit -qm "$1"; git -C "$TEST_TMP/elsewhere" push -q origin HEAD:main; }
+  ahead one; run "$W"; expect_rc 0
+  expect_eq "$(git rev-parse HEAD)" "$(git -C "$TEST_TMP/elsewhere" rev-parse HEAD)"      # merged kit change is here
+  ahead two; echo local > factory/teams.json.note; git add factory/teams.json.note       # a change in progress
+  run "$W"; expect_rc 0; expect_eq "$(git log -1 --format=%s)" one
+  git reset -q --hard; git switch -q -c planning/c001-x; run "$W"; expect_eq "$(git log -1 --format=%s)" one   # on a branch
+  git switch -q main; git commit -q --allow-empty -m mine; run "$W"; expect_rc 0           # diverged: no merge commit
+  expect_eq "$(git log -1 --format=%s)" mine; expect_eq "$(git rev-list --merges HEAD | wc -l | tr -d ' ')" 0
+  git reset -q --hard HEAD~1; echo stray > untracked-note; run "$W"; expect_eq "$(git log -1 --format=%s)" two   # untracked is not a change
+  [ -f untracked-note ] || fail "an untracked file was lost"
+}
+
 run_tests
