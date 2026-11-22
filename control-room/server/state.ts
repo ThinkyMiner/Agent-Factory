@@ -49,7 +49,12 @@ export async function computeState(repo: string, gh: GitHubInput, opts: { now?: 
   const waits = new Map((t?.view.cycle?.blocking ?? []).map((b) => [b.number, `planning ${t!.view.cycle!.name} waits: ${b.why}`]))
   // what each PR unblocks: items whose latest stage says waits=#<n> (the only cross-link; nothing is guessed)
   const unblocks = new Map<number, string[]>()
-  for (const f of t?.view.features ?? []) for (const i of f.items) for (const w of i.item?.waitsOn ?? []) if (w.kind === 'PR') unblocks.set(w.n, [...(unblocks.get(w.n) ?? []), `#${i.number} (${w.stage})`])
+  const unblock = (n: number, what: string) => unblocks.set(n, [...(unblocks.get(n) ?? []), what])
+  for (const f of t?.view.features ?? []) for (const i of f.items) {
+    for (const w of i.item?.waitsOn ?? []) if (w.kind === 'PR') unblock(w.n, `#${i.number} (${w.stage})`)
+    const over = i.item?.state === 'in-progress' ? i.item.waitOver : undefined // what it waited on merged into main: the sync PR brings it over
+    if (over?.sync) unblock(over.sync.n, `#${i.number} (${over.stage})`)
+  }
   for (const [n, xs] of unblocks) waits.set(n, [waits.get(n), `unblocks ${xs.join(', ')}`].filter(Boolean).join(' · '))
   const itemRows = d.needsYou.map((e) => {
     const n = d.byId.get(e.id)?.pr?.number

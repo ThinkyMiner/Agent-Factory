@@ -4,7 +4,7 @@
 // factory (message bodies, briefs, decisions) is passed through as strings, never interpreted.
 import { z } from 'zod'
 import type { ItemView, NeedsEntry } from './derive.ts'
-import { checkState, currentChecks, refsOf, type FactoryEvent, type Issue, type Notice, type Parsed, type Pull, type Tier } from './types.ts'
+import { checkState, currentChecks, refHow, refsOf, type FactoryEvent, type Issue, type Notice, type Parsed, type Pull, type Ref, type Tier } from './types.ts'
 import { roundWords } from './words.ts'
 import { prNext } from './meta.ts'
 
@@ -272,7 +272,8 @@ export interface FeatureView {
     from?: string // a ticket's sender
     open: boolean
     item?: { state: ItemView['state']; pr?: number; prUrl?: string; autoMerge?: boolean; tier?: Tier; needs?: { kind: NeedsEntry['kind']; summary: string }; active?: boolean; last?: { stage: string; status: string; at?: string; detail?: string }
-      waitsOn?: { kind: 'PR' | 'ticket'; n: number; url: string; stage: string }[] } // its latest stage's waits=#<n>, open PRs and tickets only
+      waitsOn?: { kind: 'PR' | 'ticket'; n: number; url: string; stage: string }[] // its latest stage's waits=#<n>, open PRs and tickets only
+      waitOver?: { stage: string; refs: Ref[]; sync?: { n: number; url: string } } } // none of them is open any more; sync: the feature's open sync PR, when a waited PR merged into main
     dispatch?: DispatchRow
     waitsFor?: string
   }[]
@@ -521,12 +522,29 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
         waitsFor = `${waitsOn.map((w) => `${w.kind} #${w.n}`).join(', ')} (${waitsOn[0]!.stage})`
         waits.set(String(i.number), waitsFor)
       }
+      // what it waited on is merged, closed, done, verified or declined: the wait is over, and its own team takes the next step.
+      // A PR merged into main reaches the feature branch through its sync PR (sync/<f> into feature/<f>), when one is open.
+      const ended = (it?.waitOver?.refs ?? []).flatMap((n) => refs.get(n) ?? []).filter((r) => r.state !== 'open')
+      let waitOver: NonNullable<FeatureView['items'][number]['item']>['waitOver']
+      if (!waitsOn.length && ended.length) {
+        const stage = it!.waitOver!.stage
+        const lost = ended.filter((r) => r.state === 'closed' || r.state === 'declined') // nothing came of it: the team decides what next
+        const fromMain = ended.filter((r) => r.kind === 'PR' && r.state === 'merged' && r.base === 'main')
+        const sync = !lost.length && fromMain.length ? gh.pulls.find((p) => p.state === 'OPEN' && p.headRefName === `sync/${name}` && p.baseRefName === `feature/${name}`) : undefined
+        waitOver = { stage, refs: ended, sync: sync && { n: sync.number, url: sync.url } }
+        waitsFor = lost.length
+          ? `${team ?? 'its team'} to check its tab: its ${stage} waited on ${lost.map((r) => `${r.kind} #${r.n}, which was ${refHow(r)}`).join(', and ')}`
+          : sync
+            ? `PR #${sync.number}, the feature sync that brings ${fromMain.map((r) => `PR #${r.n}`).join(', ')} from main; then ${team ?? 'its team'} resumes ${stage}`
+            : `${team ?? 'its team'} to resume ${stage} (${ended.map((r) => `${r.kind} #${r.n} ${refHow(r)}`).join(', ')})`
+        waits.set(String(i.number), waitsFor)
+      }
       return {
         number: i.number, title: i.title, url: i.url, team, ticket,
         ticketState: ticket ? ticketEvents.get(String(i.number)) ?? label(i.labels, 'state:') : undefined, // as deriveItem: the event, else the label
         from: ticket ? label(i.labels, 'from:') : undefined,
         open: i.state === 'OPEN',
-        item: it ? { state: it.state, pr: it.pr?.number, prUrl: it.pr?.url, autoMerge: it.pr?.autoMerge, tier: it.tier, needs: it.needs && { kind: it.needs.kind, summary: it.needs.summary }, active: !!it.active, last: lastStage(it), waitsOn: waitsOn.length ? waitsOn : undefined } : undefined,
+        item: it ? { state: it.state, pr: it.pr?.number, prUrl: it.pr?.url, autoMerge: it.pr?.autoMerge, tier: it.tier, needs: it.needs && { kind: it.needs.kind, summary: it.needs.summary }, active: !!it.active, last: lastStage(it), waitsOn: waitsOn.length ? waitsOn : undefined, waitOver } : undefined,
         dispatch,
         waitsFor,
       }
@@ -671,7 +689,15 @@ function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefine
       out.push({ n, who, what: `#${n}${it.pr ? ` (PR #${it.pr})` : ''}: ${what}`, wait })
     }
     if (it.state === 'in-progress' && it.waitsOn) out.push({ n, who: team, what: `#${n} waits for ${it.waitsOn.map((w) => `${w.kind} #${w.n}`).join(', ')} (${it.waitsOn[0]!.stage})`, active: !!it.active, quiet: !it.active })
-    else if (it.state === 'in-progress') {
+    else if (it.state === 'in-progress' && it.waitOver) {
+      // the wait is over: the item's own team takes it (never a question for you)
+      const w = it.waitOver
+      const lost = w.refs.filter((r) => r.state === 'closed' || r.state === 'declined')
+      const what = lost.length
+        ? `#${n} waited on ${lost.map((r) => `${r.kind} #${r.n}, which was ${refHow(r)}`).join(', and ')}; check its tab`
+        : `resume #${n}'s ${w.stage} (${w.refs.map((r) => `${r.kind} #${r.n} ${refHow(r)}`).join(', ')})${w.sync ? ` after the feature syncs (PR #${w.sync.n})` : ''}`
+      out.push({ n, who: team, what, active: !!it.active, quiet: !it.active })
+    } else if (it.state === 'in-progress') {
       const l = it.last
       const last = l && `${l.stage} ${l.status}${l.at ? ` ${new Date(l.at).toISOString().slice(11, 16)} UTC` : ''}`
       if (it.needs?.kind === 'waiting-input') out.push({ n, who: 'you', what: `#${n}: ${it.needs.summary}` })
@@ -686,7 +712,7 @@ function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefine
     return out
   })
   // what an item's stage waits on (waits=#<n>): that PR's or ticket's owner comes first
-  const waited = doing.flatMap((i) => (i.item!.waitsOn ?? []).map((w) => {
+  const waited = doing.flatMap((i) => [...(i.item!.waitsOn ?? []).map((w) => {
     const why = `#${i.number}'s ${w.stage} waits on it`
     const pull = w.kind === 'PR' ? pulls.find((p) => p.number === w.n) : undefined
     if (pull) {
@@ -695,7 +721,14 @@ function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefine
     }
     const t = f.items.find((x) => x.number === w.n)
     return { who: t?.team ?? '?', what: `ticket #${w.n} (${t?.ticketState ?? 'open'}); ${why}`, href: w.url || `/items/${i.number}` }
-  }))
+  }), ...(i.item!.state === 'in-progress' && i.item!.waitOver?.sync ? [i.item!.waitOver].flatMap((w) => {
+    // what it waited on merged into main: the feature's sync PR brings it to the feature branch first
+    const pull = pulls.find((p) => p.number === w.sync!.n)
+    if (!pull) return []
+    const s = stepOf(pull)
+    const from = w.refs.filter((r) => r.kind === 'PR' && r.state === 'merged' && r.base === 'main').map((r) => `PR #${r.n}`).join(', ')
+    return [{ who: s.who, what: `PR #${pull.number} (${s.what}); #${i.number} waits on it (the feature sync that brings ${from} from main)`, href: pull.url || `/items/${i.number}` }]
+  }) : [])])
   // then one line per item step, each with its own link; yours first
   const lines = [...waited, ...[...steps].sort((a, b) => Number(b.who === 'you') - Number(a.who === 'you')).map((x) => ({ who: x.who, what: x.what, href: `/items/${x.n}` }))]
   const ready = work.filter((i) => i.item?.state === 'ready' && i.waitsFor && !/^#/.test(i.waitsFor))

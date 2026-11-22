@@ -580,6 +580,55 @@ describe('missing and damaged inputs', () => {
     expect(s.byId.get('21')!.waitsFor).toBe('PR #40 (ui-review)')
   })
 
+  test('waits=#<n> naming a PR or ticket that is no longer open: the wait is over, the item\'s team resumes (after the feature syncs), never "answer"', async () => {
+    const fx = makeTeamsFactory(join(root, 'waits-over'))
+    process.env.PATH = `${fx.bin}:${PATH}`
+    const base = await readDemoGitHub(fx.github)
+    const ago = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
+    const ev = (h: number, stage: string, status: string, waits?: string) => JSON.stringify({ ts: ago(h), type: 'stage', work_id: '21', branch: 'work/21-list-page', stage, status, round: '0', team: 'frontend', detail: 'needs the new ui shots', ...(waits !== undefined && { waits }) })
+    const evs = join(fx.repo, '.factory/events.jsonl')
+    const before = readFileSync(evs, 'utf8')
+    const kit = { ...base.data!.pulls.find((p) => p.number === 22)!, number: 40, title: 'Kit sync', headRefName: 'factory/kit-1', baseRefName: 'main', labels: ['risk:R2'], url: 'https://github.invalid/harbor/pull/40', files: [{ path: 'factory/x.mjs', additions: 1, deletions: 0 }] }
+    const sync = { ...kit, number: 42, title: 'Sync main into feature/f001-reading-list', headRefName: 'sync/f001-reading-list', baseRefName: 'feature/f001-reading-list', state: 'OPEN' as const, mergedAt: undefined, url: 'https://github.invalid/harbor/pull/42' }
+    const run = async (waits: string, pulls: typeof kit[], tweak: (g: GitHubData) => void = () => {}) => {
+      writeFileSync(evs, before + [ev(2, 'intake', 'passed'), ev(1.5, 'build', 'passed'), ev(1, 'ui-review', 'blocked', waits)].join('\n') + '\n')
+      const gh = structuredClone(base)
+      gh.data!.pulls = [...gh.data!.pulls.filter((p) => p.number !== 25), ...pulls] // before the PR to main: the feature is building
+      gh.data!.issues = gh.data!.issues.filter((i) => i.number !== 23)
+      tweak(gh.data!)
+      const s = await computeState(fx.repo, gh, { staleMinutes: 30 })
+      const p = s.teams!.phases.find((x) => x.step === 'building')!
+      const lines = [p.next!, ...(p.more ?? [])]
+      expect(lines.map((l) => l.what).join('\n')).not.toMatch(/answer #21/)
+      expect(s.byId.get('21')).toMatchObject({ state: 'in-progress', needs: undefined })
+      return { s, lines, waitsFor: s.teams!.features[0]!.items.find((i) => i.number === 21)!.waitsFor }
+    }
+    // merged into main with the feature's sync PR open: the sync PR's owner first, then the team resumes after the sync
+    const merged = { ...kit, state: 'MERGED' as const }
+    let r = await run('#40', [merged, sync])
+    expect(r.lines[0]).toEqual({ who: 'you', what: 'PR #42 (add human-approved, wait for the checks to pass, then merge); #21 waits on it (the feature sync that brings PR #40 from main)', href: 'https://github.invalid/harbor/pull/42' })
+    expect(r.lines).toContainEqual({ who: 'frontend', what: "resume #21's ui-review (PR #40 merged) after the feature syncs (PR #42)", href: '/items/21' })
+    expect(r.s.needsYou.find((n) => n.id === 'pr-42')!.summary).toContain('unblocks #21 (ui-review)')
+    expect(r.waitsFor).toBe('PR #42, the feature sync that brings PR #40 from main; then frontend resumes ui-review') // Planning's row
+    expect(r.s.byId.get('21')).toMatchObject({ reason: "ui-review's wait is over: PR #40 merged", waitsFor: r.waitsFor }) // Board's card
+    // no sync PR open (or a PR into the feature branch): the team resumes now
+    r = await run('#40', [merged])
+    expect(r.lines).toContainEqual({ who: 'frontend', what: "resume #21's ui-review (PR #40 merged)", href: '/items/21' })
+    expect(r.waitsFor).toBe('frontend to resume ui-review (PR #40 merged)')
+    r = await run('#40', [{ ...merged, baseRefName: 'feature/f001-reading-list' }, sync])
+    expect(r.lines.map((l) => l.what)).toContain("resume #21's ui-review (PR #40 merged)")
+    // closed unmerged, or a declined ticket: the team checks its tab, not you
+    r = await run('#40', [{ ...kit, state: 'CLOSED' as const, mergedAt: undefined }, sync])
+    expect(r.lines).toContainEqual({ who: 'frontend', what: '#21 waited on PR #40, which was closed unmerged; check its tab', href: '/items/21' })
+    expect(r.lines.map((l) => l.what).join('\n')).not.toMatch(/PR #42/)
+    expect(r.waitsFor).toBe('frontend to check its tab: its ui-review waited on PR #40, which was closed unmerged')
+    r = await run('#26', [])
+    expect(r.lines).toContainEqual({ who: 'frontend', what: '#21 waited on ticket #26, which was declined; check its tab', href: '/items/21' })
+    // a ticket done: the team resumes
+    r = await run('#26', [], (g) => { g.issues.find((i) => i.number === 26)!.labels = g.issues.find((i) => i.number === 26)!.labels.map((l) => (l === 'state:declined' ? 'state:done' : l)) })
+    expect(r.lines).toContainEqual({ who: 'frontend', what: "resume #21's ui-review (ticket #26 done)", href: '/items/21' })
+  })
+
   test('a dispatched cycle lists its open planning PRs (an amendment), with who takes the next step', async () => {
     const fx = makeTeamsFactory(join(root, 'amend'))
     process.env.PATH = `${fx.bin}:${PATH}`
