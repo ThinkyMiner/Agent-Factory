@@ -8,7 +8,7 @@ import { generate } from '../demo/generate.ts'
 import { computeState, readDemoGitHub } from '../server/state.ts'
 import { loadMeta } from '../server/sources/meta.ts'
 import { auditsView, factoryView, prNext, pullNeeds, improvementView, memoryView, predictions } from '../server/core/meta.ts'
-import type { Reflection } from '../server/core/types.ts'
+import { prChecks, type Reflection } from '../server/core/types.ts'
 
 const NOW = Date.parse('2026-11-13T10:00:00Z')
 
@@ -57,7 +57,7 @@ describe('over the demo', async () => {
     expect(s.needsYou.filter((n) => n.id === 'pr-141')).toEqual([expect.objectContaining({ kind: 'approve', tier: 'R2', label: 'PR #141', href: '/improvement', summary: 'factory:improvement · R2' })]) // its failing risk-gate is expected until approved
     const pr = gh.data!.pulls.find((p) => p.number === 141)!
     const approvedNow = { ...pr, labels: [...pr.labels, 'human-approved'], timeline: [...pr.timeline, { type: 'labeled', label: 'human-approved', at: new Date(NOW).toISOString() }] } // its risk-gate failed before the label
-    expect(pullNeeds([approvedNow], s.snap.rules, 'R1')).toEqual([expect.objectContaining({ kind: 'merge', href: '/improvement', summary: 'factory:improvement · approved: merge it · R2' })]) // approved is not merged
+    expect(pullNeeds([approvedNow], s.snap.rules, 'R1')).toEqual([expect.objectContaining({ kind: 'info', href: '/improvement', summary: 'factory:improvement · approved: wait for the risk-gate rerun after the label to pass · R2' })]) // approved is not merged, nor mergeable before the rerun
     const docs = { ...pr, labels: ['factory:improvement'], files: [{ path: 'docs/factory/MEMORY.md', additions: 1, deletions: 0 }], checks: pr.checks.map((c) => ({ ...c, conclusion: 'SUCCESS' })) } // R0: risk-gate passes
     expect(pullNeeds([docs], s.snap.rules, 'R1')).toEqual([]) // R0, auto-merges
     expect(pullNeeds([docs], s.snap.rules, 'none')).toEqual([expect.objectContaining({ kind: 'merge', tier: 'R0' })])
@@ -68,7 +68,7 @@ describe('over the demo', async () => {
     const approved = { ...pr, labels: ['factory:improvement', 'human-approved', 'risk:R2'], timeline: [{ type: 'labeled', label: 'human-approved', at: at(30) }] }
     const gate = (m: number) => ({ ...approved, checks: [{ name: 'risk-gate', status: 'COMPLETED', conclusion: 'FAILURE', completedAt: at(m) }] })
     expect(pullNeeds([gate(10)], s.snap.rules, 'R1')).toEqual([expect.objectContaining({ kind: 'failed', summary: 'factory:improvement · approved, but failing: risk-gate' })]) // completed after the approval
-    expect(pullNeeds([gate(40)], s.snap.rules, 'R1')).toEqual([expect.objectContaining({ kind: 'merge', summary: 'factory:improvement · approved: merge it · R2' })]) // before it: CI re-runs it on the label
+    expect(pullNeeds([gate(40)], s.snap.rules, 'R1')).toEqual([expect.objectContaining({ kind: 'info', summary: 'factory:improvement · approved: wait for the risk-gate rerun after the label to pass · R2' })]) // before it: CI re-runs it on the label
     // no completion time: it cannot be shown stale, so it is real
     const undated = { ...approved, autoMerge: true, checks: [{ name: 'risk-gate', status: 'COMPLETED', conclusion: 'FAILURE' }] }
     expect(prNext(undated, 'R2', 'R1')).toMatchObject({ kind: 'failed', who: 'its author', what: 'fix the failing check: risk-gate' })
@@ -91,6 +91,18 @@ describe('over the demo', async () => {
     // a re-run under way is newer than the dated failure
     const rerun = { ...red, checks: [{ name: 'factory-tests', status: 'COMPLETED', conclusion: 'FAILURE', completedAt: '2026-11-13T09:00:00Z' }, { name: 'factory-tests', status: 'IN_PROGRESS' }] }
     expect(prNext(rerun, 'R1', 'R1')).toMatchObject({ kind: 'info', who: 'GitHub', failing: [] })
+  })
+
+  test('just after the label, a red risk-gate from before it is a rerun to wait for, not a merge', () => {
+    const pr = gh.data!.pulls.find((p) => p.number === 141)!
+    const t = (m: number) => new Date(NOW - m * 60_000).toISOString()
+    const fresh = { ...pr, autoMerge: false, labels: ['risk:R2', 'human-approved'], timeline: [{ type: 'labeled', label: 'human-approved', at: t(1) }],
+      checks: [{ name: 'factory-tests', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: t(30) }, { name: 'risk-gate', status: 'COMPLETED', conclusion: 'FAILURE', completedAt: t(30) }] }
+    expect(prNext(fresh, 'R2', 'R1')).toMatchObject({ kind: 'info', who: 'CI', what: 'wait for the risk-gate rerun after the label to pass' })
+    expect(pullNeeds([fresh], s.snap.rules, 'R1')[0]).toMatchObject({ kind: 'info', summary: 'factory/reflect-2026-11-13 · approved: wait for the risk-gate rerun after the label to pass · R2' })
+    expect(prChecks(fresh, 'R2')).toEqual({ failing: [], pending: ['risk-gate'], rerun: true })
+    const green = { ...fresh, checks: [...fresh.checks, { name: 'risk-gate', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: t(0) }] }
+    expect(prNext(green, 'R2', 'R1')).toMatchObject({ kind: 'merge', who: 'you', what: 'merge it' }) // only now
   })
 
   test('a draft pull request cannot merge: its author marks it ready for review', () => {

@@ -3,7 +3,7 @@
 import { parseLessons, parsePolicy, parseReflection, splitFrontmatter } from './parse.ts'
 import type { NeedsEntry, NeedsKind } from './derive.ts'
 import { classify, type RiskRule } from './risk.ts'
-import { checkState, currentChecks, maxTier, tierRank, type Check, type Notice, type Tier, type ObservationFile, type Parsed, type Pull, type Reflection, type ReflectionChange, type ReflectionResult } from './types.ts'
+import { checkState, checksWait, currentChecks, maxTier, prChecks, tierRank, type Check, type Notice, type Tier, type ObservationFile, type Parsed, type Pull, type Reflection, type ReflectionChange, type ReflectionResult } from './types.ts'
 
 export type Drift = 'same' | 'modified' | 'added' | 'deleted'
 export interface MetaFile {
@@ -105,18 +105,17 @@ export function pullTier(p: Pull, rules: RiskRule[]) {
 export function prNext(p: Pull, tier: Tier | undefined, autoMergeMax: Tier | 'none'): { kind: NeedsKind; who: string; what: string; failing: string[]; approved: boolean } {
   const r2 = !!tier && tierRank(tier) >= 2
   const approved = p.labels.includes('human-approved')
-  const approvedAt = p.timeline.filter((x) => x.type === 'labeled' && x.label === 'human-approved').at(-1)?.at
-  const stale = (c: Check) => r2 && c.name === 'risk-gate' && (!approved || (!!approvedAt && !!c.completedAt && Date.parse(c.completedAt) < Date.parse(approvedAt)))
-  const checks = currentChecks(p.checks)
-  const failing = checks.filter((c) => checkState(c) === 'fail' && !stale(c)).map((c) => c.name)
-  const pending = checks.some((c) => checkState(c) === 'pending')
+  const checks = prChecks(p, tier)
+  const failing = checks.failing
   const base = { failing, approved }
   if (p.isDraft) return { ...base, kind: 'info', who: 'its author', what: 'mark it ready for review' } // first: a draft merges for no one
   if (failing.length) return { ...base, kind: 'failed', who: 'its author', what: `fix the failing check${failing.length > 1 ? 's' : ''}: ${failing.join(', ')}` }
   if (r2 && !approved) return { ...base, kind: 'approve', who: 'you', what: p.autoMerge ? 'add human-approved; auto-merge then merges it once the checks pass' : 'add human-approved, wait for the checks to pass, then merge' }
   if (p.autoMerge) return { ...base, kind: 'info', who: 'GitHub', what: 'auto-merge merges it when the checks pass' }
+  // no merge until every check is green, after the label too
+  if (checks.pending.length) return { ...base, kind: 'info', who: 'CI', what: `wait for ${checksWait(checks)} to pass` }
   const below = !!tier && tierRank(tier) <= tierRank(autoMergeMax)
-  return { ...base, kind: 'merge', who: 'you', what: `merge it${pending ? ' once CI is green' : ''}${below && !approved ? ' (auto-merge is not on)' : ''}` }
+  return { ...base, kind: 'merge', who: 'you', what: `merge it${below && !approved ? ' (auto-merge is not on)' : ''}` }
 }
 
 /** Open pull requests that are not work items (an improvement, a planning fix, a factory change, the

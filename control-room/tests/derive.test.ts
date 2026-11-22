@@ -177,7 +177,7 @@ describe('pull requests', () => {
   test('after approval, a risk-gate failure from before the label is out of date (CI re-runs it); a later one is real', () => {
     const gate = (min: number) => [{ name: 'check', status: 'COMPLETED', conclusion: 'SUCCESS' }, { name: 'risk-gate', status: 'COMPLETED', conclusion: 'FAILURE', completedAt: ago(min) }]
     const approved = (checks: Pull['checks']) => pull({ labels: ['risk:R2', 'human-approved'], autoMerge: false, checks, timeline: [{ type: 'labeled', label: 'human-approved', at: ago(10) }] })
-    expect(derive({ stageEvents: RUN_TO_PR(), pull: approved(gate(30)) }).state).toBe('awaiting-merge')
+    expect(derive({ stageEvents: RUN_TO_PR(), pull: approved(gate(30)) })).toMatchObject({ state: 'pr-open', reason: 'PR #101 open; waiting for the risk-gate rerun after the label to pass' }) // not yours to merge until it is back green
     expect(derive({ stageEvents: RUN_TO_PR(), pull: approved(gate(5)) })).toMatchObject({ state: 'failed', needs: { kind: 'failed' } })
     expect(derive({ stageEvents: RUN_TO_PR(), pull: approved([{ name: 'risk-gate', status: 'COMPLETED', conclusion: 'FAILURE' }]) }).state).toBe('failed') // time unknown: assume real
   })
@@ -209,6 +209,13 @@ describe('merged and closed', () => {
     expect(derive({ stageEvents: RUN_TO_PR(), pull: pull({ state: 'MERGED', mergedAt: ago(30), baseRefName: 'feature/f001-x' }) })).toMatchObject({ state: 'merged', mergedInto: 'feature/f001-x' })
     expect(derive({ onMain: { at: ago(30) } })).toMatchObject({ state: 'merged', mergedInto: 'main' })
   })
+  test('approved, but the risk-gate rerun after the label has not come back: not waiting for you yet', () => {
+    const r = derive({ stageEvents: RUN_TO_PR(), pull: pull({ autoMerge: false, labels: ['risk:R2', 'human-approved'], timeline: [{ type: 'labeled', label: 'human-approved', at: ago(1) }],
+      checks: [{ name: 'risk-gate', status: 'COMPLETED', conclusion: 'FAILURE', completedAt: ago(30) }] }) })
+    expect(r).toMatchObject({ state: 'pr-open', column: 'pr-open', reason: 'PR #101 open; waiting for the risk-gate rerun after the label to pass' })
+    expect(r.needs).toBeUndefined()
+  })
+
   test('a draft pull request waits for its author, not for auto-merge or you', () => {
     const r = derive({ stageEvents: RUN_TO_PR(), pull: pull({ isDraft: true, autoMerge: false, labels: ['risk:R1', 'human-approved'] }) })
     expect(r).toMatchObject({ state: 'pr-open', reason: 'PR #101 is a draft: its author marks it ready for review' })
@@ -223,7 +230,7 @@ describe('merged and closed', () => {
     expect(green.state).not.toBe('failed')
     const rerunning = derive({ stageEvents: RUN_TO_PR(), pull: pull({ autoMerge: false, checks: [run('FAILURE', 20), run(undefined)] }) })
     expect(rerunning.state).not.toBe('failed')
-    expect(rerunning.needs?.summary).toContain('checks pending')
+    expect(rerunning).toMatchObject({ state: 'pr-open', reason: 'PR #101 open; waiting for factory-tests to pass' }) // no merge row while a check runs
     expect(currentChecks([run('SUCCESS', 5), run('FAILURE', 20)]).map((c) => c.conclusion)).toEqual(['SUCCESS'])
     // a pending status with a date (GitHub's StatusContext) is compared by that date: a later result is newer
     expect(currentChecks([{ ...run(undefined), completedAt: ago(10) }, run('SUCCESS', 5)]).map((c) => c.conclusion)).toEqual(['SUCCESS'])

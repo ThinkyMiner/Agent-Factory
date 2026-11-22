@@ -273,6 +273,32 @@ export function currentChecks(checks: Check[]): Check[] {
   return [...cur.values()]
 }
 
+/** A pull request's checks as every surface reads them (the PR helper, the item's state): each check's current run.
+ *  R2: risk-gate fails until the human-approved label and CI re-runs it on the label, so a red gate before the label
+ *  is expected, and one from before the latest label is a rerun still to come (pending), until a newer result lands. */
+export function prChecks(p: Pull, tier: Tier | undefined): { failing: string[]; pending: string[]; rerun: boolean } {
+  const r2 = !!tier && tierRank(tier) >= 2
+  const approved = p.labels.includes('human-approved')
+  const approvedAt = p.timeline.filter((x) => x.type === 'labeled' && x.label === 'human-approved').at(-1)?.at
+  const out = { failing: [] as string[], pending: [] as string[], rerun: false }
+  for (const c of currentChecks(p.checks)) {
+    const st = checkState(c)
+    if (r2 && c.name === 'risk-gate' && st === 'fail') {
+      if (!approved) continue
+      if (approvedAt && c.completedAt && Date.parse(c.completedAt) < Date.parse(approvedAt)) {
+        out.pending.push(c.name)
+        out.rerun = true
+        continue
+      }
+    }
+    if (st === 'fail') out.failing.push(c.name)
+    else if (st === 'pending') out.pending.push(c.name)
+  }
+  return out
+}
+/** What a PR waits for while its checks run, in words. */
+export const checksWait = (c: { pending: string[]; rerun: boolean }) => (c.rerun ? 'the risk-gate rerun after the label' : c.pending.join(', '))
+
 export function checkState(c: Check): CheckState {
   if (c.status !== 'COMPLETED') return 'pending'
   switch (c.conclusion) {

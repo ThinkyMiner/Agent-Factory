@@ -6,7 +6,9 @@ import { classify, type FileRisk, type RiskRule } from './risk.ts'
 import {
   STAGES,
   checkState,
+  checksWait,
   currentChecks,
+  prChecks,
   maxTier,
   tierRank,
   type Check,
@@ -467,10 +469,9 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
   const approved = !!pr?.labels.includes('human-approved')
   // risk-gate fails every R2 pull request until it is approved, and CI re-runs it on the label.
   // So a failing risk-gate is expected before approval, and out of date if it finished before it.
-  const approvedAt = pr?.timeline.filter((x) => x.type === 'labeled' && x.label === 'human-approved').at(-1)?.at
-  const gateRerun = (c: Check) => c.name === 'risk-gate' && tierRank(tier ?? 'R0') >= 2 && (!approved || (!!approvedAt && !!c.completedAt && t(c.completedAt) < t(approvedAt)))
   const checks = currentChecks(pr?.checks ?? []) // each check's current run, as the PR helper reads them
-  const failingChecks = checks.filter((c) => checkState(c) === 'fail' && !gateRerun(c))
+  const prc = pr ? prChecks(pr, tier) : { failing: [], pending: [], rerun: false } // the same reading as the PR helper
+  const failingChecks = checks.filter((c) => prc.failing.includes(c.name))
   const readyAt = issue?.labelEvents.filter((e) => (e.label === 'factory:ready' || (dispatched && e.label === 'feature:' + feature)) && e.action === 'added').at(0)?.at ?? events.find((e) => e.stage === 'intake')?.ts
   let mergedBy: ItemView['mergedBy']
   // Who merged is inferred: auto-merge evidence is auto (approved or not); else human-approved is you; else no one, since
@@ -537,7 +538,7 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
       (high.find((s) => s.source === 'review') ? `reviewer: ${high.find((s) => s.source === 'review')!.why ?? 'assessed ' + tier}` : 'PR label')
     const verdict = review?.ok ? `review: ${review.value.verdict}` : review ? `${reviews[0]!.file} unparseable` : 'no review.md'
     needs = { kind: 'approve', summary: `${tier} · ${why} · ${verdict}`, since }
-  } else if (pr?.state === 'OPEN' && !pr.autoMerge) {
+  } else if (pr?.state === 'OPEN' && !pr.autoMerge && !prc.pending.length) {
     // Without auto-merge nothing will merge it but you. The policy only explains why.
     state = 'awaiting-merge'
     since = pr.createdAt
@@ -552,7 +553,7 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
   } else if (pr?.state === 'OPEN' || (!pr && lastPipe?.stage === 'pr' && lastPipe.status === 'passed')) {
     state = 'pr-open'
     since = pr?.createdAt ?? lastPipe?.ts
-    reason = pr ? `PR #${pr.number} open with auto-merge` : `pr stage passed${lastPipe?.pr ? ` (PR #${lastPipe.pr})` : ''}; no GitHub data for it`
+    reason = pr ? (prc.pending.length && !pr.autoMerge ? `PR #${pr.number} open; waiting for ${checksWait(prc)} to pass` : `PR #${pr.number} open with auto-merge`) : `pr stage passed${lastPipe?.pr ? ` (PR #${lastPipe.pr})` : ''}; no GitHub data for it`
   } else if (lastPipe?.status === 'failed' && (idleMs > stale || sessionEndedAfter(lastPipe.ts))) {
     state = 'failed'
     since = lastPipe.ts
