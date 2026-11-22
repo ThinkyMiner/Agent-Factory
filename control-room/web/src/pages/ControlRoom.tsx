@@ -103,8 +103,8 @@ const hintKey = (n: NeedsEntry) =>
 const HINT: Record<string, React.ReactNode> = {
   answer: <>{NEEDS.answer.label}: answer on the item's issue, then run <CopyCommand cmd="/work <id>" /> again (in team mode the team's session picks it up).</>,
   approve: <>{NEEDS.approve.label}: read the item's pull request, add the <Mono>human-approved</Mono> label on GitHub, wait for its checks to pass, then merge it (with auto-merge on, it then merges itself).</>,
-  merge: <>{NEEDS.merge.label}: the pull request is ready; merge it on GitHub (nothing will merge it for you).</>,
-  failed: <>{NEEDS.failed.label}: open the item to see which check or stage failed; the factory retries only when the run is started again.</>,
+  merge: <>{NEEDS.merge.label}: merge it on GitHub once its checks pass; the row says whether they have (nothing will merge it for you).</>,
+  failed: <>{NEEDS.failed.label}: open the item: a red check on its pull request is fixed by the team that owns the branch; a failed stage runs again only when the run is started again.</>,
   'waiting-input': <>{NEEDS['waiting-input'].label}: a Claude Code session is showing a prompt; answer it in that terminal.</>,
   quiet: <>{NEEDS.quiet.label}: nothing was heard from the run for a while; look at its terminal: it may have stopped.</>,
   info: <>{NEEDS.info.label}: nothing to do; it moves by itself, and is listed so nothing waits unseen.</>,

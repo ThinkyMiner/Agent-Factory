@@ -139,6 +139,23 @@ test('a merge with only GitHub\'s merger login names that login on Home and Boar
   expect(errors).toEqual([])
 })
 
+test('Needs you footers say what clears a merge or a red check, not that a pending PR is ready', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.route('**/api/state', async (route) => {
+    const res = await route.fetch()
+    const body = await res.json()
+    body.needsYou.push({ id: '20', kind: 'merge', title: 'Reading list API', summary: 'R1 · checks pending · auto-merge was not enabled', since: new Date().toISOString() },
+      { id: '24', kind: 'failed', title: 'Copy a share link', summary: 'CI failing: factory-tests', since: new Date().toISOString() })
+    await route.fulfill({ response: res, json: body })
+  })
+  await page.goto(TEAMS_URL + '/')
+  const hints = page.getByRole('note', { name: 'How to clear these rows' })
+  await expect(hints).toContainText('merge it on GitHub once its checks pass')
+  await expect(hints).not.toContainText('the pull request is ready')
+  await expect(hints).toContainText('a red check on its pull request is fixed by the team that owns the branch')
+  expect(errors).toEqual([])
+})
+
 test('quality: an empty chart says whether nothing happened or it cannot be measured', async ({ page }) => {
   const errors = watchErrors(page)
   await page.goto(TEAMS_URL + '/quality')
