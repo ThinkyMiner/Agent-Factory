@@ -302,6 +302,23 @@ export function prChecks(p: Pull, tier: Tier | undefined): { failing: string[]; 
 /** What a PR waits for while its checks run, in words. */
 export const checksWait = (c: { pending: string[]; rerun: boolean }) => (c.rerun ? 'the risk-gate rerun after the label' : c.pending.join(', '))
 
+/** What a waits=#<n> may name: a pull request or a ticket, and where it is now. Any other number is not a ref. */
+export type Ref = { kind: 'PR' | 'ticket'; n: number; url: string; state: 'open' | 'merged' | 'closed' | 'done' | 'verified' | 'declined'; base?: string }
+/** Every PR and ticket by number; a ticket's state is its newest ticket.sh event, else its state: label, else open or closed. */
+export function refsOf(pulls: Pull[], issues: Issue[], ticketState: (n: number) => string | undefined): Map<number, Ref> {
+  const m = new Map<number, Ref>()
+  for (const i of issues) {
+    if (!i.labels.includes('ticket')) continue
+    const st = ticketState(i.number) ?? i.labels.find((l) => l.startsWith('state:'))?.slice(6)
+    const state = st === 'done' || st === 'verified' || st === 'declined' ? st : i.state === 'OPEN' ? 'open' : i.stateReason === 'NOT_PLANNED' ? 'declined' : 'done'
+    m.set(i.number, { kind: 'ticket', n: i.number, url: i.url, state })
+  }
+  for (const p of pulls) m.set(p.number, { kind: 'PR', n: p.number, url: p.url, state: p.state === 'OPEN' ? 'open' : p.state === 'MERGED' ? 'merged' : 'closed', base: p.baseRefName })
+  return m
+}
+/** "closed unmerged", "merged", "declined": how a ref that is no longer open ended. */
+export const refHow = (r: Ref) => (r.state === 'closed' ? 'closed unmerged' : r.state)
+
 export function checkState(c: Check): CheckState {
   if (c.status !== 'COMPLETED') return 'pending'
   switch (c.conclusion) {

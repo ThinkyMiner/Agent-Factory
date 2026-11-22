@@ -133,6 +133,23 @@ describe('blocked', () => {
     // #20 is not an open PR or ticket: the event is a stop like any other
     expect(derive({ stageEvents: ev }, { openRefs: new Set([7]) })).toMatchObject({ state: 'blocked', waitsOn: undefined })
   })
+  test('a waits=#<n> whose PR or ticket is no longer open: the wait is over and the item\'s team resumes; never a question for you', () => {
+    const ev = [se('build', 'passed', 30), se('review', 'blocked', 10, 0, { alias: 'ui-review', detail: 'ui-review: needs the new ui shots', waits: [20] })]
+    const ended = (kind: 'PR' | 'ticket', state: 'merged' | 'closed' | 'done' | 'verified' | 'declined') => ({ openRefs: new Set<number>(), endedRefs: new Map([[20, { kind, n: 20, url: 'u', state, base: 'main' }]]) })
+    const over = (c: Partial<Context>, files: ItemInputs['files'] = {}) => derive({ stageEvents: ev, files }, c)
+    expect(over(ended('PR', 'merged'))).toMatchObject({ state: 'in-progress', reason: "ui-review's wait is over: PR #20 merged", waitOver: { refs: [20], stage: 'ui-review' }, waitsOn: undefined, needs: undefined })
+    expect(over(ended('PR', 'closed'))).toMatchObject({ state: 'in-progress', reason: "ui-review's wait is over: PR #20 closed unmerged", needs: undefined })
+    expect(over(ended('ticket', 'done'))).toMatchObject({ state: 'in-progress', reason: "ui-review's wait is over: ticket #20 done", needs: undefined })
+    expect(over(ended('ticket', 'declined'))).toMatchObject({ state: 'in-progress', reason: "ui-review's wait is over: ticket #20 declined", needs: undefined })
+    // a BLOCKED.md older than the event naming waits is not a question either, the wait open or over; one written after it is
+    const older = { 'BLOCKED.md': file('# Blocked\n\nWhich?', 11, 'worktree') }
+    expect(over({ openRefs: new Set([20]) }, older)).toMatchObject({ state: 'in-progress', reason: 'ui-review waits for #20', needs: undefined, flags: ['stale-blocked'] })
+    expect(over(ended('PR', 'merged'), older)).toMatchObject({ state: 'in-progress', reason: "ui-review's wait is over: PR #20 merged", needs: undefined, flags: ['stale-blocked'] })
+    expect(over(ended('PR', 'merged'), { 'BLOCKED.md': file('# Blocked\n\nWhich?', 10, 'worktree') })).toMatchObject({ state: 'in-progress', flags: ['stale-blocked'] }) // the same second: written with the event
+    expect(over(ended('PR', 'merged'), { 'BLOCKED.md': file('# Blocked\n\nWhich?', 5, 'worktree') })).toMatchObject({ state: 'blocked', needs: { kind: 'answer', summary: 'Which?' } })
+    // a number that is no PR or ticket at all stays a stop like any other, and does not stale a BLOCKED.md
+    expect(over({ openRefs: new Set([7]) }, older)).toMatchObject({ state: 'blocked', needs: { kind: 'answer', summary: 'Which?' } })
+  })
   test('a BLOCKED.md older than a re-run is stale: the item is in progress, flagged', () => {
     const r = derive({ stageEvents: [se('spec', 'blocked', 3000), se('spec', 'started', 30, 1), se('spec', 'passed', 25, 1), se('tests', 'started', 5)], files: { 'BLOCKED.md': file('Which?', 2990) } })
     expect(r).toMatchObject({ state: 'in-progress', stage: 'tests' })

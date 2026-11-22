@@ -4,7 +4,7 @@
 // factory (message bodies, briefs, decisions) is passed through as strings, never interpreted.
 import { z } from 'zod'
 import type { ItemView, NeedsEntry } from './derive.ts'
-import { checkState, currentChecks, type FactoryEvent, type Issue, type Notice, type Parsed, type Pull, type Tier } from './types.ts'
+import { checkState, currentChecks, refsOf, type FactoryEvent, type Issue, type Notice, type Parsed, type Pull, type Tier } from './types.ts'
 import { roundWords } from './words.ts'
 import { prNext } from './meta.ts'
 
@@ -364,6 +364,20 @@ function eventText(o: Record<string, unknown>): string {
   }
 }
 
+/** ticket.sh's events, newest last: each ticket's state when GitHub's labels are not there yet. */
+export function ticketStates(events: FactoryEvent[]): Map<string, string> {
+  const m = new Map<string, string>()
+  for (const e of sortByTs(events.filter((x): x is Extract<FactoryEvent, { type: 'unknown' }> => x.type === 'unknown' && x.raw.includes('"ticket"')))) {
+    try {
+      const o = JSON.parse(e.raw) as Record<string, unknown>
+      if (o.type === 'ticket' && typeof o.state === 'string' && (typeof o.number === 'string' || typeof o.number === 'number')) m.set(String(o.number), o.state)
+    } catch {
+      /* not JSON: already a notice */
+    }
+  }
+  return m
+}
+
 /** `next`: a pull request's one next action and who takes it (state.ts passes the risk rules in), the same
  *  function Needs you uses, so the two never disagree. Without it a planning PR is taken as R2. */
 export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[]; repo?: string }, items: Map<string, ItemView>, next: (p: Pull, floor?: Tier) => ReturnType<typeof prNext> = (p) => prNext(p, 'R2', 'none')): { view: TeamsView; needs: NeedsEntry[]; notices: Notice[]; waits: Map<string, string> } {
@@ -473,16 +487,8 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
   // features: their issues (feature:<f>, team:<t>, ticket) and where each is
   const featureOf = (labels: string[]) => labels.find((l) => l.startsWith('feature:'))?.slice(8)
   const label = (labels: string[], prefix: string) => labels.find((l) => l.startsWith(prefix))?.slice(prefix.length)
-  // ticket.sh's events, newest last: a ticket's state when GitHub's labels are not there
-  const ticketEvents = new Map<string, string>()
-  for (const e of sortByTs(inp.events.filter((x): x is Extract<FactoryEvent, { type: 'unknown' }> => x.type === 'unknown' && x.raw.includes('"ticket"')))) {
-    try {
-      const o = JSON.parse(e.raw) as Record<string, unknown>
-      if (o.type === 'ticket' && typeof o.state === 'string' && (typeof o.number === 'string' || typeof o.number === 'number')) ticketEvents.set(String(o.number), o.state)
-    } catch {
-      /* not JSON: already a notice */
-    }
-  }
+  const ticketEvents = ticketStates(inp.events)
+  const refs = refsOf(gh.pulls, gh.issues, (n) => ticketEvents.get(String(n)))
   const waits = new Map<string, string>()
   const names = new Set([...inp.features.map((f) => f.name), ...gh.issues.map((i) => featureOf(i.labels)).filter((x): x is string => !!x)])
   const features: FeatureView[] = [...names].sort().map((name) => {
@@ -508,11 +514,8 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
       }
       // waits=#<n> on its latest stage event: only an open PR, or a ticket still to be done, counts (no guessing from files)
       const waitsOn = (it?.waitsOn?.refs ?? []).flatMap((n): { kind: 'PR' | 'ticket'; n: number; url: string; stage: string }[] => {
-        const pr = gh.pulls.find((p) => p.number === n && p.state === 'OPEN')
-        if (pr) return [{ kind: 'PR', n, url: pr.url, stage: it!.waitsOn!.stage }]
-        const t = gh.issues.find((x) => x.number === n && x.state === 'OPEN' && x.labels.includes('ticket'))
-        const tState = t && (ticketEvents.get(String(n)) ?? label(t.labels, 'state:'))
-        return t && !['declined', 'done', 'verified'].includes(tState ?? '') ? [{ kind: 'ticket', n, url: t.url, stage: it!.waitsOn!.stage }] : []
+        const r = refs.get(n)
+        return r?.state === 'open' ? [{ kind: r.kind, n, url: r.url, stage: it!.waitsOn!.stage }] : []
       })
       if (waitsOn.length) {
         waitsFor = `${waitsOn.map((w) => `${w.kind} #${w.n}`).join(', ')} (${waitsOn[0]!.stage})`

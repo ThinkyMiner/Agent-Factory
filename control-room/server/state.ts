@@ -3,11 +3,11 @@ import { readFile } from 'node:fs/promises'
 import { byNeeds, deriveAll, expireRuns, indexLifecycle, type Context, type NeedsEntry, type NeedsKind } from './core/derive.ts'
 import type { SweepFinding } from './core/parse.ts'
 import { prNext, pullNeeds, pullTier } from './core/meta.ts'
-import { maxTier, type Tier } from './core/types.ts'
+import { maxTier, refsOf, type Tier } from './core/types.ts'
 import { GitHubDataSchema, type GitHubData, type GitHubStatus } from './core/types.ts'
 import { loadSnapshot } from './sources/load.ts'
 import { loadMeta } from './sources/meta.ts'
-import { deriveTeams } from './core/teams.ts'
+import { deriveTeams, ticketStates } from './core/teams.ts'
 import { loadTeams } from './sources/teams.ts'
 
 export interface GitHubInput {
@@ -28,10 +28,12 @@ export async function computeState(repo: string, gh: GitHubInput, opts: { now?: 
     if (!Number.isNaN(x) && x > (lastByItem.get(e.work_id) ?? -Infinity)) lastByItem.set(e.work_id, x)
   }
   expireRuns(runs, sessions, lastByItem, now, opts.staleMinutes)
-  // what a waits=#<n> may name: an open PR, or an open ticket not declined, done or verified
-  const openRefs = new Set([...(gh.data?.pulls ?? []).filter((p) => p.state === 'OPEN').map((p) => p.number),
-    ...(gh.data?.issues ?? []).filter((i) => i.state === 'OPEN' && i.labels.includes('ticket') && !i.labels.some((l) => ['state:declined', 'state:done', 'state:verified'].includes(l))).map((i) => i.number)])
-  const ctx: Context = { now, staleMinutes: opts.staleMinutes, autoMergeMax: snap.autoMergeMax, rules: snap.rules, sessions, runs, openRefs: gh.data ? openRefs : undefined }
+  // what a waits=#<n> may name: a PR or a ticket, open (it waits) or no longer open (the wait is over); tickets as deriveTeams reads them
+  const tickets = ticketStates(snap.events)
+  const refs = [...refsOf(gh.data?.pulls ?? [], gh.data?.issues ?? [], (n) => tickets.get(String(n))).values()]
+  const openRefs = new Set(refs.filter((r) => r.state === 'open').map((r) => r.n))
+  const endedRefs = new Map(refs.filter((r) => r.state !== 'open').map((r) => [r.n, r]))
+  const ctx: Context = { now, staleMinutes: opts.staleMinutes, autoMergeMax: snap.autoMergeMax, rules: snap.rules, sessions, runs, ...(gh.data && { openRefs, endedRefs }) }
   const d = deriveAll(snap.inputs, ctx)
   // team mode: the cycle, features, teams and sessions, and what in them needs you
   const teamsIn = await loadTeams(snap)
