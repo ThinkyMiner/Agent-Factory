@@ -21,8 +21,9 @@ test('approve an R2 pull request: see what you approve, type the confirmation, t
   await approve.click()
   await expect(page.getByRole('status').filter({ hasText: 'Added human-approved to pull request #132' })).toBeVisible()
   await expect(dialog).toBeHidden()
-  // approved, no auto-merge on this PR: it now needs merging, not approving
-  await expect(page.getByRole('region', { name: 'Needs you' })).toContainText('Merge the pull request')
+  // approved, no auto-merge on this PR: its risk-gate reruns on the label, and it is not yours to merge until that is green
+  await expect(page.getByText('waiting for the risk-gate rerun after the label to pass').first()).toBeVisible()
+  await expect(page.getByText('Merge the pull request')).toHaveCount(0)
   await expect(page.getByRole('list', { name: 'Actions taken from the control room' })).toContainText('You approved')
 })
 
