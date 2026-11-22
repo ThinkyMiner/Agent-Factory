@@ -316,7 +316,12 @@ function Running({ data }: { data: ApiState }) {
   )
 }
 
+/** Who merged, as far as the pull request shows it: the label proves an approval, not who pressed merge. */
+export const mergedWords = (i: { mergedBy?: 'auto' | 'human'; merger?: string }) =>
+  i.mergedBy === 'auto' ? 'auto-merged' : i.mergedBy === 'human' ? `approved by you; merged by ${i.merger ?? 'unknown'}` : i.merger ? `merged by ${i.merger} (GitHub account)` : 'merged; who merged is not recorded'
+
 function Merged({ data }: { data: ApiState }) {
+  const main = data.factory.main?.replace(/^origin\//, '') ?? 'main'
   const now = useNow()
   const startOfDay = new Date(now).setHours(0, 0, 0, 0)
   const d = new Date(now)
@@ -329,11 +334,11 @@ function Merged({ data }: { data: ApiState }) {
       <Link data-nav-item to={`/items/${i.id}`} className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface-2">
         <ItemId id={i.id} link={false} />
         <span className="min-w-0 flex-1 truncate">{i.title}</span>
-        {i.mergedInto && i.mergedInto !== 'main' && <span className="font-mono text-[11px] text-muted" title="Merged into the feature branch; main gets it when the feature's integrate pull request merges">→ {i.mergedInto}</span>}
+        {i.mergedInto && i.mergedInto !== main && <span className="font-mono text-[11px] text-muted" title={i.mergedInto.startsWith('feature/') ? "Merged into the feature branch; main gets it when the feature's integrate pull request merges" : `Merged into ${i.mergedInto}, not ${main}`}>→ {i.mergedInto}</span>}
         {i.reverted && <span className="text-[11.5px] font-medium text-fail">reverted</span>}
         <TierChip tier={i.tier} />
-        <span className="w-16 text-[12px] text-muted" title={i.mergedBy === 'auto' ? 'auto-merged' : i.mergedBy === 'human' ? 'merged by you' : i.merger ? `merged by ${i.merger} (GitHub account)` : 'merged; who merged is not recorded'}>
-          {i.mergedBy === 'auto' ? 'auto' : i.mergedBy === 'human' ? 'by you' : ''}
+        <span className="w-16 text-[12px] text-muted" title={mergedWords(i)}>
+          {i.mergedBy === 'auto' ? 'auto' : i.mergedBy === 'human' ? 'approved' : ''}
         </span>
         <span className="w-14 text-right text-[12px] text-muted tabular" title={`${i.fixRounds} fix rounds`}>
           {i.fixRounds ? `${i.fixRounds} fix` : 'first pass'}

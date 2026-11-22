@@ -156,7 +156,7 @@ function Card({ i }: { i: ItemSummary }) {
           {i.column === 'ready' && i.waitsFor && <span className="w-full text-[11.5px]">waits for {i.waitsFor}</span>}
           {(i.column === 'waiting' || i.column === 'stopped') && !i.needs && <StateBadge state={i.state} className="px-1.5 py-0 text-[11.5px]" />}
           {i.column === 'pr-open' && i.pr && <span>PR #{i.pr.number}</span>}
-          {i.column === 'merged' && <span>{i.mergedBy === 'auto' ? 'auto-merged' : i.mergedBy === 'human' ? 'merged by you' : i.merger ? `merged by ${i.merger}` : 'merged'}{i.mergedInto && i.mergedInto !== 'main' && <> into <span className="font-mono text-[11px]">{i.mergedInto}</span></>}</span>}
+          {i.column === 'merged' && <span>{i.mergedBy === 'auto' ? 'auto-merged' : i.mergedBy === 'human' ? `approved by you; merged by ${i.merger ?? 'unknown'}` : i.merger ? `merged by ${i.merger}` : 'merged'}{i.mergedInto && i.mergedInto !== 'main' && <> into <span className="font-mono text-[11px]">{i.mergedInto}</span></>}</span>}
           {i.needs && <NeedsTag kind={i.needs.kind} className="text-[12px] [&_svg]:size-3.5" />}
           <span className="ml-auto inline-flex items-center gap-2 tabular">
             {i.fixRounds > 0 ? <span title={`${i.fixRounds} fix rounds`}>{i.fixRounds} fix</span> : i.column === 'merged' ? <span>first pass</span> : null}

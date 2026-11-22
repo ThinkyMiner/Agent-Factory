@@ -139,6 +139,23 @@ test('a merge with only GitHub\'s merger login names that login on Home and Boar
   expect(errors).toEqual([])
 })
 
+test('an approved merge without auto-merge says approved by you, not who merged; another base is named', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.route('**/api/state', async (route) => {
+    const res = await route.fetch()
+    const body = await res.json()
+    Object.assign(body.items.find((i: { id: string }) => i.id === '20'), { mergedAt: new Date().toISOString(), mergedBy: 'human', merger: undefined, mergedInto: 'release/v1' })
+    await route.fulfill({ response: res, json: body })
+  })
+  await page.goto(TEAMS_URL + '/')
+  const row = page.getByRole('link', { name: /#20/ })
+  await expect(row.locator('[title^="approved by you"]')).toHaveAttribute('title', 'approved by you; merged by unknown')
+  await expect(row.getByText('→ release/v1')).toHaveAttribute('title', 'Merged into release/v1, not main')
+  await page.goto(TEAMS_URL + '/board')
+  await expect(page.getByRole('region', { name: 'Merged' })).toContainText('approved by you; merged by unknown into release/v1')
+  expect(errors).toEqual([])
+})
+
 test('Needs you footers say what clears a merge or a red check, not that a pending PR is ready', async ({ page }) => {
   const errors = watchErrors(page)
   await page.route('**/api/state', async (route) => {

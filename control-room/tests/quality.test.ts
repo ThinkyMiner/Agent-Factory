@@ -100,6 +100,7 @@ describe('quality over the demo', async () => {
     // nothing merged at all: no data, not unmeasurable
     const none = quality({ items: [], now: NOW, weeks: 8, escapedIssues: [], tokensByItem: new Map([['other', 1]]) })
     expect(m(none, 'lead-time').cannot).toBeUndefined()
+    expect(m(q2, 'merged-by').series).toEqual(['auto-merged', 'approved by you', 'unknown']) // the label proves an approval, not who merged
   })
 
   test('only the default branch counts as main; another base is its own bucket', () => {

@@ -164,7 +164,7 @@ export function quality({ items, tokensByItem, tokenRuns = new Map(), mergedPull
 
   // 6. tier mix and 7. who merged
   const tiers = byMergeWeek((p, i) => add(p, i.tier ?? 'unknown', i.id))
-  const mergedBy = byMergeWeek((p, i) => add(p, i.mergedBy === 'auto' ? 'auto-merged' : i.mergedBy === 'human' ? 'merged by you' : 'unknown', i.id))
+  const mergedBy = byMergeWeek((p, i) => add(p, i.mergedBy === 'auto' ? 'auto-merged' : i.mergedBy === 'human' ? 'approved by you' : 'unknown', i.id))
 
   // 8. escaped defects: reverted items (by revert date) and issues labelled escaped-defect
   const escaped = blank()
@@ -223,7 +223,7 @@ export function quality({ items, tokensByItem, tokenRuns = new Map(), mergedPull
     { key: 'fix-rounds', question: 'Where do fix rounds happen?', unit: 'count', kind: 'stacked', series: [...STAGES], note: 'Each failure that triggered a fix round, charged to the stage that failed.', points: series(fixes) },
     { key: 'stops', question: 'What share of runs stopped, and why?', unit: 'percent', kind: 'stacked', series: STOPS, note: 'Of the /work runs that ended that week. The drilldown says where each one stopped.', points: series(stops) },
     { key: 'tiers', question: 'What is the risk mix of what merged?', unit: 'count', kind: 'stacked', series: ['R0', 'R1', 'R2', 'R3', 'unknown'], points: series(tiers) },
-    { key: 'merged-by', question: 'How much merged without me?', unit: 'count', kind: 'stacked', series: ['auto-merged', 'merged by you', 'unknown'], note: 'Inferred from the pull request: auto-merge enabled counts as auto-merged, approved or not; otherwise a human-approved label counts as merged by you; neither is unknown, since agents merge with the same GitHub account as you.', points: series(mergedBy) },
+    { key: 'merged-by', question: 'How much merged without me?', unit: 'count', kind: 'stacked', series: ['auto-merged', 'approved by you', 'unknown'], note: 'Inferred from the pull request: auto-merge enabled counts as auto-merged, approved or not; otherwise a human-approved label counts as approved by you (the label proves the approval, not who pressed merge: agents use the same GitHub account as you); neither is unknown.', points: series(mergedBy) },
     { key: 'escaped', question: 'Did defects escape?', unit: 'count', kind: 'stacked', series: ['reverted', 'escaped-defect issue'], note: 'Reverted pull requests, plus issues labelled escaped-defect.', points: series(escaped) },
   ]
   if (mergedPulls.length) metrics.splice(1, 0, { key: 'merged-prs', question: 'How many work pull requests merged each week? (every attempt)', unit: 'count', kind: 'stacked', series: ['into main', 'into a feature branch', 'into another branch', 'base unknown'], note: `Every merged pull request from a work/<id>-<slug> branch, so an item tried twice counts twice. Main is ${main}, the default branch. Base unknown: GitHub did not report the branch it merged into.`, points: series(prs) })
