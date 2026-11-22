@@ -66,7 +66,7 @@ describe('parsers', () => {
   })
   test('the phase while building: dispatched items, follow-up tickets, and the e2e tests on the integration branch', () => {
     const row = (number: number, state: ItemView['state'] | undefined, more: object = {}) => ({ number, title: `t${number}`, url: '', team: 'frontend', ticket: false, open: true, ...(state && { item: { state, pr: number + 4 } }), ...more })
-    const items = [row(7, 'merged'), row(8, 'in-progress'), row(9, 'ready'), row(15, 'merged', { ticket: true, ticketState: 'done' })]
+    const items = [row(7, 'merged'), row(8, 'in-progress', { item: { state: 'in-progress', active: true } }), row(9, 'ready'), row(15, 'merged', { ticket: true, ticketState: 'done' })] // #8: an agent at work
     const [p] = phasesOf(undefined, [{ name: 'f001-first-card', refs: { integrate: 'origin/integrate/f001-first-card' }, e2eTests: 3, docs: [], pulls: [], items }], [])
     expect(p!.label).toBe('Building f001-first-card: 1 of 3 dispatched items merged into its feature branch, +1 follow-up ticket (1 merged)')
     expect(p!.detail).toBe('1 in progress. 3 e2e test files saved on origin/integrate/f001-first-card; no integration round yet.')
@@ -84,8 +84,8 @@ describe('parsers', () => {
     expect(p!.detail).toBe('1 pull request waiting on checks. #9 waits for #8 fit-layout (pr-open); #10 waits for #9 placement (ready). No integration branch yet: the orchestrator saves the e2e tests on integrate/f001-first-card.')
     // a failing check: the item's team fixes it; an agent at work on another item is "in progress"
     const red = { ...pr17, checks: [{ name: 'factory-tests', status: 'COMPLETED', conclusion: 'FAILURE' }] } as Pull
-    const [q] = phasesOf(undefined, [{ ...f, items: [...items, row(11, 'in-progress', { team: 'backend', item: { state: 'in-progress' } })] }], [red])
-    // one line per owner, each with its own link
+    const [q] = phasesOf(undefined, [{ ...f, items: [...items, row(11, 'in-progress', { team: 'backend', item: { state: 'in-progress', active: true } })] }], [red])
+    // one line per item step, each with its own link
     expect(q!.next).toEqual({ who: 'frontend', what: '#8 (PR #17): fix the failing check: factory-tests', href: '/items/8' })
     expect(q!.more).toEqual([{ who: 'backend', what: 'finish #11', href: '/items/11' }])
     expect(q!.detail).toMatch(/^1 in progress\. 1 pull request with failing checks\. /)
@@ -108,10 +108,38 @@ describe('parsers', () => {
     const f = { name: 'f001-first-card', refs: {}, docs: [], pulls: [] }
     const [quiet] = phasesOf(undefined, [{ ...f, items: [row(9, { state: 'in-progress', needs: { kind: 'quiet', summary: 'no event for 42 min during build' } })] }], [])
     expect(quiet!.next).toEqual({ who: 'frontend', what: '#9 in progress, no agent active (no event for 42 min during build); check its tab', href: '/items/9' })
-    expect(quiet!.detail).toMatch(/^1 quiet \(no agent active\)\. /)
-    const [logged] = phasesOf(undefined, [{ ...f, items: [row(9, { state: 'in-progress', live: true, needs: { kind: 'info', summary: 'logged a stop at build 20:41 UTC while its agents are still running; check its tab' } })] }], [])
-    expect(logged!.next).toEqual({ who: 'you', what: '#9 logged a stop at build 20:41 UTC while its agents are still running; check its tab', href: '/items/9' })
+    expect(quiet!.detail).toMatch(/^1 with no agent active\. /)
+    // its last stage passed a minute ago, but nothing runs now: the same test as Running now
+    const [between] = phasesOf(undefined, [{ ...f, items: [row(9, { state: 'in-progress', last: { stage: 'build', status: 'passed', at: '2026-11-22T07:03:38Z' } })] }], [])
+    expect(between!.next).toEqual({ who: 'frontend', what: '#9 in progress, no agent active (last: build passed 07:03 UTC); check its tab', href: '/items/9' })
+    expect(between!.detail).toMatch(/^1 with no agent active\. /)
+    const [logged] = phasesOf(undefined, [{ ...f, items: [row(9, { state: 'in-progress', active: true, needs: { kind: 'info', summary: 'logged a stop at build 20:41 UTC while its agents are still running; nothing to answer yet' } })] }], [])
+    expect(logged!.next).toEqual({ who: 'frontend', what: '#9 logged a stop at build 20:41 UTC while its agents are still running; nothing to answer yet', href: '/items/9' }) // as its Needs you row: nothing for you to do yet
     expect(logged!.detail).toMatch(/^1 in progress\. /) // its agents are at work
+  })
+
+  test('the phase: the next-action line carries the item\'s last stage; a failed or blocked one never reads as a plain "finish"', () => {
+    const row = (number: number, item: NonNullable<FeatureView['items'][number]['item']>) => ({ number, title: `t${number}`, url: '', team: 'frontend', ticket: false, open: true, item })
+    const f = { name: 'f001-first-card', refs: {}, docs: [], pulls: [] }
+    const at = '2026-11-22T07:17:05Z'
+    const [ok] = phasesOf(undefined, [{ ...f, items: [row(9, { state: 'in-progress', active: true, last: { stage: 'review', status: 'running', at } })] }], [])
+    expect(ok!.next!.what).toBe('finish #9 (last: review running 07:17 UTC)')
+    const [held] = phasesOf(undefined, [{ ...f, items: [row(9, { state: 'in-progress', active: true, last: { stage: 'review', status: 'blocked', at, detail: 'ui-review: waits for ui-states support on feature branch' } })] }], [])
+    expect(held!.next!.what).toBe('#9 in progress; last stage review blocked 07:17 UTC: ui-review: waits for ui-states support on feature branch')
+    const [red] = phasesOf(undefined, [{ ...f, items: [row(9, { state: 'in-progress', active: true, last: { stage: 'review', status: 'failed', at, detail: 'fix-round limit reached' } })] }], [])
+    expect(red!.next!.what).toBe('#9 in progress; last stage review failed 07:17 UTC: fix-round limit reached')
+  })
+
+  test('the phase: a question written after a red PR opened shows both steps, one line per item step, each with its own link', () => {
+    const red = { number: 17, title: 't', state: 'OPEN', isDraft: false, headRefName: 'work/8-x', headSha: '', labels: ['risk:R1'], createdAt: '', url: '', body: '', autoMerge: true, files: [], timeline: [],
+      checks: [{ name: 'factory-tests', status: 'COMPLETED', conclusion: 'FAILURE' }] } as Pull
+    const row = (number: number, item: NonNullable<FeatureView['items'][number]['item']>) => ({ number, title: `t${number}`, url: '', team: 'frontend', ticket: false, open: true, item })
+    const [p] = phasesOf(undefined, [{ name: 'f001-x', refs: {}, docs: [], pulls: [], items: [row(8, { state: 'blocked', pr: 17 }), row(11, { state: 'in-progress', active: true })] }], [red])
+    expect([p!.next, ...(p!.more ?? [])]).toEqual([
+      { who: 'you', what: 'answer #8 (it stopped with a question)', href: '/items/8' },
+      { who: 'frontend', what: '#8 (PR #17): fix the failing check: factory-tests', href: '/items/8' },
+      { who: 'frontend', what: 'finish #11', href: '/items/11' }, // the same owner, its own line and link
+    ])
   })
   test('who a round waits for, by its own rule', () => {
     const s = (status: string, draft = 0): CycleState => ({ status, teams: ['a', 'b'], draft, strikes: {}, unanswered: [], history: [] }) as CycleState

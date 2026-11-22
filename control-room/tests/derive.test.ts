@@ -118,7 +118,7 @@ describe('blocked', () => {
     const life = [le('SessionStart', 30), le('SubagentStart', 12, { agent_id: 't1', agent_type: 'test-author' })]
     const r = derive({ stageEvents: [se('build', 'started', 25), se('build', 'blocked', 8, 0, { detail: 'test dispute' })], lifecycle: life })
     expect(r).toMatchObject({ state: 'in-progress', flags: ['live'] })
-    expect(r.needs).toMatchObject({ kind: 'info', summary: `logged a stop at build ${ago(8).slice(11, 16)} UTC while its agents are still running; check its tab` })
+    expect(r.needs).toMatchObject({ kind: 'info', summary: `logged a stop at build ${ago(8).slice(11, 16)} UTC while its agents are still running; nothing to answer yet` })
     // a BLOCKED.md makes it a question, live agents or not
     const asked = derive({ stageEvents: [se('build', 'started', 25), se('build', 'blocked', 8)], lifecycle: life, files: { 'BLOCKED.md': file('# Blocked\n\nWhich?', 8, 'worktree') } })
     expect(asked).toMatchObject({ state: 'blocked', needs: { kind: 'answer', summary: 'Which?' } })

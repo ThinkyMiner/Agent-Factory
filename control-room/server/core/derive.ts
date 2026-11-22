@@ -181,6 +181,7 @@ export interface ItemView {
   issue?: { number: number; url: string; state: Issue['state'] }
   branch?: string
   live?: { agentType: string; since?: string }
+  active?: boolean // an agent or session of it is in Running now (set by deriveAll)
   feature?: string // team mode: the feature it was dispatched in
   waitsFor?: string // team mode, ready: what it waits for (the dispatch "after" column), set with the teams view
   mergedAt?: string
@@ -506,7 +507,7 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
     state = 'in-progress'
     since = lastPipe.ts
     reason = `logged a stop at ${lastPipe.stage} with no BLOCKED.md while its agents are still running`
-    needs = { kind: 'info', summary: `logged a stop at ${lastPipe.stage} ${new Date(lastPipe.ts).toISOString().slice(11, 16)} UTC while its agents are still running; check its tab`, since: lastPipe.ts }
+    needs = { kind: 'info', summary: `logged a stop at ${lastPipe.stage} ${new Date(lastPipe.ts).toISOString().slice(11, 16)} UTC while its agents are still running; nothing to answer yet`, since: lastPipe.ts }
   } else if ((blocked && !blocked.stale) || (lastPipe?.status === 'blocked' && pr?.state !== 'OPEN')) {
     state = 'blocked'
     const ev = [...pipeline].reverse().find((e) => e.status === 'blocked')
@@ -716,5 +717,6 @@ export function deriveAll(inputs: ItemInputs[], ctx: Context) {
     }
   }
   running.sort((a, b) => Number(a.agentType === 'foreman') - Number(b.agentType === 'foreman') || t(b.since) - t(a.since))
+  for (const r of running) { const i = byId.get(r.workId); if (i) i.active = true } // the one live-activity test, for the strip too
   return { items, needsYou, running, byId }
 }

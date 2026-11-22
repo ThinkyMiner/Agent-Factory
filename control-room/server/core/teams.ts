@@ -269,7 +269,7 @@ export interface FeatureView {
     ticketState?: string // open | accepted | declined | done | verified: its state: label, else its last ticket event
     from?: string // a ticket's sender
     open: boolean
-    item?: { state: ItemView['state']; pr?: number; prUrl?: string; autoMerge?: boolean; tier?: Tier; needs?: { kind: NeedsEntry['kind']; summary: string }; live?: boolean }
+    item?: { state: ItemView['state']; pr?: number; prUrl?: string; autoMerge?: boolean; tier?: Tier; needs?: { kind: NeedsEntry['kind']; summary: string }; active?: boolean; last?: { stage: string; status: string; at?: string; detail?: string } }
     dispatch?: DispatchRow
     waitsFor?: string
   }[]
@@ -500,7 +500,7 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
         ticketState: ticket ? ticketEvents.get(String(i.number)) ?? label(i.labels, 'state:') : undefined, // as deriveItem: the event, else the label
         from: ticket ? label(i.labels, 'from:') : undefined,
         open: i.state === 'OPEN',
-        item: it ? { state: it.state, pr: it.pr?.number, prUrl: it.pr?.url, autoMerge: it.pr?.autoMerge, tier: it.tier, needs: it.needs && { kind: it.needs.kind, summary: it.needs.summary }, live: it.flags.includes('live') } : undefined,
+        item: it ? { state: it.state, pr: it.pr?.number, prUrl: it.pr?.url, autoMerge: it.pr?.autoMerge, tier: it.tier, needs: it.needs && { kind: it.needs.kind, summary: it.needs.summary }, active: !!it.active, last: lastStage(it) } : undefined,
         dispatch,
         waitsFor,
       }
@@ -579,6 +579,12 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
 }
 
 
+/** An item's latest stage event, as the strip quotes it: the newest attempt of its current stage. */
+const lastStage = (it: ItemView) => {
+  const a = it.stages.find((s) => s.stage === it.stage)?.attempts.at(-1)
+  return a && it.stage ? { stage: it.stage, status: a.status, at: a.end ?? a.start, detail: a.detail?.slice(0, 160) } : undefined
+}
+
 /** Where things are: the newest feature (on main, its PR to main, its integration round, its items),
  *  and beside it a planning cycle not yet dispatched. A feature already on main is shown only alone. */
 export function phasesOf(cycle: CycleView | undefined, features: FeatureView[], pulls: Pull[], next: (p: Pull, floor?: Tier) => ReturnType<typeof prNext> = (p) => prNext(p, 'R2', 'none')): Phase[] {
@@ -625,8 +631,10 @@ function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefine
     const it = i.item!
     const n = i.number
     const team = i.team ?? '?'
-    if (it.state === 'blocked') return [{ n, who: 'you', what: `answer #${n} (it stopped with a question)` }]
-    // an open PR, whatever the item's state (a red one is "failed"): the PR's step, from the helper Needs you and Planning use
+    const out: Step[] = []
+    if (it.state === 'blocked') out.push({ n, who: 'you', what: `answer #${n} (it stopped with a question)` })
+    // an open PR, whatever the item's state (a red one is "failed", a question can come after it): the PR's step,
+    // from the helper Needs you and Planning use, with the item's known tier
     const pull = pulls.find((p) => p.number === it.pr && p.state === 'OPEN')
     if (pull || ['pr-open', 'awaiting-approval', 'awaiting-merge'].includes(it.state)) {
       const s = pull && stepOf(pull, it.tier ?? (it.state === 'awaiting-approval' ? 'R2' : undefined)) // the item's known tier (spec floor, review), as derive reads it
@@ -634,24 +642,24 @@ function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefine
       const what = s?.what ?? (it.state === 'awaiting-merge' ? 'merge it' : it.state === 'awaiting-approval' ? (it.autoMerge ? 'add human-approved; auto-merge then merges it once the checks pass' : 'add human-approved, wait for the checks to pass, then merge') : 'its checks and review (no GitHub data)')
       const who = s ? (s.who === 'its author' ? team : s.who) : it.state === 'pr-open' ? team : 'you'
       const wait = who === 'you' ? 'waiting on you' : s?.kind === 'failed' ? 'with failing checks' : pull?.isDraft ? 'in draft' : !pull || currentChecks(pull.checks).some((c) => checkState(c) === 'pending') ? 'waiting on checks' : 'merging'
-      return [{ n, who, what: `#${n}${it.pr ? ` (PR #${it.pr})` : ''}: ${what}`, wait }]
+      out.push({ n, who, what: `#${n}${it.pr ? ` (PR #${it.pr})` : ''}: ${what}`, wait })
     }
     if (it.state === 'in-progress') {
-      // "in progress" counts an agent at work; quiet is an item with none active
-      if (it.needs?.kind === 'quiet') return [{ n, who: team, what: `#${n} in progress, no agent active (${it.needs.summary}); check its tab`, quiet: true }]
-      if (it.needs?.kind === 'info') return [{ n, who: 'you', what: `#${n} ${it.needs.summary}`, active: true }]
-      if (it.needs?.kind === 'waiting-input') return [{ n, who: 'you', what: `#${n}: ${it.needs.summary}` }]
-      return [{ n, who: team, what: `finish #${n}`, active: true }]
+      const l = it.last
+      const last = l && `${l.stage} ${l.status}${l.at ? ` ${new Date(l.at).toISOString().slice(11, 16)} UTC` : ''}`
+      if (it.needs?.kind === 'waiting-input') out.push({ n, who: 'you', what: `#${n}: ${it.needs.summary}` })
+      else if (it.needs?.kind === 'info') out.push({ n, who: team, what: `#${n} ${it.needs.summary}`, active: true }) // a stop logged while its agents run
+      // "in progress" is an agent at work, by the test Running now uses
+      else if (!it.active) out.push({ n, who: team, what: `#${n} in progress, no agent active (${it.needs?.kind === 'quiet' ? it.needs.summary : last ? `last: ${last}` : 'nothing recorded'}); check its tab`, quiet: true })
+      // a failed or blocked last stage is not a plain "finish"
+      else if (l && (l.status === 'failed' || l.status === 'blocked')) out.push({ n, who: team, what: `#${n} in progress; last stage ${last}${l.detail ? `: ${l.detail}` : ''}`, active: true })
+      else out.push({ n, who: team, what: `finish #${n}${last ? ` (last: ${last})` : ''}`, active: true })
     }
-    if (it.state === 'failed') return [{ n, who: 'you', what: `#${n} stopped: ${it.needs?.summary ?? 'see the item'}` }]
-    return []
+    if (it.state === 'failed' && !pull) out.push({ n, who: 'you', what: `#${n} stopped: ${it.needs?.summary ?? 'see the item'}` })
+    return out
   })
-  // one line per owner, each linking its first item; your lines first
-  const owners = [...new Set(steps.map((x) => x.who))].sort((a, b) => Number(b === 'you') - Number(a === 'you'))
-  const lines = owners.map((who) => {
-    const xs = steps.filter((x) => x.who === who)
-    return { who, what: xs.map((x) => x.what).join('; '), href: `/items/${xs[0]!.n}` }
-  })
+  // one line per item step, each with its own link; yours first
+  const lines = [...steps].sort((a, b) => Number(b.who === 'you') - Number(a.who === 'you')).map((x) => ({ who: x.who, what: x.what, href: `/items/${x.n}` }))
   const ready = work.filter((i) => i.item?.state === 'ready' && i.waitsFor && !/^#/.test(i.waitsFor))
   const next = lines[0] ?? (ready.length ? { who: ready[0]!.team ?? '?', what: `start #${ready[0]!.number} (the sweep types it when the session is free)`, href: `/items/${ready[0]!.number}` } : undefined)
   const inProgress = steps.filter((x) => x.active).length
@@ -669,7 +677,7 @@ function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefine
   return {
     step: 'building',
     label: `Building ${f.name}: ${merged.length} of ${work.length} dispatched item${work.length === 1 ? '' : 's'} merged into its feature branch${follow.length ? `, +${follow.length} follow-up ticket${follow.length === 1 ? '' : 's'}${followMerged ? ` (${followMerged} merged)` : ''}` : ''}`,
-    detail: [inProgress ? `${inProgress} in progress.` : '', quiet ? `${quiet} quiet (no agent active).` : '', waiting.length ? `${waiting.join(', ')}.` : '', deps.length ? `${deps.join('; ')}.` : '', e2e].filter(Boolean).join(' '),
+    detail: [inProgress ? `${inProgress} in progress.` : '', quiet ? `${quiet} with no agent active.` : '', waiting.length ? `${waiting.join(', ')}.` : '', deps.length ? `${deps.join('; ')}.` : '', e2e].filter(Boolean).join(' '),
     next,
     ...(lines.length > 1 && { more: lines.slice(1) }),
   }
