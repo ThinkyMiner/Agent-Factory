@@ -96,4 +96,39 @@ test_policy_sh_prints_the_rigor_and_refuses_anything_else() {
   mkdir "$TEST_TMP/plain" && cd "$TEST_TMP/plain"; run "$SCRIPTS/policy.sh" rigor; expect_rc 0; expect_eq "$(cat "$OUT")" full "outside a repository"
 }
 
+test_autonomy_is_mains_and_anything_but_on_is_off() {
+  mkrepo r && mkdir -p r/factory
+  expect_eq "$(autonomy "$TEST_TMP/r")" off "no policy.env"
+  echo AUTONOMY=on > r/factory/policy.env
+  expect_eq "$(autonomy "$TEST_TMP/r")" on "no origin/main: the checkout's copy"
+  printf 'AUTONOMY=on\r\n' > r/factory/policy.env; expect_eq "$(autonomy "$TEST_TMP/r")" on "CRLF"
+  printf 'RIGOR=mvp\nAUTONOMY=on\n' > r/factory/policy.env; expect_eq "$(autonomy "$TEST_TMP/r")" on "beside other settings"
+  expect_eq "$(rigor "$TEST_TMP/r")" mvp "rigor still reads its own line"
+  local v
+  for v in ON yes true 1 'on # please' '"on"' 'on; touch pwned' '$(touch pwned)' '`touch pwned`' '' off onx; do
+    printf 'AUTONOMY=%s\n' "$v" > r/factory/policy.env
+    expect_eq "$(autonomy "$TEST_TMP/r")" off "AUTONOMY=$v"
+  done
+  printf ' AUTONOMY=on\n' > r/factory/policy.env; expect_eq "$(autonomy "$TEST_TMP/r")" off "indented: not a setting"
+  printf '#AUTONOMY=on\n' > r/factory/policy.env; expect_eq "$(autonomy "$TEST_TMP/r")" off "commented out"
+  printf 'AUTONOMY=on\nAUTONOMY=off\n' > r/factory/policy.env; expect_eq "$(autonomy "$TEST_TMP/r")" off "the last line wins"
+  printf 'XAUTONOMY=on\n' > r/factory/policy.env; expect_eq "$(autonomy "$TEST_TMP/r")" off "another key"
+  head -c 3000 /dev/urandom > r/factory/policy.env; expect_eq "$(autonomy "$TEST_TMP/r")" off "binary junk"
+  [ ! -e pwned ] && [ ! -e r/pwned ] || fail "a value was executed"
+  echo AUTONOMY=off > r/factory/policy.env; git -C r add -A && git -C r commit -qm policy
+  git clone -q --bare r origin.git && git -C r remote add origin "$TEST_TMP/origin.git" && git -C r fetch -q origin
+  echo AUTONOMY=on > r/factory/policy.env
+  expect_eq "$(autonomy "$TEST_TMP/r")" off "the checkout cannot turn it on"
+  git -C r commit -qam on; expect_eq "$(autonomy "$TEST_TMP/r")" off "nor a local commit"
+  git -C r push -q origin main && git -C r fetch -q origin
+  expect_eq "$(autonomy "$TEST_TMP/r")" on "main says on"
+}
+
+test_policy_sh_prints_autonomy() {
+  mkrepo r && mkdir -p r/factory && echo AUTONOMY=on > r/factory/policy.env && cd r
+  run "$SCRIPTS/policy.sh" autonomy; expect_rc 0; expect_eq "$(cat "$OUT")" on
+  run "$SCRIPTS/policy.sh" autonomy extra; expect_rc 2; expect_err "usage: policy.sh rigor|autonomy"
+  mkdir "$TEST_TMP/plain" && cd "$TEST_TMP/plain"; run "$SCRIPTS/policy.sh" autonomy; expect_rc 0; expect_eq "$(cat "$OUT")" off "outside a repository"
+}
+
 run_tests
