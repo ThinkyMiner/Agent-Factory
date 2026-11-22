@@ -110,4 +110,75 @@ test_full_rigor_keeps_the_review_round_whatever_a_checkout_says() {
   by orchestrator "$R" next; expect_rc 0; status_is review
 }
 
+autonomy_main() {  # AUTONOMY=<value> on main, pushed, before the cycle opens
+  printf 'AUTONOMY=%s\n' "${1-on}" >> "$MAIN/factory/policy.env"
+  git -C "$MAIN" add -A && git -C "$MAIN" commit -qm autonomy && git -C "$MAIN" push -q origin main
+}
+backend_only_decisions() { decisions_ok c001 | grep -vE 'share-button|share-research' | sed 's/^- affects: .*/- affects: none/'; }
+
+test_with_autonomy_the_brief_needs_no_approval_and_the_planning_pr_merges_itself() {
+  planning_setup; autonomy_main
+  by orchestrator "$R" open share-links; expect_rc 0; expect_out "from the human's proposal"
+  C=c001-share-links; P="$MAIN/planning/$C"; brief_ok "$C" backend
+  by orchestrator "$R" brief; expect_rc 0; expect_out "AUTONOMY=on: no approval to wait for"
+  jq -r .body "$FAKE_GH/pulls/1.json" | grep -q brief-approved && fail "the draft PR asks for the human's label"
+  jq -r .body "$FAKE_GH/pulls/1.json" | grep -q "merges itself" || fail "the draft PR does not say it merges itself"
+  by orchestrator "$R" next; expect_rc 0; status_is decisions                 # no brief-approved anywhere
+  expect_eq "$(jq -r .brief_approval "$P/state.json")" "none needed (AUTONOMY=on)"
+  backend_only_decisions > "$P/DECISIONS.md"
+  by orchestrator "$R" draft; expect_rc 0
+  by backend "$SCRIPTS/say.sh" accept --to orchestrator --body ok
+  by orchestrator "$R" next; expect_rc 0; status_is approval
+  expect_out "pull request #1 is ready and merges itself once CI is green (AUTONOMY=on)"
+  grep -qx "pr ready 1" "$FAKE_GH/log" && grep -qx "pr merge 1 --auto --merge" "$FAKE_GH/log" || fail "the planning PR was not set to merge itself: $(cat "$FAKE_GH/log")"
+  jq -e '.draft == false and .auto_merge != null' "$FAKE_GH/pulls/1.json" >/dev/null || fail "pull request #1 is not ready with auto-merge"
+}
+
+test_with_autonomy_github_refusing_auto_merge_is_said_not_fatal() {
+  planning_setup; autonomy_main; meeting_to decisions backend
+  backend_only_decisions > "$P/DECISIONS.md"; by orchestrator "$R" draft
+  by backend "$SCRIPTS/say.sh" accept --to orchestrator --body ok
+  echo 'pr merge' > "$FAKE_GH/fail"
+  by orchestrator "$R" next; expect_rc 0; status_is approval
+  expect_out "GitHub refused to set it to merge itself; run gh pr merge 1 --auto --merge"
+}
+
+test_with_autonomy_a_brief_changed_after_positions_still_stops_approval() {
+  planning_setup; autonomy_main; meeting_to decisions backend
+  backend_only_decisions > "$P/DECISIONS.md"; by orchestrator "$R" draft
+  by backend "$SCRIPTS/say.sh" accept --to orchestrator --body ok
+  echo "One more goal." >> "$P/BRIEF.md"
+  by orchestrator "$R" next; expect_rc 1; expect_err "BRIEF.md changed after it was settled (positions began)"
+  grep -q "pr merge" "$FAKE_GH/log" && fail "a changed brief still got auto-merge"; true
+}
+
+test_without_autonomy_on_main_the_brief_still_waits_for_the_label() {
+  local v
+  for v in off ON yes 'on # please' '"on"' '$(touch pwned)' ''; do
+    cd "$TEST_TMP" && rm -rf app app.teams origin.git gh pwned
+    planning_setup; autonomy_main "$v"
+    by orchestrator "$R" open share-links; brief_ok c001-share-links backend
+    by orchestrator "$R" brief; expect_rc 0; expect_out "adds brief-approved"
+    by orchestrator "$R" next; expect_rc 1; expect_err "the brief is not approved"
+  done
+  # on in the chair's checkout only, never pushed: still the human's label
+  printf 'AUTONOMY=on\n' >> "$MAIN/factory/policy.env"
+  by orchestrator "$R" next; expect_rc 1; expect_err "the brief is not approved"
+  [ ! -e "$MAIN/pwned" ] && [ ! -e pwned ] || fail "a policy value was run"
+}
+
+test_with_autonomy_open_questions_and_drafts_go_to_the_orchestrator() {
+  planning_setup; autonomy_main; meeting_to discussion-1
+  by orchestrator "$SCRIPTS/say.sh" question --to backend --body "Rate limits on the share endpoint?"; expect_out c001-m004
+  limits '{"round_minutes": 0}'
+  by orchestrator "$R" next; expect_rc 0
+  expect_out "still open, so the orchestrator decides each (decided_by: orchestrator), with each team's dissent recorded: c001-m004"
+  grep -q needs-human "$OUT" && fail "the round still asks for needs-human records"
+  limits '{"round_minutes": 60, "drafts": 1}'
+  by orchestrator "$R" next; status_is decisions
+  decisions_ok c001 decided none c001-m004 | perl -pe 's/^(- refs: c001-m004)$/$1\n- decided_by: orchestrator/' > "$P/DECISIONS.md"
+  by orchestrator "$R" draft; expect_rc 0
+  by orchestrator "$R" draft; expect_rc 1; expect_err "decide what is left yourself (decided_by: orchestrator, each team's dissent recorded)"
+}
+
 run_tests

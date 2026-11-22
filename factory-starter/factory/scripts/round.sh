@@ -7,17 +7,20 @@
 #   round.sh brief                   BRIEF.md is written: check it, commit, push, open the draft pull
 #                                    request. You approve the brief with the label brief-approved.
 #   round.sh next [--again]          close this round and open the next one:
-#     brief -> positions             brief-approved added by you (FACTORY_HUMAN) after the last push;
+#     brief -> positions             brief-approved added by you (FACTORY_HUMAN) after the last push
+#                                    (with AUTONOMY=on in factory/policy.env: no approval);
 #                                    a one-team cycle goes straight to decisions
 #     positions -> discussion-1      every team has submitted, or the round's time is up; then all
 #                                    positions are published at once
 #     discussion-N -> review         every question answered, or the time is up; questions still
-#                                    open must become needs-human decision records. With RIGOR=mvp
+#                                    open must become needs-human decision records (AUTONOMY=on: the
+#                                    orchestrator decides them, decided_by: orchestrator). With RIGOR=mvp
 #                                    (factory/policy.env) straight to decisions: no review round
 #     discussion-N -> N+1 (--again)  the same, at most limits.discussion_rounds [2; mvp 1] rounds
 #     review -> decisions
 #     decisions -> approval          a draft every team answered (or the time is up) and a valid
-#                                    DECISIONS.md; the pull request is marked ready for you
+#                                    DECISIONS.md; the pull request is marked ready for you (AUTONOMY=on:
+#                                    ready and set to merge itself once CI is green)
 #   round.sh draft                   DECISIONS.md is ready for the leads: check it, commit, push, ring
 #                                    them; at most limits.drafts [3; mvp 1]
 #   round.sh abandon --reason <text> end the cycle without decisions
@@ -36,6 +39,9 @@ teams=$(teams_file "$home") || die "planning is for team mode, and this factory 
 lock="$home/.factory/planning.lock"; mkdir -p "$home/.factory/planning"
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 rig=$(rigor "$home")
+aut=$(autonomy "$home")   # on: nobody waits for the human (factory/policy.env)
+# open_left: what to do with what the teams left open, in this mode's words
+open_left() { if [ "$aut" = on ]; then echo "the orchestrator decides each (decided_by: orchestrator), with each team's dissent recorded"; else echo "each must become a needs-human decision record"; fi; }
 # lim <key> <full default> [<mvp default>]: the roster's limit, else this rigor's default
 lim() { if [ "$rig" = mvp ] && [ -n "${3:-}" ]; then planning_limit "$teams" "$1" "$3"; else planning_limit "$teams" "$1" "$2"; fi; }
 event() { "$here/emit-event.sh" "$@" >/dev/null 2>&1 || true; }
@@ -84,7 +90,8 @@ EOF
   echo "$cyc" > "$home/.factory/planning/active"
   event round cycle="$cyc" status=opened
   echo "round: opened $cyc on branch planning/$cyc in $home."
-  echo "round: write planning/$cyc/BRIEF.md (or ask the human to), then run round.sh brief."
+  if [ "$aut" = on ]; then echo "round: write planning/$cyc/BRIEF.md from the human's proposal, then run round.sh brief."
+  else echo "round: write planning/$cyc/BRIEF.md (or ask the human to), then run round.sh brief."; fi
   exit 0
 fi
 
@@ -199,12 +206,15 @@ brief)
   push "brief"
   pr=$(jq -r '.pr // empty' <<<"$S")
   if [ -z "$pr" ]; then
-    url=$(printf 'Planning cycle %s: the brief, then positions, discussion, decisions.\n\nAdd the label **brief-approved** once you have read BRIEF.md. The decisions are approved by merging this pull request once it is ready (it is R2).\n' "$cyc" |
+    if [ "$aut" = on ]; then body="AUTONOMY=on: the orchestrator decides what the teams leave open, and this pull request merges itself once it is ready and CI is green."
+    else body="Add the label **brief-approved** once you have read BRIEF.md. The decisions are approved by merging this pull request once it is ready (it is R2)."; fi
+    url=$(printf 'Planning cycle %s: the brief, then positions, discussion, decisions.\n\n%s\n' "$cyc" "$body" |
           gh pr create --draft --base main --head "planning/$cyc" --title "Planning $cyc" --body-file -) || die "GitHub refused the draft pull request"
     pr=${url##*/}; [[ "$pr" =~ ^[0-9]+$ ]] || die "unexpected answer from gh: $url"
     save "$(jq -c --argjson p "$pr" '.pr = $p' <<<"$S")"; push "brief on #$pr"
   fi
-  echo "round: the brief for $cyc is on draft pull request #$pr. The human reads it and adds brief-approved; then round.sh next."
+  if [ "$aut" = on ]; then echo "round: the brief for $cyc is on draft pull request #$pr. AUTONOMY=on: no approval to wait for; run round.sh next."
+  else echo "round: the brief for $cyc is on draft pull request #$pr. The human reads it and adds brief-approved; then round.sh next."; fi
   ;;
 
 next)
@@ -212,8 +222,11 @@ next)
   case "$status" in
     brief)
       pr=$(jq -r '.pr // empty' <<<"$S"); [ -n "$pr" ] || die "the brief has no pull request yet (round.sh brief)"
-      human=${FACTORY_HUMAN:-$(gh variable get FACTORY_HUMAN 2>/dev/null || true)}
-      out=$(FACTORY_HUMAN=$human bash "$here/check-approval.sh" "$pr" brief-approved 2>&1) || die "the brief is not approved: ${out#approval: }"
+      if [ "$aut" = on ]; then out="approval: none needed (AUTONOMY=on)"
+      else
+        human=${FACTORY_HUMAN:-$(gh variable get FACTORY_HUMAN 2>/dev/null || true)}
+        out=$(FACTORY_HUMAN=$human bash "$here/check-approval.sh" "$pr" brief-approved 2>&1) || die "the brief is not approved: ${out#approval: }"
+      fi
       save "$(jq -c --arg sha "$(git -C "$home" hash-object "$dir/BRIEF.md")" --arg a "${out#approval: }" '.brief_sha = $sha | .brief_approval = $a' <<<"$S")"
       event approval cycle="$cyc" what=brief
       if [ "$(echo $cteams | wc -w)" -eq 1 ]; then move decisions; else move positions; fi
@@ -235,7 +248,7 @@ next)
         [ "$timed_out" = 1 ] || die "$(ready)"
         save "$(jq -c --arg ids "$(awk '{print $1}' <<<"$m" | sort -u | tr '\n' ' ')" '.unanswered = (.unanswered + ($ids | split(" ") | map(select(length > 0))) | unique)' <<<"$S")"
         strike $(awk '$2 != "orchestrator" {print $2}' <<<"$m" | sort -u)
-        echo "round: still open, so each must become a needs-human decision record: $(awk '{print $1}' <<<"$m" | sort -u | tr '\n' ' ')"
+        echo "round: still open, so $(open_left): $(awk '{print $1}' <<<"$m" | sort -u | tr '\n' ' ')"
       fi
       if [ "$again" = 1 ]; then move "discussion-$((n + 1))"
       elif [ "$rig" = mvp ]; then move decisions; echo "round: RIGOR=mvp: no review round"
@@ -247,11 +260,19 @@ next)
       m=$(missing_from "$(responded)")
       if [ -n "$m" ]; then [ "$timed_out" = 1 ] || die "$(ready)"; strike $m; fi
       bash "$here/decisions.sh" validate || die "DECISIONS.md is not ready for approval (above)"
-      [ "$(git -C "$home" hash-object "$dir/BRIEF.md")" = "$(jq -r .brief_sha <<<"$S")" ] || die "BRIEF.md changed after it was approved; abandon and open a new cycle"
+      [ "$(git -C "$home" hash-object "$dir/BRIEF.md")" = "$(jq -r .brief_sha <<<"$S")" ] || die "BRIEF.md changed after it was $([ "$aut" = on ] && echo "settled (positions began)" || echo approved); abandon and open a new cycle"
       move approval; push "for approval"
       pr=$(jq -r .pr <<<"$S")
       gh pr ready "$pr" >/dev/null 2>&1 || die "could not mark pull request #$pr ready"
-      echo "round: pull request #$pr is ready. The human approves the decisions by merging it (R2, human-approved); then the orchestrator runs dispatch.sh."
+      if [ "$aut" = on ]; then
+        if gh pr merge "$pr" --auto --merge >/dev/null 2>&1; then
+          echo "round: pull request #$pr is ready and merges itself once CI is green (AUTONOMY=on); then dispatch runs (autostart types /dispatch)."
+        else
+          echo "round: pull request #$pr is ready, but GitHub refused to set it to merge itself; run gh pr merge $pr --auto --merge once it can (AUTONOMY=on)."
+        fi
+      else
+        echo "round: pull request #$pr is ready. The human approves the decisions by merging it (R2, human-approved); then the orchestrator runs dispatch.sh."
+      fi
       exit 0 ;;
     *) die "nothing to move: the cycle is $status" ;;
   esac
@@ -260,7 +281,7 @@ next)
 
 draft)
   [ "$status" = decisions ] || die "drafts belong to the decisions round (the cycle is $status)"
-  [ "$draft" -lt "$(lim drafts 3 1)" ] || die "limit: $draft drafts (limits.drafts); settle what is left as needs-human records and run round.sh next"
+  [ "$draft" -lt "$(lim drafts 3 1)" ] || die "limit: $draft drafts (limits.drafts); $([ "$aut" = on ] && echo "decide what is left yourself (decided_by: orchestrator, each team's dissent recorded)" || echo "settle what is left as needs-human records") and run round.sh next"
   bash "$here/decisions.sh" validate --new-draft || die "DECISIONS.md is not ready to show the teams (above)"
   save "$(jq -c '.draft += 1' <<<"$S")"; draft=$((draft + 1))
   say_as orchestrator all decision "draft $draft: planning/$cyc/DECISIONS.md"

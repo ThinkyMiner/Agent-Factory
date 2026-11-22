@@ -12,7 +12,8 @@
 #   - a session working with no event for silent_minutes [30]
 #   - a team whose session has ended (hc sees a shell in its Herdr tab, where claude ran)
 #   - a build slot held for slot_hours [4]
-#   - a planning round (positions, discussion, review, decisions) open for round_minutes [60]
+#   - a planning round (positions, discussion, review, decisions; with AUTONOMY=on the brief too,
+#     which then waits on nobody) open for round_minutes [60]
 # Each new finding becomes an escalation event in .factory/events.jsonl, and the orchestrator's
 # Herdr tab gets one fixed doorbell when it waits for input, never the findings themselves. A finding is
 # escalated once while it lasts; a doorbell that could not ring is retried next pass.
@@ -151,7 +152,15 @@ done < <(jq -r '.held // {} | objects | to_entries[] | [.key, (.value | strings)
 brief_rung=$(jq -r '.brief_rung // empty | strings' <<<"$state")
 if cyc=$(active_cycle "$home" 2>/dev/null); then
   IFS=$'\t' read -r st since < <(jq -r '[(.status // "" | strings), (.round_started_at // "" | strings)] | @tsv' "$home/planning/$cyc/state.json" 2>/dev/null) || true
+  overdue() {
+    local t0; t0=$(epoch "${since:-}")
+    if [ -n "$t0" ] && [ $(( (now - t0) / 60 )) -ge "$(limit round_minutes 60)" ]; then
+      add "round:$cyc:$st:$since" round "$cyc" "planning $cyc has been in its $st round for $(( (now - t0) / 60 )) minutes: run /plan to close it"
+    fi
+  }
+  [ "${st:-}" = brief ] && [ "$(autonomy "$home")" = on ] && st=brief-autonomous
   case "${st:-}" in
+    brief-autonomous) st=brief; overdue ;;     # AUTONOMY=on: the brief waits on nobody
     brief)
       pr=$(jq -r '.pr // empty | numbers' "$home/planning/$cyc/state.json" 2>/dev/null)
       if [ -n "$pr" ] && [ "$brief_rung" != "$cyc" ]; then
@@ -161,11 +170,7 @@ if cyc=$(active_cycle "$home" 2>/dev/null); then
           brief_rung=$cyc     # rung, or left in .factory/rings for the next pass
         fi
       fi ;;
-    positions|discussion-*|review|decisions)
-      t0=$(epoch "${since:-}")
-      if [ -n "$t0" ] && [ $(( (now - t0) / 60 )) -ge "$(limit round_minutes 60)" ]; then
-        add "round:$cyc:$st:$since" round "$cyc" "planning $cyc has been in its $st round for $(( (now - t0) / 60 )) minutes: run /plan to close it"
-      fi ;;
+    positions|discussion-*|review|decisions) overdue ;;
   esac
 fi
 

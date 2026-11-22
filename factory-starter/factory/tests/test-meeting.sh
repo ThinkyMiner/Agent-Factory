@@ -169,6 +169,55 @@ test_limit_drafts() {
   by orchestrator "$R" draft; expect_rc 1; expect_err "limit: 3 drafts"
 }
 
+# AUTONOMY=on on main: the same meeting with nobody to wait for. The orchestrator settles the brief,
+# the open question and the objection; the planning PR is set to merge itself.
+test_with_autonomy_three_leads_reach_decisions_and_dispatch_without_the_human() {
+  planning_setup; fake_branches
+  echo AUTONOMY=on >> "$MAIN/factory/policy.env"; git -C "$MAIN" add -A; git -C "$MAIN" commit -qm autonomy; git -C "$MAIN" push -q origin main
+  by orchestrator "$R" open share-links; expect_rc 0; expect_out "from the human's proposal"
+  C=c001-share-links; P="$MAIN/planning/$C"
+  brief_ok "$C" "backend, frontend, research"
+  by orchestrator "$R" brief; expect_rc 0; expect_out "no approval to wait for"
+  by orchestrator "$R" next; expect_rc 0; status_is positions                  # no brief-approved label
+  position_ok > "$TEST_TMP/pos"
+  for t in backend frontend research; do by "$t" "$POS" submit < "$TEST_TMP/pos"; expect_rc 0; done
+  by orchestrator "$R" next; expect_rc 0; status_is discussion-1
+
+  # A question nobody answers in time goes to the orchestrator, not the human.
+  by orchestrator "$SAY" question --to frontend --body "Do share links expire?"; expect_out c001-m004
+  limits '{"round_minutes": 0}'
+  by orchestrator "$R" next; expect_rc 0; expect_out "the orchestrator decides each (decided_by: orchestrator), with each team's dissent recorded: c001-m004"
+  for d in "$MAIN" "$BE" "$FE" "$RE"; do git -C "$d" checkout -q -- factory/teams.json; done   # back to the default limits
+  by orchestrator "$R" next; expect_rc 0; status_is decisions
+  decisions_ok c001 needs-human "frontend did not answer in time" c001-m004 > "$P/DECISIONS.md"
+  by orchestrator "$R" draft; expect_rc 0                                    # needs-human is still allowed
+  decisions_ok c001 decided none c001-m004 > "$P/DECISIONS.md"
+  by orchestrator "$R" draft; expect_rc 1; expect_err "question c001-m004 was left open in discussion"
+  decisions_ok c001 decided none c001-m004 | perl -pe 's/^(- refs: c001-m004)$/$1\n- decided_by: orchestrator/' > "$P/DECISIONS.md"
+  by orchestrator "$R" draft; expect_rc 0; expect_out "draft 2 is out"
+
+  # An objection stands until the orchestrator decides with the objecting team named under Dissent.
+  by backend "$SAY" accept --to orchestrator --body "Accept draft 2."; expect_rc 0
+  by frontend "$SAY" objection --to orchestrator --refs c001-D02 --body "Seven days is too short for links in a newsletter."; expect_rc 0
+  by research "$SAY" accept --to orchestrator --body "Accept draft 2."; expect_rc 0
+  by orchestrator "$R" next; expect_rc 1; expect_err "frontend objected to c001-D02: an objection stands until the record is decided by the orchestrator (decided_by: orchestrator) or needs-human with frontend named under Dissent"
+  decisions_ok c001 decided "frontend: seven days is too short for newsletter links; kept to limit leaked links." c001-m004 \
+    | perl -pe 's/^(- refs: c001-m004)$/$1\n- decided_by: orchestrator/' > "$P/DECISIONS.md"
+  by orchestrator "$R" draft; expect_rc 0; expect_out "draft 3 is out"
+  for t in backend frontend research; do by "$t" "$SAY" accept --to orchestrator --body "Accept draft 3."; expect_rc 0; done
+  : > "$FAKE_GH/log"
+  by orchestrator "$R" next; expect_rc 0; status_is approval; expect_out "merges itself once CI is green (AUTONOMY=on)"
+  grep -qx "pr merge 1 --auto --merge" "$FAKE_GH/log" || fail "the planning PR was not set to merge itself: $(cat "$FAKE_GH/log")"
+  jq -e '.draft == false and .auto_merge != null' "$FAKE_GH/pulls/1.json" >/dev/null || fail "pull request #1 is not ready with auto-merge"
+  [ -z "$(ls "$FAKE_GH/events")" ] || fail "something looked for the human's label: $(ls "$FAKE_GH/events")"
+
+  # GitHub merges it on green CI; dispatch takes the orchestrator's record like the human's.
+  git -C "$MAIN" push -q origin "planning/$C:main"
+  by orchestrator "$DIS" "$C"; expect_rc 0; expect_out "c001-share-links is feature/f001-share-links, 4 item(s)"
+  d=$(git -C "$TEST_TMP/origin.git" show "main:planning/$C/DECISIONS.md")
+  grep -q "^- decided_by: orchestrator$" <<<"$d" && grep -q "^frontend: seven days" <<<"$d" || fail "the merged record lost the orchestrator's decision or frontend's dissent"
+}
+
 test_one_team_cycle_skips_positions_and_discussion() {
   planning_setup; meeting_to brief-approved "backend"
   status_is decisions

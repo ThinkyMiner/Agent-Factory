@@ -122,6 +122,22 @@ test_a_planning_round_past_its_time() {
   [ ! -e pwned ] || fail "a status was run as a command"
 }
 
+test_with_autonomy_a_brief_past_its_time_is_an_overdue_round() {
+  setup; echo '[]' > "$FAKE_GH/issues.json"; mkdir -p .factory/planning planning/c001-share
+  echo c001-share > .factory/planning/active; echo AUTONOMY=on >> factory/policy.env
+  jq -n --arg a "$(ago 4000)" '{status: "brief", pr: 1, round_started_at: $a}' > planning/c001-share/state.json
+  run "$W"; expect_rc 0; expect_out "planning c001-share has been in its brief round for 66 minutes: run /plan to close it"
+  expect_eq "$(escalations)" "round c001-share"
+  [ -z "$(ls "$FAKE_GH/events" 2>/dev/null)" ] && ! grep -q "events\|brief-approved" "$FAKE_GH/log" 2>/dev/null || fail "the sweep looked for the human's label"
+  jq -n --arg a "$(ago 9000)" '{status: "approval", round_started_at: $a}' > planning/c001-share/state.json
+  run "$W"; grep -q "planning c001" "$OUT" && fail "approval was reported as a round: it waits on CI"
+  jq -n --arg a "$(ago 600)" '{status: "brief", round_started_at: $a}' > planning/c001-share/state.json
+  run "$W"; grep -q "planning c001" "$OUT" && fail "a fresh brief was reported"
+  sed -i.bak 's/^AUTONOMY=on$/AUTONOMY=ON/' factory/policy.env
+  jq -n --arg a "$(ago 9000)" '{status: "brief", round_started_at: $a}' > planning/c001-share/state.json
+  run "$W"; grep -q "planning c001" "$OUT" && fail "AUTONOMY=ON counted as on"; true
+}
+
 test_a_finding_that_returns_is_escalated_again() {
   setup; echo '[]' > "$FAKE_GH/issues.json"; sessions orchestrator:idle backend:working
   mkdir -p .factory; printf '{"ts":"%s","type":"stage","team":"backend"}\n' "$(ago 2400)" > .factory/events.jsonl

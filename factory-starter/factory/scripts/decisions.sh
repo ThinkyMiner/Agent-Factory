@@ -11,11 +11,14 @@
 #   - risk_floor: R0..R3 (opt) - supersedes: c000-D03 (opt)   - contract: contracts/... (opt)
 #   - refs: c001-m014, ... (opt: transcript ids it settles)
 #   - decided_by: human (opt: a needs-human record the human has since decided, now status: decided)
+#     or orchestrator, only with AUTONOMY=on in main's factory/policy.env (the orchestrator decided
+#     what the teams left open)
 #   ### Decision / ### Reasoning / ### Alternatives rejected / ### Dissent   (each non-empty)
 # then "## Work breakdown", a table: | item | team | delivers | after | contract | decisions |
 # validate also checks, from state.json and the transcript: every question left open in discussion
-# is in the refs of a needs-human record, or of a decided one with decided_by: human, and every objection to the current draft made its record
-# needs-human with the objecting team named under Dissent (skipped with --new-draft).
+# is in the refs of a needs-human record, or of a decided one with decided_by: human (or orchestrator,
+# AUTONOMY=on), and every objection to the current draft made its record needs-human, or (AUTONOMY=on)
+# decided_by: orchestrator, with the objecting team named under Dissent (skipped with --new-draft).
 # validate and items also read the specialists' raises: a line "RAISE: c001-D02 R2 <why>" in the
 # cycle's threat-model.md or db-review.md (a plain file; either may be missing) needs that record of
 # this cycle to have risk_floor at least R2. A raise that is malformed, or names any other record, fails.
@@ -29,6 +32,7 @@ check() {
   perl -e '
     use strict; use warnings;
     my ($file, $cycle, $teams, $unans, $objs, $mode, @raises) = @ARGV;
+    my $aut = ($ENV{DECISIONS_AUTONOMY} // "") eq "on";   # the orchestrator decides what is left open
     my %team = map { $_ => 1 } grep { length } split /,/, $teams;
     my ($pre) = $cycle =~ /^(c\d{3})-/ or die "decisions: bad cycle id\n";
     open(my $fh, "<", $file) or do { print STDERR "decisions: $file is missing\n"; exit 1 };
@@ -56,7 +60,9 @@ check() {
       defined $f->{affects} or $e->("$where: affects is missing (teams, or none)");
       for ($list->($f->{affects})) { $team{$_} or $e->("$where: affects names $_, not a cycle team") }
       ($f->{status} // "") =~ /^(decided|needs-human)$/ or $e->("$where: status must be decided or needs-human");
-      !defined $f->{decided_by} || $f->{decided_by} eq "human" && ($f->{status} // "") eq "decided" or $e->("$where: decided_by can only be human, on a record with status: decided");
+      !defined $f->{decided_by} || ($f->{decided_by} eq "human" || $aut && $f->{decided_by} eq "orchestrator") && ($f->{status} // "") eq "decided"
+        or $e->("$where: decided_by can only be human" . ($aut ? " or orchestrator" : "") . ", on a record with status: decided"
+                . (!$aut && $f->{decided_by} eq "orchestrator" ? " (decided_by: orchestrator needs AUTONOMY=on in factory/policy.env on main)" : ""));
       !defined $f->{risk_floor} || $f->{risk_floor} =~ /^R[0-3]$/ or $e->("$where: risk_floor must be R0 to R3");
       !defined $f->{supersedes} || $f->{supersedes} =~ /^c\d{3}-D\d{2}$/ && $f->{supersedes} !~ /^\Q$pre\E-/ or $e->("$where: supersedes must name a record of an earlier cycle");
       !defined $f->{contract} || $f->{contract} =~ m{^contracts/[^\s]+$} && $f->{contract} !~ m{\.\.} or $e->("$where: contract must be a path under contracts/");
@@ -66,17 +72,21 @@ check() {
       }
     }
     my %nh = map { $_->{id} => $_ } grep { ($_->{f}{status} // "") eq "needs-human" } @recs;
-    my @hold = (values %nh, grep { ($_->{f}{decided_by} // "") eq "human" } @recs);
+    my $settled = sub { my $r = shift; my $by = $r->{f}{decided_by} // ""; ($r->{f}{status} // "") eq "decided" && ($by eq "human" || $aut && $by eq "orchestrator") };
+    my @hold = (values %nh, grep { $settled->($_) } @recs);
     for my $q (grep { length } split /,/, $unans) {
       grep { my $r = $_; grep { $_ eq $q } $list->($r->{f}{refs}) } @hold
-        or $e->("question $q was left open in discussion: a needs-human record must list it under refs (once the human decides it: status: decided, decided_by: human)");
+        or $e->("question $q was left open in discussion: " . ($aut
+          ? "the orchestrator decides it in a record that lists it under refs (status: decided, decided_by: orchestrator)"
+          : "a needs-human record must list it under refs (once the human decides it: status: decided, decided_by: human)"));
     }
     for my $o (grep { length } split /,/, $objs) {
       my ($t, $id) = split /:/, $o, 2;
       my ($r) = grep { $_->{id} eq $id } @recs;
       if (!$r) { $e->("$t objected to $id, which is not in DECISIONS.md"); next }
-      ($r->{f}{status} // "") eq "needs-human" && ($r->{s}{dissent} // "") =~ /\b\Q$t\E\b/i
-        or $e->("$t objected to $id: an objection stands until the record is needs-human with $t named under Dissent");
+      (($r->{f}{status} // "") eq "needs-human" || $aut && ($r->{f}{status} // "") eq "decided" && ($r->{f}{decided_by} // "") eq "orchestrator")
+        && ($r->{s}{dissent} // "") =~ /\b\Q$t\E\b/i
+        or $e->("$t objected to $id: an objection stands until the record is " . ($aut ? "decided by the orchestrator (decided_by: orchestrator) or needs-human" : "needs-human") . " with $t named under Dissent");
     }
     for my $rf (@raises) {
       next unless -e $rf || -l $rf;
@@ -124,7 +134,7 @@ check() {
       $visit->($_->{item}) for @items;
       $loop and $e->("work breakdown: the after column has a loop through $loop");
     }
-    if ($mode eq "items") { keys %nh and $e->(scalar(keys %nh) . " needs-human record(s) left: " . join(", ", sort keys %nh) . ". The human decides them before dispatch.") }
+    if ($mode eq "items") { keys %nh and $e->(scalar(keys %nh) . " needs-human record(s) left: " . join(", ", sort keys %nh) . ". " . ($aut ? "The orchestrator decides them (decided_by: orchestrator) before dispatch." : "The human decides them before dispatch.")) }
     if (@err) { print STDERR "decisions: $_\n" for @err; exit 1 }
     if ($mode eq "items") {
       sub js { my $s = shift; $s =~ s/(["\\])/\\$1/g; $s =~ s/\n/\\n/g; $s =~ s/([\x00-\x1f])/sprintf("\\u%04x", ord $1)/ge; "\"$s\"" }
@@ -162,7 +172,7 @@ validate|items)
     ob=$(cat "$dir/discussion.jsonl" 2>/dev/null | jq -r --argjson d "$(jq '.draft // 0' <<<"$S")" \
       'select(type == "object" and .round == "decisions" and .kind == "objection" and .draft == $d) | .from as $f | (.refs // [])[] | strings | "\($f):\(.)"' 2>/dev/null | paste -sd, - || true)
   fi
-  check "$dir/DECISIONS.md" "$cyc" "$tm" "$un" "$ob" "$cmd" "$dir/threat-model.md" "$dir/db-review.md"
+  DECISIONS_AUTONOMY=$(autonomy "$home") check "$dir/DECISIONS.md" "$cyc" "$tm" "$un" "$ob" "$cmd" "$dir/threat-model.md" "$dir/db-review.md"
   ;;
 check-append-only)
   base=${1:-}; [ -n "$base" ] || die "usage: decisions.sh check-append-only <base-ref>"

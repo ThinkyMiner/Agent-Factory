@@ -192,4 +192,59 @@ test_a_branch_behind_base_does_not_delete_records_approved_after_it() {
   run "$D" check-append-only main; expect_rc 1; expect_err "shares no history"
 }
 
+test_with_autonomy_the_orchestrator_decides_what_is_left_open() {
+  cycle; jq '.unanswered = ["c001-m004"]' "$P/state.json" > s && mv s "$P/state.json"
+  mkdir -p factory; echo AUTONOMY=on > factory/policy.env                 # no origin: the checkout's copy
+  rec() { decisions_ok c001 "$1" "${3:-none}" c001-m004 | X="$2" perl -pe 's/^(- refs: c001-m004)$/$1\n$ENV{X}/'; }
+  rec decided "- decided_by: orchestrator" > "$P/DECISIONS.md"
+  run "$D" validate "$P"; expect_rc 0; expect_out "0 needs-human"
+  run "$D" items "$P"; expect_rc 0                                       # dispatch may go
+  rec decided "- decided_by: human" > "$P/DECISIONS.md"
+  run "$D" validate "$P"; expect_rc 0                                    # the human may still decide
+  rec decided "" > "$P/DECISIONS.md"
+  run "$D" validate "$P"; expect_rc 1; expect_err "the orchestrator decides it in a record that lists it under refs (status: decided, decided_by: orchestrator)"
+  rec needs-human "" > "$P/DECISIONS.md"
+  run "$D" validate "$P"; expect_rc 0; expect_out "1 needs-human"
+  run "$D" items "$P"; expect_rc 1; expect_err "The orchestrator decides them (decided_by: orchestrator) before dispatch."
+  rec needs-human "- decided_by: orchestrator" > "$P/DECISIONS.md"
+  run "$D" validate "$P"; expect_rc 1; expect_err "decided_by can only be human or orchestrator, on a record with status: decided"
+  local bad
+  for bad in "- decided_by: Orchestrator" "- decided_by: orchestrator, human" "- decided_by: orchestrator;touch pwned" \
+             "- decided_by: \$(touch pwned)" "- decided_by: \`touch pwned\`" "- decided_by: backend" "- decided_by:"; do
+    rec decided "$bad" > "$P/DECISIONS.md"; run "$D" validate "$P"; expect_rc 1; expect_err "decided_by can only be human or orchestrator"
+  done
+  [ ! -e pwned ] && [ ! -e "$P/pwned" ] || fail "decided_by was run"
+  # an objection to the current draft: settled only with the objecting team under Dissent
+  printf '{"id":"c001-m009","round":"decisions","kind":"objection","from":"frontend","draft":1,"refs":["c001-D02"],"body":"x"}\n' > "$P/discussion.jsonl"
+  rec decided "- decided_by: orchestrator" > "$P/DECISIONS.md"
+  run "$D" validate "$P"; expect_rc 1; expect_err "frontend objected to c001-D02: an objection stands until the record is decided by the orchestrator (decided_by: orchestrator) or needs-human with frontend named under Dissent"
+  rec decided "" "frontend wanted fourteen days for newsletter links." > "$P/DECISIONS.md"
+  run "$D" validate "$P"; expect_rc 1; expect_err "frontend objected to c001-D02"   # dissent alone, nobody decided
+  rec decided "- decided_by: human" "frontend wanted fourteen days for newsletter links." > "$P/DECISIONS.md"
+  run "$D" validate "$P"; expect_rc 1; expect_err "frontend objected to c001-D02"   # the rule is for the orchestrator's records
+  rec decided "- decided_by: orchestrator" "frontend wanted fourteen days for newsletter links." > "$P/DECISIONS.md"
+  run "$D" validate "$P"; expect_rc 0
+  rec decided "- decided_by: orchestrator" "frontendish wanted more." > "$P/DECISIONS.md"
+  run "$D" validate "$P"; expect_rc 1; expect_err "frontend objected to c001-D02"   # the team, by name
+}
+
+test_without_autonomy_only_the_human_decides() {
+  cycle; jq '.unanswered = ["c001-m004"]' "$P/state.json" > s && mv s "$P/state.json"
+  rec() { decisions_ok c001 decided none c001-m004 | perl -pe 's/^(- refs: c001-m004)$/$1\n- decided_by: orchestrator/'; }
+  local v
+  for v in "" off ON yes 'on # please' '"on"' '$(touch pwned)'; do
+    mkdir -p factory; printf 'AUTONOMY=%s\n' "$v" > factory/policy.env
+    rec > "$P/DECISIONS.md"; run "$D" validate "$P"; expect_rc 1
+    expect_err "decided_by can only be human, on a record with status: decided (decided_by: orchestrator needs AUTONOMY=on in factory/policy.env on main)"
+  done
+  rm factory/policy.env; run "$D" validate "$P"; expect_rc 1; expect_err "needs AUTONOMY=on"
+  # once there is an origin/main, a checkout cannot turn it on
+  git add -A && git commit -qm all && git clone -q --bare . "$TEST_TMP/o.git" && git remote add origin "$TEST_TMP/o.git" && git fetch -q origin
+  echo AUTONOMY=on > factory/policy.env
+  run "$D" validate "$P"; expect_rc 1; expect_err "needs AUTONOMY=on"
+  git add -A && git commit -qm on && git push -q origin HEAD:main && git fetch -q origin
+  run "$D" validate "$P"; expect_rc 0
+  [ ! -e pwned ] || fail "a policy value was run"
+}
+
 run_tests
