@@ -583,7 +583,7 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
     } else if (idleMs > stale) {
       flags.push('quiet')
       const open = itemRuns.filter((r) => r.outcome === 'no-end').at(-1)
-      needs = { kind: 'quiet', summary: `no event for ${fmtMin(idleMs)} during ${stageName}${open ? ` (${open.agentType}: no end recorded)` : ''}`, since: new Date(lastActivity ?? ctx.now).toISOString() }
+      needs = { kind: 'quiet', summary: `${idleMs === Infinity ? 'no event recorded' : `no event for ${fmtMin(idleMs)}`} during ${stageName}${open ? ` (${open.agentType}: no end recorded)` : ''}`, since: new Date(lastActivity ?? ctx.now).toISOString() }
     }
   } else if (issue?.labels.includes('factory:ready') || dispatched) {
     state = 'ready'

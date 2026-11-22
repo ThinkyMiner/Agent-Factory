@@ -66,6 +66,12 @@ describe('in progress', () => {
     const r = derive({ stageEvents: [se('build', 'started', 45)], lifecycle: [le('SessionStart', 46), le('SubagentStop', 10, { agent_id: 'b', agent_type: 'builder' })] })
     expect(r.flags).not.toContain('quiet')
   })
+  test('quiet with no event at all says so, not "Infinity min"', () => {
+    const r = derive({ branch: 'work/1-x' })
+    expect(r).toMatchObject({ state: 'in-progress', flags: ['quiet'] })
+    expect(r.needs!.summary).toMatch(/^no event recorded/)
+    expect(r.needs!.summary).not.toContain('Infinity')
+  })
   test('live: an open subagent in a live session', () => {
     const life = [le('SessionStart', 20), le('SubagentStart', 4, { agent_id: 'a1', agent_type: 'builder' })]
     const r = derive({ stageEvents: [se('build', 'started', 4)], lifecycle: life })
