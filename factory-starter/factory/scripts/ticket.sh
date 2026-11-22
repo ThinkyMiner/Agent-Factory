@@ -6,10 +6,12 @@
 #   ticket.sh accept <n>                  receiving team
 #   ticket.sh decline <n> --reason <text> receiving team
 #   ticket.sh done <n> --pr <number>      receiving team, once its pull request is open
+#   ticket.sh answer <n> --answer <text>  receiving team, for a question: the answer is the work
 #   ticket.sh verify <n>                  requesting team: the work does what it asked; closes it
 #   ticket.sh dispute <n> --reason <text> requesting team, once per ticket, after decline or done
 #   ticket.sh withdraw <n> --reason <text> requesting team, before done: no longer needed; closes it
-# Types: request, bug, contract-change, decision-change. Needs, why, done and reasons are at least
+# Types: request, bug, contract-change, decision-change, question (a product or design question,
+# usually to the orchestrator; answered with `answer`, which marks it done). Needs, why, done and reasons are at least
 # 30 characters, so the receiver gets context. A team opens at most 5 tickets a day and has at
 # most 2 open with any one team (limits.tickets_per_day, limits.open_tickets_per_pair in
 # factory/teams.json). Text is posted with @mentions and HTML neutralised.
@@ -57,7 +59,7 @@ create)
   done
   valid_team_name "$to" && team_names "$teams" | grep -qxF -- "$to" || die "--to must be an active team: $(team_names "$teams" | tr '\n' ' ')"
   [ "$to" != "$me" ] || die "a ticket goes to another team; $me does its own work through /work"
-  case "$type" in request|bug|contract-change|decision-change) ;; *) die "--type must be request, bug, contract-change or decision-change" ;; esac
+  case "$type" in request|bug|contract-change|decision-change|question) ;; *) die "--type must be request, bug, contract-change, decision-change or question" ;; esac
   need_text needs "$needs" 30; need_text why "$why" 30; need_text done "$done_when" 30
   [ -n "$(printf '%s' "$blocks" | tr -d '[:space:]')" ] || die "--blocks is required: what waits on this (issue numbers), or 'nothing'"
   [ "${#blocks}" -le 2000 ] || die "--blocks is longer than 2000 characters"
@@ -89,7 +91,7 @@ $(clean_text "$done_when")
 
 ## Context
 From **$me** to **$to**, type \`$type\`${feature:+, feature \`$feature\`}${decision:+, decision \`$decision\`}.
-Change this ticket only with \`factory/scripts/ticket.sh\` (accept, decline, done, verify, dispute)."
+Change this ticket only with \`factory/scripts/ticket.sh\` (accept, decline, done, answer, verify, dispute)."
   labels=(ticket "to:$to" "from:$me" "type:$type" state:open)
   [ -z "$feature" ] || labels+=("feature:$feature")
   ensure_labels "${labels[@]}" || die "cannot list labels"
@@ -101,12 +103,15 @@ Change this ticket only with \`factory/scripts/ticket.sh\` (accept, decline, don
   ring_team "$(factory_home "$top")" "$to" "A ticket for you: run /inbox." || true
   ;;
 
-accept|decline|done|verify|dispute|withdraw)
+accept|decline|done|answer|verify|dispute|withdraw)
   n=${1:-}; [[ "$n" =~ ^[1-9][0-9]{0,8}$ ]] || die "usage: ticket.sh $cmd <issue-number>"
   shift; reason="" pr=""
   while [ $# -gt 0 ]; do
     [ $# -ge 2 ] || die "$1 needs a value"
-    case "$1" in --reason) reason=$2 ;; --pr) pr=$2 ;; *) die "unknown option $1" ;; esac
+    case "$cmd:$1" in
+      answer:--answer) reason=$2 ;; answer:*) die "unknown option $1" ;;
+      *:--reason) reason=$2 ;; *:--pr) pr=$2 ;; *) die "unknown option $1" ;;
+    esac
     shift 2
   done
   json=$(gh issue view "$n" --json number,state,labels,comments) || die "cannot read issue #$n"
@@ -116,12 +121,15 @@ accept|decline|done|verify|dispute|withdraw)
   [ -n "$from" ] && [ -n "$to" ] && [ -n "$state" ] || die "#$n has lost its from:, to: or state: label; ask the orchestrator to repair it"
   [ "$(jq -r .state <<<"$json")" = OPEN ] || die "#$n is closed"
   case "$cmd" in
-    accept|decline|done) [ "$me" = "$to" ] || die "only $to, the receiving team, can $cmd #$n" ;;
+    accept|decline|done|answer) [ "$me" = "$to" ] || die "only $to, the receiving team, can $cmd #$n" ;;
     verify|dispute|withdraw) [ "$me" = "$from" ] || die "only $from, the team that asked, can $cmd #$n" ;;
   esac
   case "$cmd:$state" in
     accept:open|accept:disputed) new=accepted ;;
     decline:open|decline:disputed) new=declined; need_text reason "$reason" 30 ;;
+    answer:open|answer:accepted|answer:disputed) new=done
+      [ "$(get type:)" = question ] || die "#$n is a $(get type:) ticket; answer is for questions (done --pr for work)"
+      need_text answer "$reason" 10 ;;
     done:accepted) new=done; [[ "$pr" =~ ^[1-9][0-9]{0,8}$ ]] || die "done needs --pr <number>: the pull request that does it"
       gh pr view "$pr" --json number >/dev/null 2>&1 || die "there is no pull request #$pr" ;;
     verify:done) new=verified ;;
@@ -153,8 +161,8 @@ $(clean_text "$reason")"
   echo "ticket #$n: $state → $new"
   # A declined or finished ticket is the asking team's to dispute or verify: ring it. The
   # orchestrator's tickets are a feature's, and autostart types /integrate when they change.
-  case "$cmd" in decline|done) [ "$from" = orchestrator ] || ring_team "$(factory_home "$top")" "$from" "Something is waiting for you: run /inbox." || true ;; esac
+  case "$cmd" in decline|done|answer) [ "$from" = orchestrator ] || ring_team "$(factory_home "$top")" "$from" "Something is waiting for you: run /inbox." || true ;; esac
   ;;
 
-*) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1 ;;
+*) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1 ;;
 esac

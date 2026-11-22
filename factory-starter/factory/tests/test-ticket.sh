@@ -210,4 +210,38 @@ test_a_declined_or_finished_ticket_rings_the_team_that_asked() {
   [ ! -s "$TEST_TMP/hd/hc.log" ] || fail "rang the orchestrator, which autostart serves: $(cat "$TEST_TMP/hd/hc.log")"
 }
 
+test_a_question_is_answered_and_wakes_the_team_that_asked() {
+  setup; fake_herdr
+  Q="Should the subtitle cut with an ellipsis or wrap to a second line when it is too long?"
+  as frontend create --to orchestrator --type question --needs "$Q" --why "The spec and the brief disagree on long subtitles" --blocks "#9" --done "An answer the spec can record as the decision for #9"
+  expect_rc 0; expect_out "ticket #1: frontend → orchestrator (question)"
+  expect_eq "$(labels 1)" "from:frontend state:open ticket to:orchestrator type:question"
+  rm -f "$TEST_TMP/hd/hc.log"
+  as frontend answer 1 --answer "Wrap it to a second line"; expect_rc 1; expect_err "only orchestrator, the receiving team, can answer"
+  as orchestrator answer 1 --answer "short"; expect_rc 1; expect_err "--answer needs at least 10 characters"
+  as orchestrator answer 1 --reason "Wrap it to a second line, never cut"; expect_rc 1; expect_err "unknown option --reason"
+  as orchestrator answer 1; expect_rc 1
+  as orchestrator answer 1 --pr 5; expect_rc 1; expect_err "unknown option --pr"
+  as orchestrator answer 1 --answer 'Wrap it, never cut. @everyone <img src=x onerror=alert(1)> $(touch pwned)'; expect_rc 0; expect_out "open → done"
+  expect_eq "$(labels 1)" "from:frontend state:done ticket to:orchestrator type:question"
+  last=$(issue 1 | jq -r '.comments[-1].body')
+  printf '%s' "$last" | grep -q '"action":"answer"' || fail "no machine line for the answer: $last"
+  printf '%s' "$last" | grep -qF 'Wrap it, never cut.' || fail "the answer is not on the ticket: $last"
+  printf '%s' "$last" | grep -qF '@everyone' && fail "an @mention went out raw: $last"
+  printf '%s' "$last" | grep -qF '<img' && fail "HTML went out raw: $last"
+  [ ! -e pwned ] && [ ! -e "$MAIN/pwned" ] || fail "the answer was executed"
+  expect_eq "$(cat "$TEST_TMP/hd/hc.log")" "t3|Something is waiting for you: run /inbox."     # frontend is woken
+  as frontend verify 1; expect_rc 0; expect_out "done → verified"
+  expect_eq "$(grep '"type":"ticket"' "$MAIN/.factory/events.jsonl" | jq -r 'select(.action == "answer") | .state')" done
+}
+
+test_answer_is_only_for_questions_and_open_ones() {
+  setup; ask frontend backend
+  as backend answer 1 --answer "Use GET /api/notes?id= instead of a new route"; expect_rc 1; expect_err "answer is for questions (done --pr for work)"
+  as frontend create --to backend --type question --needs "Which field holds the note's owner in the API response?" --why "The share page shows who wrote the note" --blocks "nothing" --done "The field name, so the page can read it"
+  as backend answer 2 --answer "owner_id, an integer, see server/notes.js"; expect_rc 0
+  as backend answer 2 --answer "owner_id, an integer, see server/notes.js"; expect_rc 1; expect_err "#2 is done; answer is not possible from there"
+  as frontend done 2 --pr 5; expect_rc 1
+}
+
 run_tests
