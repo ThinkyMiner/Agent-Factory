@@ -213,6 +213,8 @@ describe('merged and closed', () => {
     const r = derive({ stageEvents: RUN_TO_PR(), pull: pull({ isDraft: true, autoMerge: false, labels: ['risk:R1', 'human-approved'] }) })
     expect(r).toMatchObject({ state: 'pr-open', reason: 'PR #101 is a draft: its author marks it ready for review' })
     expect(r.needs).toBeUndefined()
+    const red = derive({ stageEvents: RUN_TO_PR(), pull: pull({ isDraft: true, checks: [{ name: 'factory-tests', status: 'COMPLETED', conclusion: 'FAILURE' }] }) })
+    expect(red.state).toBe('pr-open') // a draft first, as the PR helper says
   })
 
   test('a CI re-run on the same head: only each check\'s current run counts (a running re-run is newer than any result)', () => {

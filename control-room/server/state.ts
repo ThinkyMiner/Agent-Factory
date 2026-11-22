@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { byNeeds, deriveAll, expireRuns, indexLifecycle, type Context, type NeedsEntry, type NeedsKind } from './core/derive.ts'
 import type { SweepFinding } from './core/parse.ts'
 import { prNext, pullNeeds, pullTier } from './core/meta.ts'
-import { maxTier } from './core/types.ts'
+import { maxTier, type Tier } from './core/types.ts'
 import { GitHubDataSchema, type GitHubData, type GitHubStatus } from './core/types.ts'
 import { loadSnapshot } from './sources/load.ts'
 import { loadMeta } from './sources/meta.ts'
@@ -32,7 +32,7 @@ export async function computeState(repo: string, gh: GitHubInput, opts: { now?: 
   const d = deriveAll(snap.inputs, ctx)
   // team mode: the cycle, features, teams and sessions, and what in them needs you
   const teamsIn = await loadTeams(snap)
-  const next = (p: Parameters<typeof prNext>[0], floor?: 'R2') => prNext(p, maxTier([pullTier(p, snap.rules).tier, floor].filter((x) => x !== undefined)), snap.autoMergeMax)
+  const next = (p: Parameters<typeof prNext>[0], floor?: Tier) => prNext(p, maxTier([pullTier(p, snap.rules).tier, floor].filter((x) => x !== undefined)), snap.autoMergeMax)
   const t = teamsIn ? deriveTeams(teamsIn, { issues: gh.data?.issues ?? [], pulls: gh.data?.pulls ?? [], repo: gh.data?.repo }, d.byId, next) : null
   if (t) snap.notices.push(...t.notices)
   for (const [id, w] of t?.waits ?? []) {

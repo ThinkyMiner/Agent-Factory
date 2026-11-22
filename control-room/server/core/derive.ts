@@ -515,16 +515,16 @@ export function deriveItem(inp: ItemInputs, ctx: Context): ItemView | null {
     if (!blocked || blocked.stale) note('a blocked event was recorded but there is no current BLOCKED.md; the question comes from the event')
     reason = `stopped at ${ev?.stage ?? lastStage?.stage ?? 'unknown stage'} and wrote BLOCKED.md`
     needs = { kind: 'answer', summary, since: since ?? '' }
-  } else if (pr?.state === 'OPEN' && failingChecks.length) {
-    state = 'failed'
-    since = pr.createdAt
-    reason = `CI check${failingChecks.length > 1 ? 's' : ''} failing on PR #${pr.number}`
-    needs = { kind: 'failed', summary: `CI failing: ${failingChecks.map((c) => c.name).join(', ')}`, since }
   } else if (pr?.state === 'OPEN' && pr.isDraft) {
     // a draft merges for no one: its author marks it ready for review first
     state = 'pr-open'
     since = pr.createdAt
     reason = `PR #${pr.number} is a draft: its author marks it ready for review`
+  } else if (pr?.state === 'OPEN' && failingChecks.length) {
+    state = 'failed'
+    since = pr.createdAt
+    reason = `CI check${failingChecks.length > 1 ? 's' : ''} failing on PR #${pr.number}`
+    needs = { kind: 'failed', summary: `CI failing: ${failingChecks.map((c) => c.name).join(', ')}`, since }
   } else if (pr?.state === 'OPEN' && tierRank(tier ?? 'R0') >= 2 && !approved) {
     state = 'awaiting-approval'
     since = pr.createdAt

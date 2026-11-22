@@ -92,6 +92,7 @@ describe('over the demo', async () => {
     const draft = { ...pr, isDraft: true, autoMerge: false, labels: ['risk:R2', 'human-approved'], timeline: [{ type: 'labeled', label: 'human-approved', at: new Date(NOW).toISOString() }], checks: [{ name: 'factory-tests', status: 'COMPLETED', conclusion: 'SUCCESS' }] }
     expect(prNext(draft, 'R2', 'R1')).toMatchObject({ kind: 'info', who: 'its author', what: 'mark it ready for review' })
     expect(prNext({ ...draft, labels: ['risk:R1'] }, 'R1', 'none')).toMatchObject({ who: 'its author', what: 'mark it ready for review' }) // not "merge it"
+    expect(prNext({ ...draft, labels: [], checks: [{ name: 'risk-gate', status: 'COMPLETED', conclusion: 'FAILURE' }] }, undefined, 'R1')).toMatchObject({ who: 'its author', what: 'mark it ready for review' }) // a draft first, red or not
   })
 
   test('audits newest first, text kept raw for the sanitising renderer', () => {

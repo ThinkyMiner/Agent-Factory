@@ -8,6 +8,7 @@ import { decisionRecords, parseAttribution, parseCycleState, parseDiscussion, pa
 import type { ItemView } from '../server/core/derive.ts'
 import { herdrSessions } from '../server/sources/teams.ts'
 import { Factory } from '../server/factory.ts'
+import { prNext } from '../server/core/meta.ts'
 import { apiState } from '../server/http.ts'
 import { PULLS, normalisePull } from '../server/sources/github.ts'
 import type { GitHubData, Pull } from '../server/core/types.ts'
@@ -92,6 +93,14 @@ describe('parsers', () => {
     const [r] = phasesOf(undefined, [{ ...f, items: [row(8, 'failed')] }], [red])
     expect(r!.next).toEqual({ who: 'frontend', what: '#8 (PR #17): fix the failing check: factory-tests', href: '/items/8' })
     expect(r!.detail).toMatch(/^1 pull request with failing checks\. /)
+  })
+
+  test('the phase passes the item\'s known tier to the PR helper, whatever the item\'s state', () => {
+    const floors: (string | undefined)[] = []
+    const pr17 = { number: 17, title: 't', state: 'OPEN', isDraft: true, headRefName: 'work/8-x', headSha: '', labels: [], createdAt: '', url: '', body: '', autoMerge: false, files: [], timeline: [], checks: [] } as Pull
+    const item = { number: 8, title: 't8', url: '', team: 'frontend', ticket: false, open: true, item: { state: 'pr-open' as const, pr: 17, tier: 'R2' as const } }
+    phasesOf(undefined, [{ name: 'f001-x', refs: {}, docs: [], pulls: [], items: [item] }], [pr17], (p, floor) => (floors.push(floor), prNext(p, floor, 'R1')))
+    expect(floors).toEqual(['R2']) // the spec's R2 floor, though the PR has no risk label and the item is not awaiting approval
   })
 
   test('the phase: an item in progress with no agent active is quiet, not running; a stop logged while agents run is said as such', () => {

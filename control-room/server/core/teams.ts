@@ -4,7 +4,7 @@
 // factory (message bodies, briefs, decisions) is passed through as strings, never interpreted.
 import { z } from 'zod'
 import type { ItemView, NeedsEntry } from './derive.ts'
-import { checkState, currentChecks, type FactoryEvent, type Issue, type Notice, type Parsed, type Pull } from './types.ts'
+import { checkState, currentChecks, type FactoryEvent, type Issue, type Notice, type Parsed, type Pull, type Tier } from './types.ts'
 import { roundWords } from './words.ts'
 import { prNext } from './meta.ts'
 
@@ -269,7 +269,7 @@ export interface FeatureView {
     ticketState?: string // open | accepted | declined | done | verified: its state: label, else its last ticket event
     from?: string // a ticket's sender
     open: boolean
-    item?: { state: ItemView['state']; pr?: number; prUrl?: string; autoMerge?: boolean; needs?: { kind: NeedsEntry['kind']; summary: string }; live?: boolean }
+    item?: { state: ItemView['state']; pr?: number; prUrl?: string; autoMerge?: boolean; tier?: Tier; needs?: { kind: NeedsEntry['kind']; summary: string }; live?: boolean }
     dispatch?: DispatchRow
     waitsFor?: string
   }[]
@@ -363,7 +363,7 @@ function eventText(o: Record<string, unknown>): string {
 
 /** `next`: a pull request's one next action and who takes it (state.ts passes the risk rules in), the same
  *  function Needs you uses, so the two never disagree. Without it a planning PR is taken as R2. */
-export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[]; repo?: string }, items: Map<string, ItemView>, next: (p: Pull, floor?: 'R2') => ReturnType<typeof prNext> = (p) => prNext(p, 'R2', 'none')): { view: TeamsView; needs: NeedsEntry[]; notices: Notice[]; waits: Map<string, string> } {
+export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[]; repo?: string }, items: Map<string, ItemView>, next: (p: Pull, floor?: Tier) => ReturnType<typeof prNext> = (p) => prNext(p, 'R2', 'none')): { view: TeamsView; needs: NeedsEntry[]; notices: Notice[]; waits: Map<string, string> } {
   const notices: Notice[] = []
   const needs: NeedsEntry[] = []
 
@@ -500,7 +500,7 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
         ticketState: ticket ? ticketEvents.get(String(i.number)) ?? label(i.labels, 'state:') : undefined, // as deriveItem: the event, else the label
         from: ticket ? label(i.labels, 'from:') : undefined,
         open: i.state === 'OPEN',
-        item: it ? { state: it.state, pr: it.pr?.number, prUrl: it.pr?.url, autoMerge: it.pr?.autoMerge, needs: it.needs && { kind: it.needs.kind, summary: it.needs.summary }, live: it.flags.includes('live') } : undefined,
+        item: it ? { state: it.state, pr: it.pr?.number, prUrl: it.pr?.url, autoMerge: it.pr?.autoMerge, tier: it.tier, needs: it.needs && { kind: it.needs.kind, summary: it.needs.summary }, live: it.flags.includes('live') } : undefined,
         dispatch,
         waitsFor,
       }
@@ -581,7 +581,7 @@ export function deriveTeams(inp: TeamsInput, gh: { issues: Issue[]; pulls: Pull[
 
 /** Where things are: the newest feature (on main, its PR to main, its integration round, its items),
  *  and beside it a planning cycle not yet dispatched. A feature already on main is shown only alone. */
-export function phasesOf(cycle: CycleView | undefined, features: FeatureView[], pulls: Pull[], next: (p: Pull, floor?: 'R2') => ReturnType<typeof prNext> = (p) => prNext(p, 'R2', 'none')): Phase[] {
+export function phasesOf(cycle: CycleView | undefined, features: FeatureView[], pulls: Pull[], next: (p: Pull, floor?: Tier) => ReturnType<typeof prNext> = (p) => prNext(p, 'R2', 'none')): Phase[] {
   const st = cycle?.state
   const planning = cycle && st?.status !== 'dispatched' && st?.status !== 'closed' ? cyclePhase(cycle) : undefined
   const f = features.find((x) => x.name === st?.feature) ?? features.at(-1)
@@ -599,7 +599,7 @@ function cyclePhase(cycle: CycleView): Phase {
   return { step: 'planning', label: `Planning ${cycle.name}: ${roundWords(st.status)}`, next: owed(cycle.waiting[0]) ?? { who: 'orchestrator', what: 'close the round (round.sh next)', href: '/planning' } }
 }
 
-function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefined, stepOf: (p: Pull, floor?: 'R2') => ReturnType<typeof prNext>): Phase {
+function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefined, stepOf: (p: Pull, floor?: Tier) => ReturnType<typeof prNext>): Phase {
   const toMain = pulls.filter((p) => p.headRefName === `integrate/${f.name}`).sort((a, b) => b.number - a.number)[0]
   if (toMain?.state === 'MERGED') return { step: 'merged', label: `Merged: ${f.name} is on main`, detail: `PR #${toMain.number} merged.`, next: cycle && !cycle.active ? { who: 'orchestrator', what: 'the next planning cycle (/plan)', href: '/planning' } : undefined }
   if (toMain?.state === 'OPEN') {
@@ -629,7 +629,7 @@ function featurePhase(f: FeatureView, pulls: Pull[], cycle: CycleView | undefine
     // an open PR, whatever the item's state (a red one is "failed"): the PR's step, from the helper Needs you and Planning use
     const pull = pulls.find((p) => p.number === it.pr && p.state === 'OPEN')
     if (pull || ['pr-open', 'awaiting-approval', 'awaiting-merge'].includes(it.state)) {
-      const s = pull && stepOf(pull, it.state === 'awaiting-approval' ? 'R2' : undefined)
+      const s = pull && stepOf(pull, it.tier ?? (it.state === 'awaiting-approval' ? 'R2' : undefined)) // the item's known tier (spec floor, review), as derive reads it
       // without GitHub data: what the item's state says
       const what = s?.what ?? (it.state === 'awaiting-merge' ? 'merge it' : it.state === 'awaiting-approval' ? (it.autoMerge ? 'add human-approved; auto-merge then merges it once the checks pass' : 'add human-approved, wait for the checks to pass, then merge') : 'its checks and review (no GitHub data)')
       const who = s ? (s.who === 'its author' ? team : s.who) : it.state === 'pr-open' ? team : 'you'
