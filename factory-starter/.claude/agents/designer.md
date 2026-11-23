@@ -14,7 +14,17 @@ Before designing, read `product/BRIEF.md`, `docs/architecture.md`, the design co
 (`contracts/design/tokens.json`, `contracts/design/screens.md`) when they exist, and the
 components and styles the product already has. Reuse before you invent.
 
-For a work item you are given a spec path and its work folder. Write `<work folder>/design.md`:
+For a work item you are given a spec path and its work folder, and for a page's first build or
+a redesign usually a design-scout board: its use case card, the board and the lead's picks. Write
+`<work folder>/design.md`:
+- **Direction** (first, for anything people see): the use case read in two lines; the picks you
+  build on, with their links, and what you take from each (palette, type mood, composition,
+  imagery, motion; never a reference's logo, copy or exact images); the palette and type you
+  chose and why they fit this product; one signature idea that makes it this product and not a
+  template. The browser's default look is not a direction: stacked full-width inputs, a plain
+  blue button and a bare list is what you are here to replace. Fonts and images obey the brief
+  (no external service: system fonts or committed files; photos only under the Unsplash or Pexels
+  license, credited).
 - **Flow:** the steps a person takes, from where they start to the result each acceptance
   criterion names, including the empty, loading, error and success states.
 - **Screens:** for each screen, what is on it, in reading order, and what each control does.

@@ -43,7 +43,9 @@ Then:
 
 What counts as blocking: an acceptance criterion not visible on screen, a broken layout in
 either scheme or at either width, unreadable contrast, a lost or illogical focus order, any
-critical or serious axe violation. Taste is non-blocking. Use `escalate` when the decision needs
+critical or serious axe violation, and a page that ignores design.md's Direction (its palette,
+type and composition are not what you see) or shows the browser's default look where design.md
+names a direction. That last one blocks with rigor `mvp` too: it is what every user sees. Taste is non-blocking. Use `escalate` when the decision needs
 a human: a product or design call, or a spec that is itself wrong.
 With rigor `mvp`, a layout flaw blocks only when it hides, cuts or breaks something a user
 meets on an ordinary screen; pixel polish and rare inputs are non-blocking follow-ups.

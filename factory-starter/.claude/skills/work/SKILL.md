@@ -93,6 +93,14 @@ item as waiting on it, so its owner sees what their step unblocks. On the pr sta
   (`jq '.teams[env.FACTORY_TEAM].ui_review' factory/teams.json`) and the spec adds or
   changes a screen, a flow or a design token: delegate to `designer` with the spec path.
   It writes `<work folder>/design.md`. From then on, give its path with the spec path.
+- Taste, when the item makes a page or changes how one looks (a first build, a redesign) and the
+  `design-scout` skill is installed (`ls ~/.claude/skills/design-scout/SKILL.md`): before the
+  designer, run `/design-scout` with the product, who uses it and the spec, scratch folder
+  `$TMPDIR/design-scout-<id>`. You stand in for its user: nobody else picks. Write the use case
+  card from `product/BRIEF.md`, gather (phase 1), build the board as a local file without
+  publishing it, then pick yourself: the 2-3 references that fit the card best, never the safe
+  grey one. No prototypes: hand the card, the board path and your picks with one line of reason
+  each to the designer, who turns them into design.md's Direction.
 - Skip the tests only if the spec has `tests: none` (documentation-only items).
 - Delegate to `test-author` with the spec path.
 - If it reports untestable criteria, send them to `spec-writer` once, then rerun.
