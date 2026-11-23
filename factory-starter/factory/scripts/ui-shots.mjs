@@ -10,7 +10,13 @@
 // more state of every page, shot and scanned the same way as <page>--<state>-<scheme>-<device>.png:
 //   <name>: <step>; <step>...      name: a-z, 0-9 and -, up to 30; # starts a comment line
 //   fill <label> = <text>   select <label> = <option text>   click <button name>
-// Fields are found by their visible label, buttons by their accessible name, as a person would.
+// Fields are found by their visible label, buttons by their accessible name, as a person would;
+// when several buttons share the name (an Edit on every row), the first on the page is clicked.
+// A state's steps run once, then the page is shot in each scheme and width as it stands, so a
+// click that saves or deletes happens once. The product keeps its data from state to state, in
+// file order: a later state can click Edit on a row an earlier state saved. A state no step can
+// reach (rows the API refuses, a server error) is not for this tool: the ui-reviewer lists it under
+// NOT VERIFIED with the test that covers it.
 // ponytail: a step's text cannot hold ';'; add quoting if a spec ever needs one.
 // Uses the product's own playwright and @axe-core/playwright, found from the current directory
 // (or NODE_PATH). It installs nothing.
@@ -130,7 +136,7 @@ async function act(page, s) {
   try {
     if (s.op === 'fill') await page.getByLabel(s.target, { exact: true }).fill(s.value, o);
     else if (s.op === 'select') await page.getByLabel(s.target, { exact: true }).selectOption({ label: s.value }, o);
-    else await page.getByRole('button', { name: s.target, exact: true }).click(o);
+    else await page.getByRole('button', { name: s.target, exact: true }).first().click(o);
   } catch (e) { throw new Error(`step "${s.op} ${s.target}": ${e.message.split('\n')[0]}`); }
 }
 const left = (now, u) => { const n = new URL(now); return n.protocol !== u.protocol || (u.protocol === 'file:' ? n.pathname !== u.pathname : n.origin !== u.origin); };
@@ -153,14 +159,15 @@ for (const u of pages) {
     const context = await browser.newContext();     // AxeBuilder needs a page from its own context
     const page = await context.newPage();
     try {
+      await page.setViewportSize(devices.desktop);
+      const res = await page.goto(u.href, { waitUntil: 'load', timeout: 30000 });
+      if (res && !res.ok()) throw new Error(`HTTP ${res.status()}`);
+      for (const s of steps) await act(page, s);
+      if (steps.length && left(page.url(), u)) throw new Error(`a step left the page for ${page.url()}`);
       for (const scheme of ['light', 'dark']) {
         await page.emulateMedia({ colorScheme: scheme });
         for (const [device, size] of Object.entries(devices)) {
           await page.setViewportSize(size);
-          const res = await page.goto(u.href, { waitUntil: 'load', timeout: 30000 });
-          if (res && !res.ok()) throw new Error(`HTTP ${res.status()}`);
-          for (const s of steps) await act(page, s);
-          if (steps.length && left(page.url(), u)) throw new Error(`a step left the page for ${page.url()}`);
           write(`${shot}-${scheme}-${device}.png`, await page.screenshot({ fullPage: true }));
           if (device !== 'desktop') continue;
           const { violations } = await new AxeBuilder({ page }).analyze();

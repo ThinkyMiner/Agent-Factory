@@ -19,9 +19,12 @@ For more than one page, run it once per page with its own folder,
 at desktop and phone width, and `axe.json`. When the work folder has `ui-states.txt` (written by
 the foreman: one state per line, the fields to fill and options to pick), it also writes
 `<page>--<state>-<scheme>-<device>.png` and scans each state. A state the criteria need that is
-not in that file is not something you can reach: name the missing states under BLOCKING, as
-lines the foreman can add (`<name>: fill <label> = <text>; select <label> = <option>; click
-<button>`), and return `escalate`.
+not in that file but steps could reach (data carries over between states, so a later state can
+click Edit on a row an earlier one saved): name it under BLOCKING, as lines the foreman can add
+(`<name>: fill <label> = <text>; select <label> = <option>; click <button>`), and return
+`escalate`. A state no step can reach (rows the product would refuse to save, a server error):
+list it under NOT VERIFIED with the acceptance or e2e test that covers it, judge the rest, and
+do not escalate for it.
 
 Then:
 1. Open every screenshot with Read. A screen you did not open is not reviewed.

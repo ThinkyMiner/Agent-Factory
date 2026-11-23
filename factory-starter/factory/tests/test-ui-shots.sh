@@ -68,6 +68,7 @@ test_valid_input_without_playwright_says_how_to_install_and_writes_nothing() {
 fake_playwright() {
   mkdir -p node_modules/playwright node_modules/@axe-core/playwright
   cat > node_modules/playwright/index.js <<'JS'
+let count = 0;   // clicks on Count, across every page and state, as a server keeps its data
 exports.chromium = { launch: async () => ({ close: async () => {}, newContext: async () => ({ close: async () => {},
   newPage: async () => { let scheme, size, url, did = []; return {
     emulateMedia: async (o) => { scheme = o.colorScheme; },
@@ -75,7 +76,7 @@ exports.chromium = { launch: async () => ({ close: async () => {}, newContext: a
     goto: async (u) => { url = u; did = []; if (u.includes('missing')) throw new Error('net::ERR_FILE_NOT_FOUND'); const s = u.includes('gone') ? 404 : 200; return { ok: () => s === 200, status: () => s }; },
     getByLabel: (l) => ({ fill: async (v) => { if (l === 'Nowhere') throw new Error('Timeout 5000ms exceeded.\nwaiting for getByLabel'); did.push(`fill ${l}=${v}`); },
       selectOption: async (o) => { did.push(`select ${l}=${o.label}`); } }),
-    getByRole: (r, o) => ({ click: async () => { if (o.name === 'Leave') url = 'https://elsewhere.example/'; did.push(`click ${r} ${o.name}`); } }),
+    getByRole: (r, o) => { const b = { click: async () => { if (o.name === 'Leave') url = 'https://elsewhere.example/'; if (o.name === 'Count') count++; did.push(`click ${r} ${o.name}${o.name === 'Count' ? ' ' + count : ''}`); } }; return { ...b, first: () => b }; },
     url: () => url,
     screenshot: async () => Buffer.from(`png ${scheme} ${size.width}x${size.height}${did.length ? ' ' + did.join(',') : ''}`) }; } }) }) };
 JS
@@ -134,6 +135,17 @@ TXT
   expect_eq "$(jq -c '[.[] | [.page, .state, .scheme]]' work/1-x/screens/axe.json)" '[["index",null,"light"],["index",null,"dark"],["index","long-title","light"],["index","long-title","dark"],["index","bad-colour","light"],["index","bad-colour","dark"]]'
   expect_out "wrote 13 files"; expect_out "index--long-title dark: color-contrast (serious, 1 nodes)"
   [ ! -e pwned ] && [ ! -e pwned2 ] || fail "a step's text ran as a command"
+}
+
+test_a_states_steps_run_once_and_every_shot_shows_their_result() {
+  command -v node >/dev/null || return 0
+  app; fake_playwright
+  printf 'saved: click Count\nlater: click Count\n' > work/1-x/ui-states.txt
+  shots --out work/1-x/screens "$(PAGE)"; expect_rc 0
+  for f in light-desktop light-phone dark-desktop dark-phone; do
+    expect_eq "$(cat work/1-x/screens/index--saved-$f.png | sed 's/^png [a-z]* [0-9x]* //')" "click button Count 1"
+    expect_eq "$(cat work/1-x/screens/index--later-$f.png | sed 's/^png [a-z]* [0-9x]* //')" "click button Count 2"
+  done
 }
 
 test_a_bad_states_file_is_a_usage_error_and_nothing_renders() {
