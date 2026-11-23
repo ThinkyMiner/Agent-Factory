@@ -217,14 +217,15 @@ ring_team() {
   command -v herdr-app >/dev/null 2>&1 && command -v hc >/dev/null 2>&1 || return 1
   term=$(herdr-app ls 2>/dev/null | jq -r --arg l "$(basename "$1")" --arg t "$2" \
     '[.spaces[]? | select(.name == $l)][0].tabs[]? | select(.name == $t) | .terminals[0].terminal // empty' 2>/dev/null | head -1)
-  if [ -n "$term" ] && hc_ring "$term" "$3"; then return 0; fi
+  if [ -n "$term" ] && { hc_ring "$term" "$3" || { [ "${4:-}" = queue ] && hc_queue "$term" "$3"; }; }; then return 0; fi
   ring_later "$1" "$2"; return 1
 }
 
 # ring_later <home> <team>: note that <team> is owed a doorbell, as an empty file
 # .factory/rings/<team>. Only that one is owed is kept, never the words: the sweep rings with
 # later_line, its own fixed sentence, so nothing written there can reach another session.
-ring_later() { valid_team_name "$2" && mkdir -p "$1/.factory/rings" 2>/dev/null && : > "$1/.factory/rings/$2"; }
+# An existing note is left as it is, so its age says how long the team has been owed the ring.
+ring_later() { valid_team_name "$2" && mkdir -p "$1/.factory/rings" 2>/dev/null && { [ -e "$1/.factory/rings/$2" ] || : > "$1/.factory/rings/$2"; }; }
 later_line() {
   if [ "$1" = orchestrator ]; then echo "Planning: a round can close. Run /plan."
   else echo "Something is waiting for you: run /inbox."; fi
@@ -238,6 +239,14 @@ later_line() {
 hc_ring() { hc_waiting "$1" && hc send "$1" "$2" >/dev/null 2>&1; }
 # hc_agent <terminal>: the program hc sees in front in that terminal (claude-code, zsh, ...), or nothing.
 hc_agent() { hc ls --json 2>/dev/null | jq -r --arg t "$1" 'first(.terminals[]? | select(.address == $t) | .agent // empty) // empty' 2>/dev/null; }
+# hc_queue <terminal> <text>: type text into a session hc calls working. Claude Code takes it after
+# the turn; a session can sit at "working" with its prompt free while a background task of its own
+# runs, and would never be rung otherwise. Never a blocked one (a dialog would take the keys).
+hc_queue() {
+  local st
+  st=$(hc ls --json 2>/dev/null | jq -r --arg t "$1" 'first(.terminals[]? | select(.address == $t) | .status) // empty' 2>/dev/null)
+  [ "$st" = working ] && hc send "$1" "$2" >/dev/null 2>&1
+}
 hc_waiting() {
   local st
   st=$(hc ls --json 2>/dev/null | jq -r --arg t "$1" 'first(.terminals[]? | select(.address == $t) | .status) // empty' 2>/dev/null)

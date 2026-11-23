@@ -227,6 +227,18 @@ test_doorbells_that_waited_are_rung_with_the_sweeps_own_line() {
   expect_eq "$(ls .factory/rings | wc -l | tr -d ' ')" 0
 }
 
+test_a_doorbell_owed_10_minutes_to_a_working_tab_is_typed_but_never_into_a_dialog() {
+  setup; echo '[]' > "$FAKE_GH/issues.json"; mkdir -p .factory/rings
+  : > .factory/rings/backend; : > .factory/rings/frontend
+  echo working > "$TEST_TMP/hc-status-t2"; echo blocked > "$TEST_TMP/hc-status-t3"
+  run "$W"; expect_rc 0; [ ! -s "$TEST_TMP/hc.log" ] || fail "rang a busy tab before 10 minutes"
+  touch -t "$(perl -MPOSIX -e 'print strftime("%Y%m%d%H%M", localtime(time - 660))')" .factory/rings/backend .factory/rings/frontend
+  run "$W"; expect_rc 0; expect_out "rang backend (a doorbell that had waited)"
+  expect_eq "$(cat "$TEST_TMP/hc.log")" "t2|Something is waiting for you: run /inbox."
+  expect_eq "$(ls .factory/rings | tr '\n' ' ')" "frontend " "the blocked tab keeps its ring"
+  [ -n "$(find .factory/rings/frontend -mmin +10)" ] || fail "a ring still owed lost its age"
+}
+
 test_an_approved_brief_rings_the_orchestrator_once() {
   setup; echo '[]' > "$FAKE_GH/issues.json"; export FACTORY_HUMAN=human
   mkdir -p .factory/planning planning/c001-share; echo c001-share > .factory/planning/active

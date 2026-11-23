@@ -47,12 +47,15 @@ typedto=$("$here/autostart.sh") || true
 [ -z "$typedto" ] || printf '%s\n' "$typedto"
 # Doorbells that could not ring when they were sent (the tab was busy): ring them now, with the
 # sweep's own fixed line. Not a tab autostart typed into this pass: it has just started a turn.
+# One owed for 10 minutes to a tab hc calls working is typed anyway (hc_queue): that tab may be a
+# session whose prompt is free while a background task of its own runs.
 for f in "$dir"/rings/*; do
   [ -f "$f" ] || continue
-  t=${f##*/}; rm -f "$f"
-  valid_team_name "$t" && team_names "$teams" | grep -qxF -- "$t" || continue
-  if grep -qF " into $t (" <<<"$typedto"; then ring_later "$home" "$t"; continue; fi
-  ring_team "$home" "$t" "$(later_line "$t")" && echo "sweep: rang $t (a doorbell that had waited)"
+  t=${f##*/}
+  valid_team_name "$t" && team_names "$teams" | grep -qxF -- "$t" || { rm -f "$f"; continue; }
+  grep -qF " into $t (" <<<"$typedto" && continue
+  q=""; [ -z "$(find "$f" -mmin +10 2>/dev/null)" ] || q=queue
+  if ring_team "$home" "$t" "$(later_line "$t")" $q; then rm -f "$f"; echo "sweep: rang $t (a doorbell that had waited)"; fi
 done
 limit() { local v; v=$(jq -r --arg k "$1" '.limits[$k] // empty' "$teams" 2>/dev/null); [[ "$v" =~ ^[0-9]{1,5}$ ]] && echo "$v" || echo "$2"; }
 epoch() { jq -rn --arg d "$1" '$d | try (sub("\\.[0-9]+"; "") | fromdateiso8601) catch empty'; }
