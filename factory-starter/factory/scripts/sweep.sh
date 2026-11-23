@@ -5,6 +5,9 @@
 #   sweep.sh --loop    a pass every FACTORY_SWEEP_SECONDS (default 120); team-up runs it in a tab
 # It escalates (limits from "limits" in factory/teams.json, defaults in brackets):
 #   - a ticket still open and unanswered after ticket_answer_hours [8]
+# A ticket still open (nobody accepted or declined it) after ticket_ring_minutes [10] rings the team
+# it is for once more, with a fixed line: a lead can list GitHub before a ticket filed seconds
+# earlier shows up, and then nothing rings it again.
 #   - a declined ticket that is disputed, and a ticket declined twice
 #   - tickets that block each other in a cycle (each ticket's "What it blocks" issue numbers)
 #   - a team over its tickets_per_day [5]
@@ -67,6 +70,7 @@ note() { echo "sweep: $*" >&2; }
 
 # ---- tickets (GitHub) ----
 gh_ok=0
+rerung=$(jq -c '.rerung // [] | if type == "array" then map(numbers) else [] end' <<<"$state" 2>/dev/null) || rerung='[]'
 if tickets=$(gh issue list --label ticket --state open --limit 300 --json number,labels,createdAt,body,comments 2>/dev/null) &&
    jq -e 'type == "array"' <<<"$tickets" >/dev/null 2>&1; then
   gh_ok=1
@@ -88,6 +92,20 @@ if tickets=$(gh issue list --label ticket --state open --limit 300 --json number
   cyc=$(jq -r '.[] | .number as $t | (.body // "" | strings | try (capture("<!-- factory-ticket (?<j>[^\n]*) -->").j | fromjson | .blocks) catch [])
       | (. // [])[]? | numbers | "\(.) \($t)"' <<<"$tickets" | tsort 2>&1 >/dev/null | sed -n 's/^tsort: \([0-9][0-9]*\)$/#\1/p' | sort -u | paste -sd, - | sed 's/,/, /g')
   [ -z "$cyc" ] || add "cycle:$cyc" cycle "$cyc" "tickets block each other in a cycle: $cyc"
+  open_now=$(jq -c '[.[] | select(any(.labels[]?; .name == "state:open")) | .number]' <<<"$tickets")
+  while IFS=$'\t' read -r n t; do
+    valid_team_name "$t" && team_names "$teams" | grep -qxF -- "$t" || continue
+    if [ "$t" = orchestrator ]; then line="A ticket for you: answer it (gh issue list --label ticket --label to:orchestrator --state open)."
+    else line="A ticket for you: run /inbox."; fi
+    ring_team "$home" "$t" "$line" >/dev/null 2>&1 || true
+    echo "sweep: rang $t again for ticket #$n, still open"
+    rerung=$(jq -c --argjson n "$n" '. + [$n]' <<<"$rerung")
+  done < <(jq -r --argjson m "$(limit ticket_ring_minutes 10)" --argjson h "$(limit ticket_answer_hours 8)" --argjson now "$now" --argjson done "$rerung" '.[]
+      | select(any(.labels[]?; .name == "state:open")) | .number as $n | select($done | index($n) | not)
+      | ((.createdAt // "") | try (sub("\\.[0-9]+"; "") | fromdateiso8601) catch null) as $t
+      | select($t != null and ($now - $t) >= $m * 60 and ($now - $t) < $h * 3600)
+      | [$n, ([.labels[]?.name | strings | select(startswith("to:")) | ltrimstr("to:")][0] // "")] | @tsv' <<<"$tickets")
+  rerung=$(jq -c --argjson o "$open_now" 'map(select(. as $n | $o | index($n)))' <<<"$rerung")
 else
   note "cannot read tickets from GitHub this pass"
 fi
@@ -192,7 +210,7 @@ ring=$(jq -r 'if .ring == true then "true" else "false" end' <<<"$state"); [ -z 
 if [ "$ring" = true ] && [ -n "$orch" ] && command -v hc >/dev/null 2>&1; then
   hc_ring "$orch" "$DOORBELL" && ring=false
 fi
-jq -n --argjson seen "$seen" --argjson b "$blocked" --argjson w "$busy" --argjson r "$ring" --arg br "$brief_rung" '{seen: $seen, blocked: $b, working: $w, ring: $r, brief_rung: $br}' > "$sf.new" && mv "$sf.new" "$sf"
+jq -n --argjson seen "$seen" --argjson b "$blocked" --argjson w "$busy" --argjson r "$ring" --arg br "$brief_rung" --argjson rr "${rerung:-[]}" '{seen: $seen, blocked: $b, working: $w, ring: $r, brief_rung: $br, rerung: $rr}' > "$sf.new" && mv "$sf.new" "$sf"
 
 n_all=$(printf '%s' "$found" | grep -c . || true); n_new=$(printf '%s' "$new" | grep -c . || true)
 printf '%s' "$found" | jq -r --argjson seen "$(jq -c '.seen // {}' <<<"$state" 2>/dev/null || echo '{}')" '.key as $k | "  \(if ($seen | has($k)) then "   " else "new" end) \(.text)"'

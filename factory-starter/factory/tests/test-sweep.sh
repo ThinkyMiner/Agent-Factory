@@ -37,9 +37,10 @@ test_an_unanswered_ticket_is_escalated_once_and_rings_once() {
   ticket 1 open 32400; ticket 2 open 7200; ticket 3 accepted 72000
   run "$W"; expect_rc 0; expect_out "new ticket #1 has waited 9h for an answer"; expect_out "1 open finding(s), 1 new"
   expect_eq "$(escalations)" "unanswered #1"
-  expect_eq "$(cat "$TEST_TMP/hc.log")" "t1|The sweep has new escalations. Read the latest escalation events in .factory/events.jsonl, look at what they point to, and tell the human what needs a decision."
+  expect_eq "$(grep '^t1|' "$TEST_TMP/hc.log")" "t1|The sweep has new escalations. Read the latest escalation events in .factory/events.jsonl, look at what they point to, and tell the human what needs a decision."
+  expect_eq "$(grep -v '^t1|' "$TEST_TMP/hc.log")" "t2|A ticket for you: run /inbox."   # #2, open 2h: its team again
   run "$W"; expect_rc 0; expect_out "1 open finding(s), 0 new"
-  expect_eq "$(escalations | wc -l | tr -d ' ')" 1; expect_eq "$(rings)" 1
+  expect_eq "$(escalations | wc -l | tr -d ' ')" 1; expect_eq "$(rings)" 2
 }
 
 test_a_busy_orchestrator_is_rung_later() {
@@ -237,6 +238,16 @@ test_a_doorbell_owed_10_minutes_to_a_working_tab_is_typed_but_never_into_a_dialo
   expect_eq "$(cat "$TEST_TMP/hc.log")" "t2|Something is waiting for you: run /inbox."
   expect_eq "$(ls .factory/rings | tr '\n' ' ')" "frontend " "the blocked tab keeps its ring"
   [ -n "$(find .factory/rings/frontend -mmin +10)" ] || fail "a ring still owed lost its age"
+}
+
+test_a_ticket_still_open_after_10_minutes_rings_its_team_once_more() {
+  setup; echo '[]' > "$FAKE_GH/issues.json"
+  ticket 7 open 300; run "$W"; expect_rc 0; [ ! -s "$TEST_TMP/hc.log" ] || fail "rang before 10 minutes"
+  echo '[]' > "$FAKE_GH/issues.json"; ticket 7 open 660; ticket 8 accepted 660
+  run "$W"; expect_rc 0; expect_out "rang backend again for ticket #7, still open"
+  expect_eq "$(cat "$TEST_TMP/hc.log")" "t2|A ticket for you: run /inbox."
+  run "$W"; expect_eq "$(rings)" 1 "rang the same ticket twice"
+  echo '[]' > "$FAKE_GH/issues.json"; run "$W"; expect_eq "$(jq -c .rerung .factory/sweep.json)" '[]'
 }
 
 test_an_approved_brief_rings_the_orchestrator_once() {

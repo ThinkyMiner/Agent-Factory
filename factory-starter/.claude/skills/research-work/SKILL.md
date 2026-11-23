@@ -163,12 +163,12 @@ fix rounds), and after it `passed` or `failed` with the same round.
   test (`git show origin/integrate/<f>:<path>` for each path
   `git ls-tree -r --name-only origin/integrate/<f> -- tests/e2e/<f>/` lists), and
   `features/<f>/acceptance.md` in this checkout. Give them exactly as they are, never a summary.
-- Review: a new `evidence-reviewer`, told the task is an acceptance review, with those texts and
-  the spec. Save its reply verbatim as `features/<f>/acceptance-review.md`. Its first VERDICT line
+- Review: a new `evidence-reviewer`, told the task is an acceptance review, with those texts, the
+  spec and `rigor: <factory/scripts/policy.sh rigor>`. Save its reply verbatim as `features/<f>/acceptance-review.md`. Its first VERDICT line
   must be `VERDICT: accept` or `VERDICT: reject`, and its `e2e-commit:` line the report's commit;
   otherwise one more new evidence-reviewer, then stop. Commit it.
 - Check: a second new `evidence-reviewer`, told the task is checking an acceptance review, with
-  the same texts, the spec and the path of acceptance-review.md. Save and commit its reply as
+  the same texts, the spec, the same `rigor:` line and the path of acceptance-review.md. Save and commit its reply as
   `<work folder>/evidence-review.md`. `changes-required`: a new `evidence-reviewer` writes the
   review again from the same texts and that BLOCKING list, replacing acceptance-review.md;
   commit, then a new check as a re-review (the previous report's text too). At most 2 such

@@ -81,6 +81,11 @@ the e2e tests (`tests/e2e/<f>/`). Say for each criterion whether the round shows
 - met: a test whose name starts with its id (`AC2:`) checks what the criterion's check says, and
   the report's output shows that test passing. Cite the test and the report line.
 - not met: no such test, a test that checks something else or less, or no line showing it pass.
+With `rigor: mvp` in the task: met when a passing test checks the behaviour the criterion names
+on its ordinary path, even if a stricter test could catch more (a field not read back, no
+near-miss case, a fixture already in order). Write such a gap after the evidence as `gap: <what a
+stronger test would check>`; the gaps become follow-ups, not a reject. not met only when no
+passing test checks that behaviour at all, or one shows it wrong.
 `VERDICT: accept` only when the report says `E2E: pass` and every criterion is met; anything
 else is `reject`. A long report cut to its last lines is no excuse: a criterion you cannot see
 passing is not met.
