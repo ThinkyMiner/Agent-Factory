@@ -101,6 +101,13 @@ if [ "$kind" = integrate ]; then
     else commit=${BASH_REMATCH[1]}; line ok "the e2e report says E2E: pass for commit $commit (round $(show "$round"))"; fi
   fi
 
+  # outside: of the NUL-separated paths on stdin, those the e2e tests run: not this feature's
+  # records and not the factory itself (a sync from main brings it; no e2e test exercises it).
+  outside() { P="features/$f/" perl -0ne 'chomp; print "$_\0" unless index($_, $ENV{P}) == 0 || m{^work/[^/]+/} ||
+      m{^memory/observations/} || m{^(factory|\.claude|\.github|teams|docs/factory)/}'; }
+  # holds <accepted> <tested>: an acceptance of an earlier round still holds for the tested commit.
+  holds() { [ -n "$2" ] && git merge-base --is-ancestor "$1" "$2" 2>/dev/null &&
+    git diff -z --name-only --no-renames "$1" "$2" > "$tmp/held" 2>/dev/null && [ "$(outside < "$tmp/held" | head -c1 | wc -c)" -eq 0 ]; }
   rev="features/$f/acceptance-review.md"
   if ! regular "$rev"; then line "NOT OK" "$rev is missing at the head commit, or not a regular file (research's acceptance review, merged into feature/$f)"
   else
@@ -108,6 +115,7 @@ if [ "$kind" = integrate ]; then
     ec=$(perl -ne 's/\r//g; if (/^e2e-commit:/) { print $1 if /^e2e-commit:[ \t]*([0-9a-f]{40})[ \t]*$/; exit }' "$tmp/blob")
     if [ "$v" != accept ]; then line "NOT OK" "the acceptance review does not say VERDICT: accept (found: ${v:-no exact verdict})"
     elif [ -z "$ec" ]; then line "NOT OK" "the acceptance review has no 'e2e-commit: <40-hex sha>' line"
+    elif [ "$ec" != "$commit" ] && holds "$ec" "$commit"; then line ok "the acceptance review says VERDICT: accept for commit $ec; only records and the factory changed between it and $commit"
     elif [ "$ec" != "$commit" ]; then line "NOT OK" "the acceptance review is of commit $ec, not of the e2e report's commit ${commit:-(none)}"
     else line ok "the acceptance review says VERDICT: accept for commit $commit"; fi
   fi
@@ -118,10 +126,10 @@ if [ "$kind" = integrate ]; then
   else
     # Records may arrive after the round: this feature's folder, the work folder and observation
     # that come with research's acceptance review. Anything else is a change the round did not test.
-    P="features/$f/" perl -0ne 'chomp; print "$_\0" unless index($_, $ENV{P}) == 0 || m{^work/[^/]+/} || m{^memory/observations/}' "$tmp/changed" > "$tmp/outside"
+    outside < "$tmp/changed" > "$tmp/outside"
     if [ -s "$tmp/outside" ]; then
       line "NOT OK" "code changed since the tested commit $commit (run integrate.sh run again): $(tr '\0' ' ' < "$tmp/outside" | tr -d '\001-\037\177' | cut -c1-200)"
-    else line ok "nothing but records (features/$f/, work/, memory/observations/) changed since commit $commit"; fi
+    else line ok "nothing but records (features/$f/, work/, memory/observations/) and the factory changed since commit $commit"; fi
   fi
 
   # Protection, read from GitHub: feature/<f> must hold team pull requests to main's checks.

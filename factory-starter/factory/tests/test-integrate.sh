@@ -492,6 +492,19 @@ test_records_that_come_with_the_review_are_not_code() {
   orch pr "$F"; expect_rc 1; expect_err "code changed since round 1 (workers/x.txt )"
 }
 
+test_an_acceptance_holds_when_only_the_factory_changed_since() {
+  integ_setup; saved_tests
+  fix_lands; orch run "$F"; expect_rc 0; review accept
+  push_to human "feature/$F" factory/scripts/new-kit.sh "a sync from main brought the kit"
+  n=$(created | wc -l | tr -d ' ')
+  orch run "$F"; expect_rc 0; expect_out "that holds for round 2; no new review"
+  expect_eq "$(created | wc -l | tr -d ' ')" "$n" "review tickets after a factory-only round"
+  orch pr "$F"; expect_rc 0; expect_out "opened pull request #"; on_main
+  # a product change is not the factory: research reviews that round
+  push_to backend "feature/$F" server/more.txt "product code after the acceptance"
+  orch run "$F"; expect_rc 0; expect_eq "$(created | wc -l | tr -d ' ')" "$((n + 1))" "review tickets after a product change"
+}
+
 test_pr_opens_one_pull_request_and_close_cleans_up() {
   integ_setup; saved_tests
   fix_lands; orch run "$F"; expect_rc 0; review accept

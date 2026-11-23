@@ -164,6 +164,16 @@ no_links() { local p; for p in "$@"; do [ ! -L "$p" ] || die "$p is a symbolic l
 
 # report <rev>: "<verdict> <round> <commit>" from features/<f>/e2e-report.md there; nothing if it has
 # none; exit 1 if it is damaged. Only this script writes it, in the fixed first lines below.
+# untested <from> <to>: what changed between the two commits that the e2e tests run, space-separated:
+# not this feature's records (features/<f>/, work/, memory/observations/) and not the factory
+# itself (factory/, .claude/, .github/, teams/, docs/factory/),
+# which a sync from main brings and no e2e test exercises. Empty: a round's result still holds.
+untested() {
+  git diff --name-only --no-renames "$1" "$2" 2>/dev/null |
+    grep -Ev "^(features/$f/|work/[^/]+/|memory/observations/|factory/|\.claude/|\.github/|teams/|docs/factory/)" | tr '\n' ' ' || true
+}
+# holds <accepted-commit> <commit>: research's acceptance of an earlier round still holds for <commit>.
+holds() { [ -n "$1" ] && git merge-base --is-ancestor "$1" "$2" 2>/dev/null && [ -z "$(untested "$1" "$2")" ]; }
 report() {
   git cat-file -e "$1:features/$f/e2e-report.md" 2>/dev/null || return 0
   local r; r=$(git show "$1:features/$f/e2e-report.md" | F=$f perl -ne 's/\r?\n\z//;
@@ -334,6 +344,13 @@ run)
   event integration feature="$f" step=e2e status="$verdict" round="$round"
   say "round $round: e2e $verdict (make e2e exit $rc); report: features/$f/e2e-report.md on $I"
   if [ "$verdict" = pass ]; then
+    prev=$(git show "$I:features/$f/acceptance-review.md" 2>/dev/null | perl -ne 's/\r//g;
+      $v = $1 if !defined $v && /^VERDICT:[ \t]*([a-z-]+)[ \t]*$/; $c = $1 if !defined $c && /^e2e-commit:[ \t]*([0-9a-f]{40})[ \t]*$/;
+      END { print "$v $c" if defined $v && defined $c }' || true)
+    if [ "${prev%% *}" = accept ] && [ "${prev#* }" != "$commit" ] && holds "${prev#* }" "$commit"; then
+      say "research accepted ${prev#* }, and only records and the factory changed since: that holds for round $round; no new review. Next: integrate.sh pr $f"
+      exit 0
+    fi
     open=$(gh issue list --label ticket --label from:orchestrator --label to:research --label type:request --label "feature:$f" \
              --state open --limit 50 --json body --jq "[.[] | select(.body | contains(\"$commit\"))] | length") || die "cannot list tickets on GitHub"
     if [ "${open:-0}" -gt 0 ]; then say "research already has an open acceptance-review ticket for $commit"; exit 0; fi
@@ -432,11 +449,11 @@ pr)
   rv=$(git show "HEAD:features/$f/acceptance-review.md" | perl -ne 's/\r//g; if (/^VERDICT:/) { print /^VERDICT:[ \t]*accept[ \t]*$/ ? "accept" : "no"; exit }')
   [ "$rv" = accept ] || die "research's acceptance review does not say VERDICT: accept: tell the human, with features/$f/acceptance-review.md"
   rc_=$(git show "HEAD:features/$f/acceptance-review.md" | perl -ne 's/\r//g; if (/^e2e-commit:/) { print $1 if /^e2e-commit:[ \t]*([0-9a-f]{40})[ \t]*$/; exit }')
-  [ "$rc_" = "$commit" ] || die "the acceptance review is of e2e commit ${rc_:-none}, not round $round's $commit: research reviews the latest round"
+  [ "$rc_" = "$commit" ] || holds "$rc_" "$commit" || die "the acceptance review is of e2e commit ${rc_:-none}, not round $round's $commit: research reviews the latest round"
   git merge-base --is-ancestor "$commit" HEAD 2>/dev/null || die "round $round's commit $commit is not in $I: integrate.sh run $f"
   # Records may arrive after the round (research's review brings its work folder and observation);
   # anything else is a change the round did not test. check-feature.sh applies the same rule in CI.
-  changed=$(git diff --name-only --no-renames "$commit" HEAD | grep -Ev "^(features/$f/|work/[^/]+/|memory/observations/)" | tr '\n' ' ' || true)
+  changed=$(untested "$commit" HEAD)
   [ -z "$changed" ] || die "code changed since round $round ($changed): run integrate.sh run $f"
   bash "$here/feature.sh" render "$f" || say "feature.sh render failed (above); FEATURE.md is not up to date"
   for p in FEATURE.md tickets.jsonl; do [ ! -f "features/$f/$p" ] || git add -- "features/$f/$p"; done

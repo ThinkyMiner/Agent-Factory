@@ -92,7 +92,7 @@ test_integrate_pr_passes_when_everything_holds() {
   expect_out "ok       base is main"; expect_out "ok       origin/feature/$F exists"
   expect_out "ok       the e2e report says E2E: pass for commit $E2E (round 1)"
   expect_out "ok       the acceptance review says VERDICT: accept for commit $E2E"
-  expect_out "ok       nothing but records (features/$F/, work/, memory/observations/) changed since commit $E2E"
+  expect_out "ok       nothing but records (features/$F/, work/, memory/observations/) and the factory changed since commit $E2E"
   expect_out "ok       feature/$F is protected and requires main's checks (check, factory-tests, ownership, risk-gate, secrets)"
   expect_out "ok       make e2e passes"; expect_out "feature: ok"
   expect_eq "$(grep -c 'branches/' "$TEST_TMP/gh/log")" 2 "one gh call per branch"
@@ -118,6 +118,19 @@ test_integrate_pr_fails_without_an_accepting_acceptance_review() {
   gate; expect_rc 1; expect_out "(found: reject)"                                                # the first one counts
   printf 'Summary.\r\nVERDICT:\taccept  \r\ne2e-commit: %s \r\n' "$E2E" > "features/$F/acceptance-review.md"; commit; head_is "integrate/$F"
   gate; expect_rc 0                                                                              # CR and blanks around the word
+}
+
+test_an_acceptance_of_an_earlier_round_holds_when_only_the_factory_changed() {
+  world; local old=$E2E
+  mkdir -p factory/scripts .claude/agents; echo kit > factory/scripts/new.sh; echo agent > .claude/agents/x.md; commit
+  local new; new=$(git rev-parse HEAD); report pass "$new" 2; commit; head_is "integrate/$F"
+  gate; expect_rc 0; expect_out "ok       the acceptance review says VERDICT: accept for commit $old; only records and the factory changed between it and $new"
+  git reset -q --hard "origin/integrate/$F"
+  echo other > server/other.js; commit; new=$(git rev-parse HEAD); report pass "$new" 2; commit; head_is "integrate/$F"
+  gate; expect_rc 1; expect_out "NOT OK   the acceptance review is of commit $old, not of the e2e report's commit $new"
+  git reset -q --hard "origin/integrate/$F"
+  mkdir -p .github; echo ci > .github/x.yml; commit; head_is "integrate/$F"
+  gate; expect_rc 0; expect_out "and the factory changed since commit $E2E"
 }
 
 test_acceptance_review_must_be_of_the_tested_commit() {
