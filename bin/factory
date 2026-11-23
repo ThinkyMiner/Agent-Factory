@@ -68,7 +68,11 @@ github)
   [ -z "$(git status --porcelain)" ] || die "commit your changes first"
   vis=--private
   if [ "${2:-}" = --public ]; then vis=--public; fi
-  git remote get-url origin >/dev/null 2>&1 || gh repo create "$(basename "$PWD")" "$vis" --source . --remote origin
+  if ! git remote get-url origin >/dev/null 2>&1; then
+    gh repo create "$(basename "$PWD")" "$vis" --source . --remote origin
+    # gh may set an ssh remote (its git_protocol); https uses gh's own login, which works here.
+    git remote set-url origin "$(gh repo view --json url -q .url).git"
+  fi
   git push -u origin main
   for l in factory:proposed factory:ready factory:improvement human-approved brief-approved risk:R0 risk:R1 risk:R2 escaped-defect \
            ticket state:open state:accepted state:declined state:done state:verified state:disputed state:withdrawn \

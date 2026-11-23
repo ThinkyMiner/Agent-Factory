@@ -108,7 +108,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: factory/tests/run.sh
+        with:
+          fetch-depth: 0
+      # A pull request that leaves the factory as it is has nothing here to test: the suite takes
+      # minutes, and product pull requests should not wait on it. Pushes to main always run it.
+      - name: Run when the factory changed
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          if [ -n "$BASE" ] && git diff --quiet "origin/$BASE...HEAD" -- factory .claude .github teams docs/factory; then
+            echo "This pull request does not change the factory: its tests are skipped."
+          else
+            factory/tests/run.sh
+          fi
 
   ownership:
     # Team mode (factory/teams.json): a pull request changes only its own team's paths. The check
