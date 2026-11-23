@@ -10,7 +10,7 @@
 # earlier shows up, and then nothing rings it again.
 #   - a declined ticket that is disputed, and a ticket declined twice
 #   - tickets that block each other in a cycle (each ticket's "What it blocks" issue numbers)
-#   - a team over its tickets_per_day [5]
+#   - a team over its tickets_per_day [5] (not the orchestrator: integration files its tickets)
 #   - a session in Herdr's blocked state (a permission or trust dialog) for blocked_minutes [10]
 #   - a session working with no event for silent_minutes [30]
 #   - a team whose session has ended (hc sees a shell in its Herdr tab, where claude ran)
@@ -114,7 +114,7 @@ if made=$(gh issue list --label ticket --state all --search "created:>=$today" -
    jq -e 'type == "array"' <<<"$made" >/dev/null 2>&1; then
   p=$(limit tickets_per_day 5)
   while IFS=$'\t' read -r t c; do
-    valid_team_name "$t" && add "budget:$t:$today" budget "$t" "$t opened $c tickets today, over its budget of $p"
+    valid_team_name "$t" && [ "$t" != orchestrator ] && add "budget:$t:$today" budget "$t" "$t opened $c tickets today, over its budget of $p"
   done < <(jq -r --argjson p "$p" '[.[] | [.labels[]?.name | strings | select(startswith("from:")) | ltrimstr("from:")] | unique[]]
       | group_by(.) | map(select(length > $p)) | .[] | [.[0], length] | @tsv' <<<"$made")
 else

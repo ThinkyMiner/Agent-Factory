@@ -14,7 +14,8 @@
 # usually to the orchestrator; answered with `answer`, which marks it done). Needs, why, done and reasons are at least
 # 30 characters, so the receiver gets context. A team opens at most 5 tickets a day and has at
 # most 2 open with any one team (limits.tickets_per_day, limits.open_tickets_per_pair in
-# factory/teams.json). Text is posted with @mentions and HTML neutralised.
+# factory/teams.json). The orchestrator has no daily budget: its tickets are integration itself (one
+# per failed test, one per review), bounded by the open-per-team limit. Text is posted with @mentions and HTML neutralised.
 # The team is the session's (FACTORY_TEAM and its worktree, see lib.sh), never an argument.
 # Every action comments with a machine-readable line, sets the state: label and writes a ticket
 # event. States: open -> accepted | declined; accepted -> done; done -> verified (closed) |
@@ -68,7 +69,7 @@ create)
 
   today=$(date -u +%Y-%m-%d)
   made=$(gh issue list --label ticket --label "from:$me" --state all --search "created:>=$today" --limit 200 --json number --jq length) || die "cannot count today's tickets"
-  [ "$made" -lt "$(limit tickets_per_day 5)" ] || die "$me has opened $made tickets today, its daily budget. Ask the orchestrator, or wait for tomorrow (UTC)."
+  [ "$me" = orchestrator ] || [ "$made" -lt "$(limit tickets_per_day 5)" ] || die "$me has opened $made tickets today, its daily budget. Ask the orchestrator, or wait for tomorrow (UTC)."
   open=$(gh issue list --label ticket --label "from:$me" --label "to:$to" --state open --limit 200 --json number --jq length) || die "cannot count open tickets"
   [ "$open" -lt "$(limit open_tickets_per_pair 2)" ] || die "$me already has $open open tickets with $to. Wait for one to close."
 

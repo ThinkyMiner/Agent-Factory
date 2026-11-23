@@ -111,6 +111,7 @@ test_budgets_are_enforced() {
   jq '.limits = {tickets_per_day: 1, open_tickets_per_pair: 9}' "$BE/factory/teams.json" > t && mv t "$BE/factory/teams.json"
   ask backend frontend; expect_rc 0
   ask backend frontend; expect_rc 1; expect_err "backend has opened 1 tickets today"
+  ask orchestrator backend; ask orchestrator backend; expect_rc 0   # integration: no daily budget
 }
 
 test_the_team_comes_from_the_session_not_the_caller() {
