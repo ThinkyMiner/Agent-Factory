@@ -100,7 +100,8 @@ item as waiting on it, so its owner sees what their step unblocks. On the pr sta
   card from `product/BRIEF.md`, gather (phase 1), build the board as a local file without
   publishing it, then pick yourself: the 2-3 references that fit the card best, never the safe
   grey one. No prototypes: hand the card, the board path and your picks with one line of reason
-  each to the designer, who turns them into design.md's Direction. Tell every gather agent to
+  each to the designer, who turns them into design.md's Direction. Never delete `screens/`
+  yourself: `make ui-shots` clears its own old shots. Tell every gather agent to
   delete nothing (leave a rejected image where it is and leave it out of its json): a delete in a
   factory session can stop on a confirmation dialog no agent can answer.
 - Skip the tests only if the spec has `tests: none` (documentation-only items).

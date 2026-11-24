@@ -137,6 +137,17 @@ TXT
   [ ! -e pwned ] && [ ! -e pwned2 ] || fail "a step's text ran as a command"
 }
 
+test_shots_from_an_earlier_run_are_cleared_and_nothing_else() {
+  command -v node >/dev/null || return 0
+  app; fake_playwright; mkdir -p work/1-x/screens
+  echo old > work/1-x/screens/index--dropped-light-desktop.png; echo notes > work/1-x/screens/notes.md
+  echo victim > "$TEST_TMP/outside/victim"; ln -s "$TEST_TMP/outside/victim" work/1-x/screens/planted.png
+  shots --out work/1-x/screens "$(PAGE)"; expect_rc 0
+  [ ! -e work/1-x/screens/index--dropped-light-desktop.png ] || fail "a shot from an earlier run is still there"
+  [ ! -L work/1-x/screens/planted.png ] || fail "a planted link is still there"
+  expect_eq "$(cat work/1-x/screens/notes.md)" notes; expect_eq "$(cat "$TEST_TMP/outside/victim")" victim
+}
+
 test_a_states_steps_run_once_and_every_shot_shows_their_result() {
   command -v node >/dev/null || return 0
   app; fake_playwright

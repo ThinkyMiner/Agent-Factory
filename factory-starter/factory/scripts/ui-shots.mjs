@@ -117,6 +117,11 @@ try {
 
 fs.mkdirSync(outDir, { recursive: true });
 if (!inside(fs.realpathSync(outDir))) die(`--out ${out} is outside the repository (${root})`);
+// Shots from an earlier run (a state since dropped) would be reviewed as if current: this run's
+// folder holds only this run's .png files and axe.json. Links are removed, never followed.
+for (const n of fs.readdirSync(outDir)) {
+  if (/\.png$/i.test(n) || n === 'axe.json') fs.rmSync(path.join(outDir, n), { force: true });
+}
 // write <name> <data>: a new file in outDir; an old one (or a link planted there) is removed, not followed.
 const written = [];
 function write(name, data) {
